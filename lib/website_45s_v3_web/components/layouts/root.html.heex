@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" class="[scrollbar-gutter:stable]">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <link rel="icon" href="/images/favicon.ico" type="image/x-icon" />
+    <.live_title suffix=" Website">
+      <%= assigns[:page_title] || "Forty Fives" %>
+    </.live_title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    </script>
+  </head>
+  <body style="background: #041624;">
+    <div style="background: #071f31; border-bottom: 2px solid #d2e8f9; display: flex; align-items: center">
+      <a href="/">
+        <img
+          src={~p"/images/phoenix.png"}
+          alt="Forty Fives Logo"
+          style="margin-right: auto; width: 60%; margin-bottom: 0; margin-top: 0px"
+        />
+      </a>
+      <ul style="margin-right:100px; margin-left: auto; display: flex; flex-direction: column; margin-bottom: 0px">
+        <li style="margin-bottom: 0px;">
+          <.link href={~p"/play"} style="font-size: 1.25rem;">
+            Play
+          </.link>
+        </li>
+        <%= if @current_user do %>
+          <li style="margin-bottom: 0px;">
+            <.link href={~p"/profile"} style="font-size: 1.25rem;">
+              <%= @current_user.username %>
+            </.link>
+          </li>
+          <li style="margin-bottom: 0px;">
+            <.link href={~p"/users/settings"} style="font-size: 1.25rem;">
+              Settings
+            </.link>
+          </li>
+          <li style="margin-bottom: 0px;">
+            <.link href={~p"/users/log_out"} method="delete" style="font-size: 1.25rem;">
+              Log out
+            </.link>
+          </li>
+        <% else %>
+          <li style="margin-bottom: 0px;">
+            <.link href={~p"/users/register"} style="font-size: 1.25rem;">
+              Register
+            </.link>
+          </li>
+          <li style="margin-bottom: 0px;">
+            <.link href={~p"/users/log_in"} style="font-size: 1.25rem; margin-bottom: 0px;">
+              Log in
+            </.link>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+    <%= @inner_content %>
+  </body>
+</html>

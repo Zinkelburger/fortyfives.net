@@ -1,0 +1,25 @@
+<div class="container mx-auto px-3 bg-background text-text">
+  <.flash_group flash={@flash} />
+
+  <section class="phx-hero py-9">
+    <h1 class="text-6xl font-bold text-primary mb-8">Welcome to fortyfives.net</h1>
+    <p class="text-4xl mb-10">Come Play 45s</p>
+
+    <div class="flex justify-between space-x-4">
+      <div class="flex-1 mr-3">
+        <p class="text-xl mb-2">Play the Classic Online!</p>
+        <button onclick="window.location.href='/play'" class="btn">Play Online</button>
+      </div>
+
+      <div class="flex-1 ml-3">
+        <p class="text-xl mb-2">Want to master the game? Start today!</p>
+        <button onclick="window.location.href='/learn'" class="btn">Learn 45s</button>
+      </div>
+    </div>
+  </section>
+</div>
+<style>
+  .container {
+          max-width: 800px;
+  }
+</style>

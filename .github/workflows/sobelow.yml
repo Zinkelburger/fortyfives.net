@@ -1,0 +1,27 @@
+name: Sobelow Security Scan
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  sobelow:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Elixir
+        uses: erlef/setup-elixir@v1
+        with:
+          elixir-version: '1.15'
+          otp-version: '25'
+
+      - name: Install Dependencies
+        run: mix deps.get
+
+      - name: Run Sobelow
+        run: mix sobelow --config

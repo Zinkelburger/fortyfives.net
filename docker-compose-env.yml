@@ -2,7 +2,7 @@ version: '3'
 
 services:
   web:
-    image: website_45s_v3
+    image: fortyfives.net
     ports:
       - "4000:4000"
     environment:

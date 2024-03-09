@@ -6,7 +6,7 @@ defmodule Website45sV3Web.UserSettingsLive do
   def render(assigns) do
     ~H"""
     <div
-      class="space-y-12 divide-y mx-auto max-w-sm"
+      class="space-y-12 divide-y mx-auto max-w-sm mb-10"
       style="border: 2px solid #d2e8f9; border-radius: 10px; padding:10px; background-color: #071f31; margin-top: 35px;"
     >
       <div style="border-bottom; 0px;">
@@ -19,7 +19,7 @@ defmodule Website45sV3Web.UserSettingsLive do
           phx-submit="update_email"
           phx-change="validate_email"
         >
-          <.input field={@email_form[:email]} type="email" label="New Email" required />
+          <.input field={@email_form[:email]} type="email" label="New Email" required background_color="071f31"/>
           <.input
             field={@email_form[:current_password]}
             name="current_password"
@@ -41,7 +41,7 @@ defmodule Website45sV3Web.UserSettingsLive do
         </.simple_form>
       </div>
       <div style="margin-top: 0px;">
-        <p style="color: #d2e8f9; margin-bottom: 20px;">
+        <p style="color: #d2e8f9; margin-bottom: 20px; margin-top: 5px;">
           Change your password
         </p>
         <.simple_form
@@ -78,7 +78,7 @@ defmodule Website45sV3Web.UserSettingsLive do
             <.button
               phx-disable-with="Changing..."
               class="w-full green-button"
-              style="margin-top: 10px;"
+              style="margin-top: 10px; margin-bottom: 4px;"
             >
               Change Password
             </.button>

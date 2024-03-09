@@ -13,9 +13,9 @@ defmodule Website45sV3Web.UserRegistrationLive do
         <.link
           navigate={~p"/users/log_in"}
           class="font-semibold link"
-          style="font-weight: bold; text-decoration: underline;"
+          style="font-weight: bold;"
         >
-          Sign in
+        <span style="text-decoration: underline;">Sign in</span>
         </.link>
         to your account now.
       </:subtitle>
@@ -38,9 +38,9 @@ defmodule Website45sV3Web.UserRegistrationLive do
         </.error>
 
         <div style="padding-top:5px;">
-          <.input field={@form[:username]} type="text" label="Username" required phx-debounce="400" />
+          <.input field={@form[:username]} type="text" label="Username" required phx-debounce="400" background_color="071f31"/>
         </div>
-        <.input field={@form[:email]} type="email" label="Email" required phx-debounce="400" />
+        <.input field={@form[:email]} type="email" label="Email" required phx-debounce="400" background_color="071f31"/>
         <.input
           field={@form[:password]}
           type="password"

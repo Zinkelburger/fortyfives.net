@@ -266,6 +266,7 @@ defmodule Website45sV3Web.CoreComponents do
   """
   attr :for, :any, required: true, doc: "the datastructure for the form"
   attr :as, :any, default: nil, doc: "the server side parameter to collect all input under"
+  attr :background_color, :string, default: "071f31", doc: "the background color of the form"
 
   attr :rest, :global,
     include: ~w(autocomplete name rel action enctype method novalidate target multipart),
@@ -277,7 +278,7 @@ defmodule Website45sV3Web.CoreComponents do
   def simple_form(assigns) do
     ~H"""
     <.form :let={f} for={@for} as={@as} {@rest}>
-      <div style="background: #071f31;">
+      <div style={"background: ##{@background_color};"}>
         <%= render_slot(@inner_block, f) %>
         <div :for={action <- @actions} class="mt-2 flex items-center justify-between gap-6">
           <%= render_slot(action, f) %>
@@ -363,6 +364,9 @@ defmodule Website45sV3Web.CoreComponents do
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
   attr :multiple, :boolean, default: false, doc: "the multiple flag for select inputs"
 
+  attr :background_color, :string, default: "041624", doc: "the background color of the input"
+  attr :text_color, :string, default: "d2e8f9", doc: "the text color of the input"
+
   attr :rest, :global,
     include: ~w(accept autocomplete capture cols disabled form list max maxlength min minlength
                 multiple pattern placeholder readonly required rows size step)
@@ -386,7 +390,7 @@ defmodule Website45sV3Web.CoreComponents do
     <div phx-feedback-for={@name}>
       <label
         class="flex items-center text-sm gap-2 leading-6"
-        style="color: #d2e8f9; margin-top: -10px; margin-bottom: -20px;"
+        style={"color: ##{@text_color}; margin-top: -10px; margin-bottom: -20px;"}
       >
         <input type="hidden" name={@name} value="false" />
         <input
@@ -461,7 +465,7 @@ defmodule Website45sV3Web.CoreComponents do
             @errors == [] && "border-zinc-300 focus:border-zinc-400",
             @errors != [] && "border-rose-400 focus:border-rose-400"
           ]}
-          style="background-color: #041624; color: #d2e8f9;"
+          style={"background-color: ##{@background_color}; color: ##{@text_color};"}
           {@rest}
         />
         <button
@@ -496,7 +500,7 @@ defmodule Website45sV3Web.CoreComponents do
   # All other inputs text, datetime-local, url, password, etc. are handled here...
   def input(assigns) do
     ~H"""
-    <div phx-feedback-for={@name} style="background-color: #071f31; color: #d2e8f9;">
+    <div phx-feedback-for={@name} style={"background-color: ##{@background_color}; color: ##{@text_color};"}>
       <.label for={@id}><%= @label %></.label>
       <input
         type={@type}

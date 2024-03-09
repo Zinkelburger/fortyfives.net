@@ -11,9 +11,8 @@ defmodule Website45sV3Web.UserLoginLive do
           <.link
             navigate={~p"/users/register"}
             class="font-semibold link"
-            style="text-decoration: underline;"
           >
-            Sign up
+          <span style="text-decoration: underline;">Sign up</span>
           </.link>
           for an account now.
         </:subtitle>
@@ -32,6 +31,7 @@ defmodule Website45sV3Web.UserLoginLive do
               phx-change="update_form"
               required
               phx-debounce="400"
+              background_color="071f31"
             />
           </div>
           <.input
@@ -43,21 +43,20 @@ defmodule Website45sV3Web.UserLoginLive do
             required
             phx-debounce="400"
           />
-
-          <:actions>
-            <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
-            <li style="margin-top:-20px; margin-bottom: -25px;">
-              <.link href={~p"/users/reset_password"} class="text-sm font-semibold">
-                Forgot your password?
-              </.link>
-            </li>
-          </:actions>
-          <:actions>
-            <.button phx-disable-with="Signing in..." class="w-full green-button">
-              Sign in <span aria-hidden="true">→</span>
-            </.button>
-          </:actions>
-        </.simple_form>
+            <:actions>
+              <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
+              <li style="margin-top:-20px; margin-bottom: -25px;">
+                <.link href={~p"/users/reset_password"} class="text-sm font-semibold">
+                  Forgot your password?
+                </.link>
+              </li>
+            </:actions>
+            <:actions>
+              <.button phx-disable-with="Signing in..." class="w-full green-button">
+                Sign in <span aria-hidden="true">→</span>
+              </.button>
+            </:actions>
+          </.simple_form>
       </div>
     </div>
     """

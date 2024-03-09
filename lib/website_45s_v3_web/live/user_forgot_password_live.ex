@@ -6,22 +6,27 @@ defmodule Website45sV3Web.UserForgotPasswordLive do
   def render(assigns) do
     ~H"""
     <div class="mx-auto max-w-sm">
-      <.header class="text-center">
+      <.header class="text-center mt-3">
         Forgot your password?
         <:subtitle>We'll send a password reset link to your inbox</:subtitle>
       </.header>
 
-      <.simple_form for={@form} id="reset_password_form" phx-submit="send_email">
-        <.input field={@form[:email]} type="email" placeholder="Email" required />
+      <.simple_form for={@form} id="reset_password_form" phx-submit="send_email" background_color="041624">
+        <.input field={@form[:email]} type="email" placeholder="Email" required background_color="041624"/>
         <:actions>
-          <.button phx-disable-with="Sending..." class="w-full green-button">
+          <.button phx-disable-with="Sending..." class="w-full green-button mt-1">
             Send reset instructions
           </.button>
         </:actions>
       </.simple_form>
-      <p style="color:#d2e8f9;" class="text-center text-sm mt-4">
-        <.link href={~p"/users/register"}>Register</.link>
-        | <.link href={~p"/users/log_in"}>Log in</.link>
+      <p style="color:#d2e8f9;" class="text-center text-sm mt-1 li">
+        <.link href={~p"/users/register"}
+          class="font-semibold link"
+          style="font-weight: bold; text-decoration: underline;">
+          Register</.link>
+        | <.link href={~p"/users/log_in"}
+        class="font-semibold link"
+          style="font-weight: bold; text-decoration: underline;">Log in</.link>
       </p>
     </div>
     """

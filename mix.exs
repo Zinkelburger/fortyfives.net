@@ -34,12 +34,12 @@ defmodule Website45sV3.MixProject do
     [
       {:bcrypt_elixir, "~> 3.1.0"},
       {:phoenix, "~> 1.7.11"},
-      {:phoenix_ecto, "~> 4.5.0"},
+      {:phoenix_ecto, "~> 4.5.1"},
       {:ecto_sql, "~> 3.11.1"},
       {:postgrex, "~> 0.17.5"},
       {:phoenix_html, "~> 3.3"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 0.19.0"},
+      {:phoenix_live_view, "~> 0.20.12"},
       {:floki, ">= 0.36.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.0"},
       {:esbuild, "~> 0.7", runtime: Mix.env() == :dev},
@@ -51,7 +51,8 @@ defmodule Website45sV3.MixProject do
       {:gettext, "~> 0.24.0"},
       {:jason, "~> 1.2"},
       {:plug_cowboy, "~> 2.5"},
-      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.6", only: [:dev, :test], runtime: false}
     ]
   end
 

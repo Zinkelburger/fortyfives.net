@@ -59,7 +59,9 @@ defmodule Website45sV3.Accounts.User do
   defp validate_banned_words(changeset, banned_words) do
     username = Ecto.Changeset.get_field(changeset, :username)
 
-    if !is_nil(username) do
+    if is_nil(username) do
+      changeset
+    else
       username = String.downcase(username)
 
       if Enum.any?(banned_words, &String.contains?(username, &1)) do
@@ -67,8 +69,6 @@ defmodule Website45sV3.Accounts.User do
       else
         changeset
       end
-    else
-      changeset
     end
   end
 
@@ -83,7 +83,7 @@ defmodule Website45sV3.Accounts.User do
   defp validate_password(changeset, opts) do
     changeset
     |> validate_required([:password])
-    |> validate_length(:password, min: 12, max: 72)
+    |> validate_length(:password, min: 8, max: 72)
     # Examples of additional password validation:
     # |> validate_format(:password, ~r/[a-z]/, message: "at least one lower case character")
     # |> validate_format(:password, ~r/[A-Z]/, message: "at least one upper case character")

@@ -192,6 +192,7 @@ defmodule Website45sV3Web.CoreComponents do
         @kind == :error && "bg-rose-50 text-rose-900 shadow-md ring-rose-500 fill-rose-900"
       ]}
       {@rest}
+      phx-hook="AutoDismissFlash"
     >
       <p :if={@title} class="flex items-center gap-1.5 text-sm font-semibold leading-6">
         <.icon :if={@kind == :info} name="hero-information-circle-mini" class="h-4 w-4" />
@@ -209,6 +210,13 @@ defmodule Website45sV3Web.CoreComponents do
           class="h-5 w-5 opacity-40 text-black-500 group-hover:opacity-70"
         />
       </button>
+      <div
+      class="progress-bar"
+      style={
+        "width: 100%; height: 4px; position: absolute; bottom: 0; background-color: " <>
+        if(@kind == :info, do: "rgba(0, 255, 0, 0.5)", else: "rgba(255, 0, 0, 0.5)")
+      }
+    ></div>
     </div>
     """
   end

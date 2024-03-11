@@ -22,22 +22,26 @@
         />
       </a>
       <ul style="margin-right:100px; margin-left: auto; display: flex; flex-direction: column; margin-bottom: 0px">
-        <li style="margin-bottom: 0px;">
-          <.link href={~p"/play"} style="font-size: 1.25rem;">
-            Play
-          </.link>
-        </li>
+        <%= if @conn.request_path != "/play" and @conn.request_path != "/game" and not String.starts_with?(@conn.request_path, "/game") do %>
+          <li style="margin-bottom: 0px;">
+            <.link href={~p"/play"} style="font-size: 1.25rem;">
+              Play
+            </.link>
+          </li>
+        <% end %>
         <%= if @current_user do %>
           <li style="margin-bottom: 0px;">
             <.link href={~p"/profile"} style="font-size: 1.25rem;">
               <%= @current_user.username %>
             </.link>
           </li>
-          <li style="margin-bottom: 0px;">
-            <.link href={~p"/users/settings"} style="font-size: 1.25rem;">
-              Settings
-            </.link>
-          </li>
+          <%= if @conn.request_path != "/users/settings" do %>
+            <li style="margin-bottom: 0px;">
+                <.link href={~p"/users/settings"} style="font-size: 1.25rem;">
+                    Settings
+                </.link>
+            </li>
+            <% end %>
           <li style="margin-bottom: 0px;">
             <.link href={~p"/users/log_out"} method="delete" style="font-size: 1.25rem;">
               Log out

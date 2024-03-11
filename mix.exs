@@ -37,7 +37,7 @@ defmodule Website45sV3.MixProject do
       {:phoenix_ecto, "~> 4.5.1"},
       {:ecto_sql, "~> 3.11.1"},
       {:postgrex, "~> 0.17.5"},
-      {:phoenix_html, "~> 3.3"},
+      {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 0.20.12"},
       {:floki, ">= 0.36.0", only: :test},

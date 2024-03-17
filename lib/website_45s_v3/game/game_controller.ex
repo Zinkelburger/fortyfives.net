@@ -503,7 +503,7 @@ defmodule Website45sV3.Game.GameController do
       hand
     else
       # Check if all legal cards are renegable
-      if Enum.all?(legal_cards, &is_renegable?(&1, trump, card_led, suit_led)) do
+      if Enum.all?(legal_cards, &renegable?(&1, trump, card_led, suit_led)) do
         hand
       else
         # If no legal cards found, return the entire hand
@@ -515,7 +515,7 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp is_renegable?(card, trump, card_led, suit_led) do
+  defp renegable?(card, trump, card_led, suit_led) do
     renegable_cards = [
       %Card{suit: trump, value: 5},
       %Card{suit: trump, value: 11},

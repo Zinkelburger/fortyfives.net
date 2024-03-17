@@ -1,4 +1,29 @@
 defmodule Website45sV3.Accounts.UserToken do
+  @moduledoc """
+  Default generated Phoenix file
+  Manages user tokens for various contexts such as session management, email confirmation,
+  and password reset in the Website45sV3 application.
+
+  This module defines the UserToken schema and provides functions to generate, verify,
+  and query tokens stored in the database. Tokens are used for secure user authentication and
+  authorization in different parts of the application.
+
+  ## Key Functions
+
+    - `build_session_token/1`: Generates a token for user sessions.
+    - `verify_session_token_query/1`: Verifies the validity of a session token.
+    - `build_email_token/2`: Generates a token for email-related actions (confirmation, password reset).
+    - `verify_email_token_query/2`: Verifies the validity of an email token.
+    - `verify_change_email_token_query/2`: Verifies the validity of a token used for changing the user's email.
+    - `token_and_context_query/2`: Returns a query for fetching a token by its value and context.
+    - `user_and_contexts_query/2`: Returns a query for fetching all tokens for a given user and contexts.
+
+  ## Usage
+
+  Tokens are used in various parts of the application to ensure secure user authentication and authorization.
+  For example, session tokens are stored in the database to allow individual user sessions to be expired,
+  and email tokens are used for verifying user actions like email confirmation and password reset.
+  """
   use Ecto.Schema
   import Ecto.Query
   alias Website45sV3.Accounts.UserToken

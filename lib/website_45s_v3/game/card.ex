@@ -1,4 +1,17 @@
 defmodule Website45sV3.Game.Card do
+  @moduledoc """
+  Card struct uses a value and suit.
+  Functions to create new cards, convert cards to strings,
+  and compare cards.
+
+    - `new/2`: Creates a new Card struct.
+    - `to_string/1`: E.g. King of Hearts
+    - `ace_of_hearts?/1`: True if the card is the ace of hearts.
+    - `eval_trump/2`: Evaluates the ranking of a trump card.
+    - `eval_offsuite/1`: Converts card to hearts/diamonds equivalent value
+    - `less_than/4`: Compares two cards based on suit, value, suit_led, and trump.
+    - `card_to_filename/1`: Used to abbreviate the card for its filename
+  """
   alias Website45sV3.Game.Card
   @type t :: {integer(), Suit.t()}
 
@@ -26,9 +39,9 @@ defmodule Website45sV3.Game.Card do
   @doc """
   whether or not the card is the ace of hearts
   """
-  def is_ace_of_hearts?(%{suit: :hearts, value: 1}), do: true
-  def is_ace_of_hearts?({:hearts, 1}), do: true
-  def is_ace_of_hearts?(_), do: false
+  def ace_of_hearts?(%{suit: :hearts, value: 1}), do: true
+  def ace_of_hearts?({:hearts, 1}), do: true
+  def ace_of_hearts?(_), do: false
 
   def eval_trump({suit, value}, trump) do
     case {suit, value} do
@@ -61,16 +74,16 @@ defmodule Website45sV3.Game.Card do
       ) do
     cond do
       # ace of hearts
-      Card.is_ace_of_hearts?({suit1, value1}) and suit2 == trump ->
+      Card.ace_of_hearts?({suit1, value1}) and suit2 == trump ->
         eval_trump({suit1, value1}, trump) < eval_trump({suit2, value2}, trump)
 
-      Card.is_ace_of_hearts?({suit1, value1}) and suit2 != trump ->
+      Card.ace_of_hearts?({suit1, value1}) and suit2 != trump ->
         false
 
-      suit1 == trump and Card.is_ace_of_hearts?({suit2, value2}) ->
+      suit1 == trump and Card.ace_of_hearts?({suit2, value2}) ->
         eval_trump({suit1, value1}, trump) < eval_trump({suit2, value2}, trump)
 
-      suit1 != trump and Card.is_ace_of_hearts?({suit2, value2}) ->
+      suit1 != trump and Card.ace_of_hearts?({suit2, value2}) ->
         true
 
       # trump

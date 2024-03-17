@@ -1,4 +1,13 @@
 defmodule Deck do
+  @moduledoc """
+  Deck is a collection of playing cards.
+
+    - `new/0`: Creates a new deck of cards.
+    - `shuffle/1`: Shuffles the deck of cards.
+    - `shuffle/2`: Shuffles the deck of cards a specified number of times.
+    - `remove_card/1`: Removes the top card from the deck.
+    - `top_card/1`: Returns the top card of the deck without removing it.
+  """
   alias Website45sV3.Game.Card
   @type t :: %__MODULE__{cards: [Card.t()]}
 

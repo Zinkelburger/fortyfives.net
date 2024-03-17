@@ -1,4 +1,15 @@
 defmodule Website45sV3.Accounts.UserNotifier do
+  @moduledoc """
+  Default file. Not currently used.
+
+  Handles the delivery of various user-related notifications via email.
+
+  ## Key Functions
+
+    - `deliver_confirmation_instructions/2`: Sends an email with instructions to confirm the user's account.
+    - `deliver_reset_password_instructions/2`: Sends an email with instructions to reset the user's password.
+    - `deliver_update_email_instructions/2`: Sends an email with instructions to update the user's email address.
+  """
   import Swoosh.Email
 
   alias Website45sV3.Mailer

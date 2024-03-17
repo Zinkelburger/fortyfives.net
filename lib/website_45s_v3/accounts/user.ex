@@ -1,4 +1,17 @@
 defmodule Website45sV3.Accounts.User do
+  @moduledoc """
+  Defines the schema and changesets for the User entity.
+
+  The User schema represents a user in the system with fields like
+  `username`, `email`, `password`, and `confirmed_at`. It provides
+  various changesets for operations such as registration, email change,
+  and password change.
+
+  Changesets include validation for fields like `email` and `password`,
+  with options to hash the password and validate the uniqueness of email.
+  Additionally, it offers functions to confirm a user account and verify
+  a password.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -160,12 +173,6 @@ defmodule Website45sV3.Accounts.User do
     change(user, confirmed_at: now)
   end
 
-  @doc """
-  Verifies the password.
-
-  If there is no user or the user doesn't have a password, we call
-  `Bcrypt.no_user_verify/0` to avoid timing attacks.
-  """
   def valid_password?(%Website45sV3.Accounts.User{hashed_password: hashed_password}, password)
       when is_binary(hashed_password) and byte_size(password) > 0 do
     Bcrypt.verify_pass(password, hashed_password)

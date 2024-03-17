@@ -1,4 +1,10 @@
 defmodule Suit do
+  @moduledoc """
+    - `t`: hearts, diamonds, clubs, spades
+
+    - `to_string/1`: Suit atom to its string representation. ArgumentError for invalid suits.
+    - `all_suits/0`: Returns a list of all suit atoms.
+  """
   @type t :: :hearts | :diamonds | :clubs | :spades
 
   @suits %{

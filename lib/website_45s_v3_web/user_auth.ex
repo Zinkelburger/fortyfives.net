@@ -1,4 +1,12 @@
 defmodule Website45sV3Web.UserAuth do
+  @moduledoc """
+  Manages user authentication and session handling in the Website45sV3Web application.
+
+  This module includes functions for logging in and out users, managing remember me tokens,
+  and authenticating users for LiveView components.
+  It also provides helpers for redirecting based on authentication status and ensuring route access
+  requires an authenticated user.
+  """
   use Website45sV3Web, :verified_routes
 
   import Plug.Conn

@@ -5,18 +5,17 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.Card
 
   def mount(%{"id" => game_id}, _session, socket) do
-    username = socket.assigns.current_user.username
+    user_id = socket.assigns.user_id
 
     case Registry.lookup(Website45sV3.Registry, game_id) do
       [{game_pid, _}] ->
         # Fetch the game state from the GameController GenServer
         game_state = GameController.get_game_state(game_pid)
 
-        if username in game_state.players do
+        if user_id in game_state.player_ids do
           if connected?(socket) do
-            username = socket.assigns.current_user.username
-            Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{username}")
-            Presence.track(self(), game_id, username, %{})
+            Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
+            Presence.track(self(), game_id, user_id, %{})
           end
 
           {:ok,
@@ -68,7 +67,7 @@ defmodule Website45sV3Web.GameLive do
       Phoenix.PubSub.broadcast(
         Website45sV3.PubSub,
         socket.assigns.game_state.game_name,
-        {:play_card, socket.assigns.current_user.username, card}
+        {:play_card, socket.assigns.user_id, card}
       )
 
       # Clear the selected card
@@ -80,13 +79,13 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_event("confirm_discard", _params, socket) do
-    current_player = socket.assigns.current_user.username
+    current_player_id = socket.assigns.user_id
     cards_to_keep = socket.assigns.selected_cards
 
     Phoenix.PubSub.broadcast(
       Website45sV3.PubSub,
       socket.assigns.game_state.game_name,
-      {:confirm_discard, current_player, cards_to_keep}
+      {:confirm_discard, current_player_id, cards_to_keep}
     )
 
     {:noreply, assign(socket, selected_cards: [], confirm_discard_clicked: true)}
@@ -101,7 +100,7 @@ defmodule Website45sV3Web.GameLive do
       end
 
     current_suit = socket.assigns.selected_suit
-    current_player = socket.assigns.current_user.username
+    current_player_id = socket.assigns.user_id
     {game_current_bid_value, _, _} = socket.assigns.game_state.winning_bid
 
     # Validate the bid
@@ -160,7 +159,7 @@ defmodule Website45sV3Web.GameLive do
     Phoenix.PubSub.broadcast(
       Website45sV3.PubSub,
       socket.assigns.game_state.game_name,
-      {:player_bid, socket.assigns.current_user.username, "0", "pass"}
+      {:player_bid, socket.assigns.user_id, "0", "pass"}
     )
 
     {:noreply, assign(socket, new_assigns)}

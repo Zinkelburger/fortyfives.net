@@ -8,15 +8,18 @@ defmodule Website45sV3.Game.GameController do
     GenServer.start_link(__MODULE__, {game_name, players})
   end
 
-  def init({game_name, players}) do
+  def init({game_name, player_tuples}) do
+    player_map = Map.new(player_tuples, fn {unique_id, display_name} -> {unique_id, display_name} end)
+
     case Registry.register(Website45sV3.Registry, game_name, []) do
       {:ok, _pid} ->
         state =
-          setup_game(players, Enum.random(players))
+          setup_game(player_map, Enum.random(Map.keys(player_map)))
           |> Map.put(:team_scores, %{team1: 0, team2: 0})
           |> Map.put(:team_1_history, [])
           |> Map.put(:team_2_history, [])
           |> Map.put(:game_name, game_name)
+          |> Map.put(:player_map, player_map)
 
         Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
         {:ok, state}
@@ -26,27 +29,26 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp setup_game(players, starting_player \\ nil) do
+  defp setup_game(player_map, starting_player \\ nil) do
+    player_ids = Map.keys(player_map)
     deck = Deck.new() |> Deck.shuffle(5)
-    {hands, deck} = deal_cards(players, deck, 5)
+    {hands, deck} = deal_cards(player_ids, deck, 5)
 
-    starting_player =
+    starting_player_id =
       case starting_player do
         nil ->
-          # If no starting player is provided, rotate to determine the next one
-          [first_player | remaining_players] = players
-          List.first(remaining_players ++ [first_player])
+          [first_player_id | remaining_player_ids] = player_ids
+          List.first(remaining_player_ids ++ [first_player_id])
 
-        starting_player ->
-          # Use the provided starting player
-          starting_player
+        starting_player_id ->
+          starting_player_id
       end
 
     %{
       phase: "Bidding",
-      current_player: starting_player,
-      dealing_player: starting_player,
-      players: players,
+      current_player: starting_player_id,
+      dealing_player: starting_player_id,
+      player_ids: player_ids,
       hands: hands,
       legal_moves: %{},
       deck: deck,
@@ -54,7 +56,7 @@ defmodule Website45sV3.Game.GameController do
       actions: [],
       winning_bid: {0, nil, nil},
       active_players: [],
-      recieved_discards_from: [],
+      received_discards_from: [],
       bagged: false,
       suit_led: nil,
       trump: nil,
@@ -64,16 +66,16 @@ defmodule Website45sV3.Game.GameController do
     }
   end
 
-  defp deal_cards(players, deck, num_cards) when is_list(players) do
-    Enum.reduce(players, {Map.new(), deck}, fn player, {hands, deck} ->
+  defp deal_cards(player_ids, deck, num_cards) when is_list(player_ids) do
+    Enum.reduce(player_ids, {Map.new(), deck}, fn player_id, {hands, deck} ->
       {hand, deck} = draw_cards(deck, num_cards)
-      {Map.put(hands, player, hand), deck}
+      {Map.put(hands, player_id, hand), deck}
     end)
   end
 
-  defp deal_cards(player, deck, num_cards) when is_binary(player) do
+  defp deal_cards(player_id, deck, num_cards) when is_binary(player_id) do
     {hand, new_deck} = draw_cards(deck, num_cards)
-    {%{player => hand}, new_deck}
+    {%{player_id => hand}, new_deck}
   end
 
   defp draw_cards(deck, num_cards) do
@@ -88,19 +90,17 @@ defmodule Website45sV3.Game.GameController do
   def get_game_state(pid), do: GenServer.call(pid, :get_game_state)
 
   def terminate(reason, state) do
-    IO.puts(
-      "Terminating GameController with reason: #{inspect(reason)} and state: #{inspect(state)}"
-    )
+    IO.puts("Terminating GameController with reason: #{inspect(reason)} and state: #{inspect(state)}")
 
     # Notify all players to leave the game
-    for player <- state.players do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", :leave_game)
+    for player_id <- state.player_ids do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :leave_game)
     end
 
     :ok
   end
 
-  def handle_info({:play_card, player, card}, state) do
+  def handle_info({:play_card, player_id, card}, state) do
     # Convert string suit to atom if it's a string
     card =
       if is_binary(card.suit) do
@@ -110,12 +110,12 @@ defmodule Website45sV3.Game.GameController do
       end
 
     # 1. Remove the card from the player's hand
-    current_hand = Map.get(state.hands, player, [])
+    current_hand = Map.get(state.hands, player_id, [])
     new_hand = List.delete(current_hand, card)
-    updated_hands = Map.put(state.hands, player, new_hand)
+    updated_hands = Map.put(state.hands, player_id, new_hand)
 
-    # 2. Add the played card with player information to the played_cards
-    played_cards_entry = %{player: player, card: card}
+    # 2. Add the played card with player_id information to the played_cards
+    played_cards_entry = %{player_id: player_id, card: card}
     updated_played_cards = [played_cards_entry | state.played_cards || []]
 
     # Only calculate legal moves if it's the first card played in this trick
@@ -134,8 +134,8 @@ defmodule Website45sV3.Game.GameController do
       end
 
     # Increment the current player to the next player
-    current_player_index = Enum.find_index(state.players, fn p -> p == state.current_player end)
-    next_player = Enum.at(state.players, rem(current_player_index + 1, 4))
+    current_player_index = Enum.find_index(state.player_ids, fn id -> id == state.current_player end)
+    next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, length(state.player_ids)))
 
     # Construct the new state
     new_state = %{
@@ -143,14 +143,14 @@ defmodule Website45sV3.Game.GameController do
       | hands: updated_hands,
         played_cards: updated_played_cards,
         suit_led: suit_led,
-        current_player: next_player,
+        current_player: next_player_id,
         legal_moves: legal_moves
     }
 
     # Check if 4 cards have been played
     new_state =
       if length(updated_played_cards) >= 4 do
-        {winning_player, highest_card, updated_state_with_scores} =
+        {winning_player_id, highest_card, updated_state_with_scores} =
           evaluate_played_cards(new_state)
 
         # if it is not the last trick, end the bid
@@ -165,9 +165,9 @@ defmodule Website45sV3.Game.GameController do
           | current_player: nil,
             actions:
               updated_state_with_scores.actions ++
-                ["#{winning_player} won trick #{length(state.trick_winning_cards) + 1}"],
+                ["#{winning_player_id} won trick #{length(state.trick_winning_cards) + 1}"],
             trick_winning_cards: [
-              %{player: winning_player, card: highest_card.card} | state.trick_winning_cards || []
+              %{player_id: winning_player_id, card: highest_card.card} | state.trick_winning_cards || []
             ],
             legal_moves: %{}
         }
@@ -176,15 +176,15 @@ defmodule Website45sV3.Game.GameController do
       end
 
     new_state =
-      if length(new_state.trick_winning_cards) == 5 do
+      if length(new_state.trick_winning_cards) >= 5 do
         handle_scoring_phase(new_state)
       else
         new_state
       end
 
     # Broadcasting the updated state to the players
-    for p <- state.players do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
+    for p_id <- state.player_ids do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p_id}", {:update_state, new_state})
     end
 
     {:noreply, new_state}

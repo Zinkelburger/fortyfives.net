@@ -77,7 +77,7 @@ defmodule Website45sV3Web.Router do
     pipe_through [:browser]
 
     live_session :play_session do
-      live "/play_anonymous", QueueAnonLive, :new
+      live "/play", QueueAuthLive, :new
     end
   end
 

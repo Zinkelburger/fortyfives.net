@@ -2,42 +2,53 @@ defmodule Website45sV3Web.QueueAuthLive do
   use Website45sV3Web, :live_view
   alias Website45sV3Web.Presence
   alias Website45sV3.Game.QueueStarter
+  alias UUID
 
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
+    user_id =
+      case session["user_id"] do
+        nil -> "anon_#{UUID.uuid4()}"
+        id -> "user_#{id}"
+      end
+
+    display_name =
+      case session["user_id"] do
+        nil -> "Anonymous"
+        _ -> socket.assigns.current_user.username
+      end
+
     if connected?(socket) do
-      username = socket.assigns.current_user.username
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
-      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{username}")
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
     end
 
-    # Fetch the current state of the queue.
     initial_queue = Presence.list("queue")
 
-    {:ok, assign(socket, queue: initial_queue, in_queue: false)}
+    {:ok, assign(socket, queue: initial_queue, in_queue: false, user_id: user_id, display_name: display_name)}
   end
 
   def terminate(_reason, socket) do
-    username = socket.assigns.current_user.username
-    Website45sV3.Game.QueueStarter.remove_player(username)
+    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
+    QueueStarter.remove_player({display_name, user_id})
     :ok
   end
 
   def handle_event("join", _, socket) do
-    username = socket.assigns.current_user.username
-    Presence.track(self(), "queue", username, %{})
+    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
+    Presence.track(self(), "queue", user_id, %{display_name: display_name})
 
-    QueueStarter.add_player(username)
+    QueueStarter.add_player({display_name, user_id})
 
     {:noreply, assign(socket, in_queue: true)}
   end
 
   def handle_event("leave", _, socket) do
-    username = socket.assigns.current_user.username
-    Presence.untrack(self(), "queue", username)
+    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
+    Presence.untrack(self(), "queue", user_id)
 
-    QueueStarter.remove_player(username)
+    QueueStarter.remove_player({display_name, user_id})
 
-    {:noreply, assign(socket, in_queue: false, queue: Map.drop(socket.assigns.queue, [username]))}
+    {:noreply, assign(socket, in_queue: false, queue: Map.drop(socket.assigns.queue, [user_id]))}
   end
 
   def handle_info(:update_queue, socket) do

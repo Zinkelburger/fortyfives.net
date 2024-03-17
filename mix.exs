@@ -37,14 +37,14 @@ defmodule Website45sV3.MixProject do
       {:phoenix_ecto, "~> 4.5.1"},
       {:ecto_sql, "~> 3.11.1"},
       {:postgrex, "~> 0.17.5"},
-      {:phoenix_html, "~> 3.3"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 0.20.12"},
+      {:phoenix_html, "~> 4.1.1"},
+      {:phoenix_live_reload, "~> 1.5.2", only: :dev},
+      {:phoenix_live_view, "~> 0.20.14"},
       {:floki, ">= 0.36.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.0"},
       {:esbuild, "~> 0.7", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.2.2", runtime: Mix.env() == :dev},
-      {:swoosh, "~> 1.15.3"},
+      {:swoosh, "~> 1.16.0"},
       {:finch, "~> 0.13"},
       {:telemetry_metrics, "~> 0.6.2"},
       {:telemetry_poller, "~> 1.0"},
@@ -52,7 +52,8 @@ defmodule Website45sV3.MixProject do
       {:jason, "~> 1.2"},
       {:plug_cowboy, "~> 2.5"},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
-      {:credo, "~> 1.6", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.6", only: [:dev, :test], runtime: false},
+      {:uuid, "~> 1.1.8"}
     ]
   end
 

@@ -1,4 +1,4 @@
-# Website45sV3
+# Fortyfives.net
 A website for the card game 45s. <https://fortyfives.net>
 
 ## Deploying
@@ -8,7 +8,7 @@ Cakewalk:
 
 `docker-compose up`
 
-Use the `docker-compose-env.yml` if you want to use . 
+Use the `docker-compose-env.yml` if you want to use a `.env` file. 
 
 Generate secrets with `mix phx.gen.secret`.
 
@@ -24,7 +24,7 @@ Generate secrets with `mix phx.gen.secret`.
 - **Login:** `/users/log_in`
 - **Forgot Password:** `/users/reset_password`
 - **Reset Password:**  `/users/reset_password/:token`
-- **Confirm Email:** U`/users/confirm/:token`
+- **Confirm Email:** `/users/confirm/:token`
 
 ### User Settings
 - **Settings:** `/users/settings`

@@ -46,7 +46,7 @@ defmodule Website45sV3.MixProject do
       {:tailwind, "~> 0.2.2", runtime: Mix.env() == :dev},
       {:swoosh, "~> 1.16.0"},
       {:finch, "~> 0.13"},
-      {:telemetry_metrics, "~> 0.6.2"},
+      {:telemetry_metrics, "~> 1.0.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 0.24.0"},
       {:jason, "~> 1.2"},

@@ -21,6 +21,7 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
+import { v4 as uuidv4 } from 'uuid'
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
@@ -40,6 +41,23 @@ Hooks.AutoDismissFlash = {
       }, 30);
     }
   };  
+
+Hooks.ClearAnonId = {
+  received() {
+      localStorage.removeItem('anonUserId');
+  }
+};
+
+Hooks.AnonUser = {
+mounted() {
+    let anonUserId = localStorage.getItem('anonUserId');
+    if (!anonUserId) {
+      anonUserId = 'anon_' + uuidv4();
+      localStorage.setItem('anonUserId', anonUserId);
+    }
+    this.pushEvent('set-anon-user-id', { anonUserId: anonUserId });
+  }
+};
 
 let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: Hooks})
 

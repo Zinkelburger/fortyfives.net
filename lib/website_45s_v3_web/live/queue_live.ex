@@ -1,30 +1,18 @@
-defmodule Website45sV3Web.QueueAuthLive do
+defmodule Website45sV3Web.QueueLive do
+  # tuple is {display_name, user_id}
   use Website45sV3Web, :live_view
   alias Website45sV3Web.Presence
   alias Website45sV3.Game.QueueStarter
-  alias UUID
 
-  def mount(_params, session, socket) do
-    user_id =
-      case session["user_id"] do
-        nil -> "anon_#{UUID.uuid4()}"
-        id -> "user_#{id}"
-      end
-
-    display_name =
-      case session["user_id"] do
-        nil -> "Anonymous"
-        _ -> socket.assigns.current_user.username
-      end
-
+  def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
-      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{socket.assigns.user_id}")
     end
 
     initial_queue = Presence.list("queue")
 
-    {:ok, assign(socket, queue: initial_queue, in_queue: false, user_id: user_id, display_name: display_name)}
+    {:ok, assign(socket, queue: initial_queue, in_queue: false)}
   end
 
   def terminate(_reason, socket) do
@@ -51,13 +39,18 @@ defmodule Website45sV3Web.QueueAuthLive do
     {:noreply, assign(socket, in_queue: false, queue: Map.drop(socket.assigns.queue, [user_id]))}
   end
 
+  def handle_event("set-anon-user-id", %{"anonUserId" => anon_user_id}, socket) do
+    {:noreply, assign(socket, :user_id, anon_user_id)}
+  end
+
   def handle_info(:update_queue, socket) do
     queue = Presence.list("queue") |> Map.keys()
     {:noreply, assign(socket, queue: queue)}
   end
 
   def handle_info({:redirect, url}, socket) do
-    {:noreply, push_redirect(socket, to: url)}
+    IO.inspect("user id in assigns: #{socket.assigns.user_id}")
+    {:noreply, push_redirect(socket, to: url, replace: :replace)}
   end
 
   def handle_info(
@@ -79,14 +72,16 @@ defmodule Website45sV3Web.QueueAuthLive do
 
   def render(assigns) do
     ~H"""
-    <div style="text-align: center; justify-content:center; margin-top:10px;">
+    <div id="queue-live" phx-hook="AnonUser" style="text-align: center; justify-content:center; margin-top:10px;">
       <h1 style="color: #d2e8f9; margin-bottom: 0px;">Queue</h1>
       <p style="color: #d2e8f9; margin-bottom: 20px;">4-players, teams</p>
       <div class="queue-cards">
-        <%= for {name, _meta} <- @queue do %>
-          <div class="player-card">
-            <p><%= name %></p>
-          </div>
+        <%= for {_user_id, presence} <- @queue do %>
+          <%= for meta <- presence.metas do %>
+            <div class="player-card">
+              <p><%= meta.display_name %></p>
+            </div>
+          <% end %>
         <% end %>
       </div>
       <%= if !@in_queue do %>

@@ -5,6 +5,7 @@ defmodule Website45sV3Web.UserAuth do
   import Phoenix.Controller
 
   alias Website45sV3.Accounts
+  alias UUID
 
   # Make the remember me cookie valid for 60 days.
   # If you want bump or reduce this value, also change
@@ -33,7 +34,15 @@ defmodule Website45sV3Web.UserAuth do
     |> renew_session()
     |> put_token_in_session(token)
     |> maybe_write_remember_me_cookie(token, params)
+    |> send_clear_anon_id_message()
     |> redirect(to: user_return_to || signed_in_path(conn))
+  end
+
+  defp send_clear_anon_id_message(conn) do
+    if live_socket_id = get_session(conn, :live_socket_id) do
+      Website45sV3Web.Endpoint.broadcast(live_socket_id, "clear_anon_id", %{})
+    end
+    conn
   end
 
   defp maybe_write_remember_me_cookie(conn, token, %{"remember_me" => "true"}) do
@@ -162,6 +171,34 @@ defmodule Website45sV3Web.UserAuth do
     end
   end
 
+  def on_mount(:potentially_anonymous_user, _params, session, socket) do
+    {:cont, mount_current_user(socket, session)}
+  end
+
+  defp mount_current_user(socket, session) do
+    socket =
+      Phoenix.Component.assign_new(socket, :current_user, fn ->
+        if user_token = session["user_token"] do
+          Accounts.get_user_by_session_token(user_token)
+        end
+      end)
+
+    socket =
+      Phoenix.Component.assign_new(socket, :user_id, fn ->
+        case socket.assigns.current_user do
+          nil -> Map.get(socket.assigns, :user_id, nil)
+          user -> "user_#{user.username}"
+        end
+      end)
+
+    Phoenix.Component.assign_new(socket, :display_name, fn ->
+      case socket.assigns.current_user do
+        nil -> "Anonymous"
+        user -> user.username
+      end
+    end)
+  end
+
   def on_mount(:redirect_if_user_is_authenticated, _params, session, socket) do
     socket = mount_current_user(socket, session)
 
@@ -170,14 +207,6 @@ defmodule Website45sV3Web.UserAuth do
     else
       {:cont, socket}
     end
-  end
-
-  defp mount_current_user(socket, session) do
-    Phoenix.Component.assign_new(socket, :current_user, fn ->
-      if user_token = session["user_token"] do
-        Accounts.get_user_by_session_token(user_token)
-      end
-    end)
   end
 
   @doc """
@@ -209,6 +238,12 @@ defmodule Website45sV3Web.UserAuth do
       |> redirect(to: ~p"/users/log_in")
       |> halt()
     end
+  end
+
+  def potentially_anonymous_user(conn, _opts) do
+    {user_token, conn} = ensure_user_token(conn)
+    user = user_token && Accounts.get_user_by_session_token(user_token)
+    assign(conn, :current_user, user)
   end
 
   defp put_token_in_session(conn, token) do

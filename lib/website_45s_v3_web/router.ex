@@ -11,6 +11,7 @@ defmodule Website45sV3Web.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug :fetch_current_user
+    plug :potentially_anonymous_user
   end
 
   pipeline :api do
@@ -68,16 +69,16 @@ defmodule Website45sV3Web.Router do
       on_mount: [{Website45sV3Web.UserAuth, :ensure_authenticated}] do
       live "/users/settings", UserSettingsLive, :edit
       live "/users/settings/confirm_email/:token", UserSettingsLive, :confirm_email
-      live "/play", QueueAuthLive, :new
-      live "/game/:id", GameLive, :new
     end
   end
 
   scope "/", Website45sV3Web do
-    pipe_through [:browser]
+    pipe_through [:browser, :potentially_anonymous_user]
 
-    live_session :play_session do
-      live "/play", QueueAuthLive, :new
+    live_session :potentially_anonymous_user,
+      on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}] do
+      live "/play", QueueLive, :new
+      live "/game/:id", GameLive, :new
     end
   end
 

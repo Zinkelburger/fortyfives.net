@@ -6,12 +6,14 @@ defmodule Website45sV3.Game.QueueStarter do
     GenServer.start_link(__MODULE__, initial_state, name: __MODULE__)
   end
 
-  def add_player(player_name) do
-    GenServer.call(__MODULE__, {:add_player, player_name})
+  def add_player({player_name, player_id}) do
+    IO.puts("Player joined: #{player_name} (ID: #{player_id})")
+    GenServer.call(__MODULE__, {:add_player, {player_name, player_id}})
   end
 
-  def remove_player(player_name) do
-    GenServer.call(__MODULE__, {:remove_player, player_name})
+  def remove_player({player_name, player_id}) do
+    IO.puts("Player left: #{player_name} (ID: #{player_id})")
+    GenServer.call(__MODULE__, {:remove_player, {player_name, player_id}})
   end
 
   # GenServer callbacks
@@ -19,8 +21,9 @@ defmodule Website45sV3.Game.QueueStarter do
     {:ok, state}
   end
 
-  def handle_call({:add_player, player_name}, _from, state) do
-    updated_state = state ++ [player_name]
+  def handle_call({:add_player, player}, _from, state) do
+    IO.puts("Before join: (state: #{state})")
+    updated_state = state ++ [player]
 
     if length(updated_state) >= 4 do
       players = Enum.take(updated_state, 4)
@@ -31,8 +34,9 @@ defmodule Website45sV3.Game.QueueStarter do
     end
   end
 
-  def handle_call({:remove_player, player_name}, _from, state) do
-    updated_state = List.delete(state, player_name)
+  def handle_call({:remove_player, player}, _from, state) do
+    IO.puts("Before leave: (state: #{state})")
+    updated_state = List.delete(state, player)
     {:reply, :ok, updated_state}
   end
 
@@ -43,10 +47,10 @@ defmodule Website45sV3.Game.QueueStarter do
     wait_for_registration(game_name)
 
     # Redirect the players to the game page
-    for player <- players do
+    for {_display_name, user_id} <- players do
       Phoenix.PubSub.broadcast(
         Website45sV3.PubSub,
-        "user:#{player}",
+        "user:#{user_id}",
         {:redirect, "/game/#{game_name}"}
       )
     end

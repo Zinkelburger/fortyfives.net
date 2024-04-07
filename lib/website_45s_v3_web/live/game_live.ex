@@ -5,12 +5,27 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.Card
 
   def mount(%{"id" => game_id}, _session, socket) do
-    user_id = socket.assigns.user_id
+    {user_id, display_name} = if connected?(socket) do
+      user_id = socket.assigns.user_id
+      display_name = socket.assigns.display_name
+      IO.inspect(user_id, label: "User ID")
+      {user_id, display_name}
+    else
+      IO.inspect("unable to connect to socket")
+      {nil, nil}
+    end
+
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{socket.assigns.user_id}")
+    end
+
 
     case Registry.lookup(Website45sV3.Registry, game_id) do
       [{game_pid, _}] ->
-        # Fetch the game state from the GameController GenServer
+        # Check if the user is in the game
         game_state = GameController.get_game_state(game_pid)
+        IO.inspect(game_state.player_ids, label: "Game State Player IDs")
 
         if user_id in game_state.player_ids do
           if connected?(socket) do
@@ -24,16 +39,20 @@ defmodule Website45sV3Web.GameLive do
              game_state: game_state,
              selected_suit: nil,
              selected_bid: nil,
+             user_id: user_id,
+             display_name: display_name,
              selected_cards: [],
              confirm_discard_clicked: false
            )}
         else
           # If the user is not in the game, redirect them back to the queue page
+          IO.puts("User #{user_id} not in game, redirecting to /play")
           {:ok, push_redirect(socket, to: "/play")}
         end
 
       _ ->
         # If the game does not exist, redirect them back to the queue page
+        IO.puts("Game does not exist, redirecting to /play")
         {:ok, push_redirect(socket, to: "/play")}
     end
   end
@@ -132,7 +151,7 @@ defmodule Website45sV3Web.GameLive do
         Phoenix.PubSub.broadcast(
           Website45sV3.PubSub,
           socket.assigns.game_state.game_name,
-          {:player_bid, current_player, current_bid, current_suit}
+          {:player_bid, current_player_id, current_bid, current_suit}
         )
 
         # Clear the assigns for selected_suit and selected_bid
@@ -249,10 +268,10 @@ defmodule Website45sV3Web.GameLive do
     assigns =
       assigns
       |> assign(:current_bid, elem(assigns.game_state.winning_bid, 0))
-      |> assign(:current_player, assigns.game_state.current_player)
+      |> assign(:current_player, assigns.game_state.current_player_id)
       |> assign(
         :is_current_player,
-        assigns.current_user.username == assigns.game_state.current_player
+        assigns.user_id == assigns.game_state.current_player_id
       )
       |> assign(:bagged, assigns.game_state.bagged)
 
@@ -405,14 +424,14 @@ defmodule Website45sV3Web.GameLive do
   defp render_player_hand(assigns) do
     ~H"""
     <div class="player-hand">
-      <%= for %Website45sV3.Game.Card{value: value, suit: suit} <- assigns.game_state.hands[assigns.current_user.username] do %>
+      <%= for %Website45sV3.Game.Card{value: value, suit: suit} <- assigns.game_state.hands[assigns.user_id] do %>
         <% card_value = Integer.to_string(value) <> "_" <> Atom.to_string(suit) %>
-        <% legal_moves = Map.get(assigns.game_state.legal_moves, assigns.current_user.username, []) %>
+        <% legal_moves = Map.get(assigns.game_state.legal_moves, assigns.user_id, []) %>
         <% legal_card_tuples =
           Enum.map(legal_moves, fn %Website45sV3.Game.Card{value: v, suit: s} -> {v, s} end) %>
         <% is_legal_moves_empty = Enum.empty?(legal_moves) %>
         <% is_playing_phase = assigns.game_state.phase == "Playing" %>
-        <% is_current_player_turn = assigns.game_state.current_player == assigns.current_user.username %>
+        <% is_current_player_turn = assigns.game_state.current_player_id == assigns.user_id %>
         <% is_card_legal = is_legal_moves_empty || {value, suit} in legal_card_tuples %>
         <% can_select_card =
           !assigns.confirm_discard_clicked &&
@@ -440,19 +459,19 @@ defmodule Website45sV3Web.GameLive do
       assign(
         assigns,
         :current_player_position,
-        Enum.find_index(assigns.game_state.players, fn player ->
-          player == assigns.current_user.username
+        Enum.find_index(assigns.game_state.player_ids, fn player ->
+          player == assigns.user_id
         end)
       )
 
-    assigns = assign(assigns, :current_player, assigns.game_state.current_player)
-    is_current_player = assigns.current_user.username == assigns.current_player
+    assigns = assign(assigns, :current_player_id, assigns.game_state.current_player_id)
+    is_current_player = assigns.user_id == assigns.current_player_id
 
     turn_message =
       cond do
-        assigns.current_player == nil -> " "
+        assigns.current_player_id == nil -> " "
         is_current_player -> "Your turn"
-        true -> "#{assigns.current_player}'s turn"
+        true -> "#{assigns.display_name}'s turn"
       end
 
     assigns = assign(assigns, :is_current_player, is_current_player)

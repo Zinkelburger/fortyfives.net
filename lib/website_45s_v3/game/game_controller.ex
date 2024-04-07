@@ -31,7 +31,6 @@ defmodule Website45sV3.Game.GameController do
 
   defp setup_game(player_map, starting_player \\ nil) do
     player_ids = Map.keys(player_map)
-    player_names = Map.values(player_map)
     deck = Deck.new() |> Deck.shuffle(5)
     {hands, deck} = deal_cards(player_ids, deck, 5)
 
@@ -50,7 +49,7 @@ defmodule Website45sV3.Game.GameController do
       current_player_id: starting_player_id,
       dealing_player_id: starting_player_id,
       player_ids: player_ids,
-      player_names: player_names,
+      player_map: player_map,
       hands: hands,
       legal_moves: %{},
       deck: deck,
@@ -193,23 +192,23 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info(:end_scoring, state) do
-    new_state = Map.merge(state, setup_game(state.players))
+    new_state = Map.merge(state, setup_game(state.player_ids))
     # Broadcasting the updated state to the players
-    for p <- state.players do
+    for p <- state.player_ids do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
 
     {:noreply, new_state}
   end
 
-  def handle_info({:player_bid, player, bid, suit}, state) do
+  def handle_info({:player_bid, player_id, bid, suit}, state) do
     bid = String.to_integer(bid)
 
     bid_action =
       if bid == 0 do
-        "#{player} passed"
+        "#{state.player_map[player_id]} passed"
       else
-        "#{player} bid #{bid}"
+        "#{state.player_map[player_id]} bid #{bid}"
       end
 
     actions = state.actions ++ [bid_action]
@@ -219,7 +218,7 @@ defmodule Website45sV3.Game.GameController do
     # If the bid is higher, update stateActions, otherwise leave it unchanged.
     winning_bid =
       if bid > highest_bid do
-        {bid, player, suit}
+        {bid, player_id, suit}
       else
         state.winning_bid
       end
@@ -232,8 +231,8 @@ defmodule Website45sV3.Game.GameController do
     phase = if length(actions) >= 4, do: "Discard", else: state.phase
 
     # Move to the next player
-    current_player_index = Enum.find_index(state.players, fn p -> p == state.current_player_id end)
-    next_player_id = Enum.at(state.players, rem(current_player_index + 1, 4))
+    current_player_index = Enum.find_index(state.player_ids, fn p -> p == state.current_player_id end)
+    next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, 4))
 
     {updated_hands, updated_deck} =
       if phase == "Discard" do
@@ -245,7 +244,7 @@ defmodule Website45sV3.Game.GameController do
         {state.hands, state.deck}
       end
 
-    winning_bid_action = "#{winning_bid_player} won with #{winning_bid_value} #{winning_bid_suit}"
+    winning_bid_action = "#{state.player_map[winning_bid_player]} won with #{winning_bid_value} #{winning_bid_suit}"
     actions = if phase == "Discard", do: [winning_bid_action], else: actions
     # Set trump if phase is Discard
     trump = if phase == "Discard", do: String.to_atom(winning_bid_suit), else: state.trump
@@ -262,7 +261,7 @@ defmodule Website45sV3.Game.GameController do
         trump: trump
     }
 
-    for player <- state.players do
+    for player <- state.player_ids do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", {:update_state, new_state})
     end
 
@@ -308,26 +307,26 @@ defmodule Website45sV3.Game.GameController do
     discarded_cards = Enum.filter(current_hand, fn card -> card not in selected_cards end)
     updated_discard_deck = state.discardDeck ++ discarded_cards
 
-    updated_discarded_players = [player | state.recieved_discards_from]
+    updated_discarded_players = [player | state.received_discards_from]
 
     # Create the initial new state with the updated hands and discard deck
     new_state = %{
       state
       | hands: updated_hands,
         discardDeck: updated_discard_deck,
-        recieved_discards_from: updated_discarded_players
+        received_discards_from: updated_discarded_players
     }
 
     # Update the phase if all players have discarded
     new_state =
-      if length(updated_discarded_players) == length(state.players) do
-        {updated_hands, updated_deck} = deal_additional_cards(new_state, state.players)
+      if length(updated_discarded_players) == length(state.player_ids) do
+        {updated_hands, updated_deck} = deal_additional_cards(new_state, state.player_ids)
         winning_bid_player_id = new_state.winning_bid |> elem(1)
 
         %{
           new_state
           | phase: "Playing",
-            recieved_discards_from: [],
+            received_discards_from: [],
             hands: updated_hands,
             deck: updated_deck,
             actions: [],
@@ -348,7 +347,7 @@ defmodule Website45sV3.Game.GameController do
   def handle_info({:transition_to_end_bid, winning_player_id}, state) do
     new_state = %{
       state
-      | current_player: winning_player_id,
+      | current_player_id: winning_player_id,
         played_cards: [],
         suit_led: nil
     }
@@ -428,7 +427,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   defp evaluate_cards(state, cards) do
-    team1_players = [Enum.at(state.players, 0), Enum.at(state.players, 2)]
+    team1_players = [Enum.at(state.player_ids, 0), Enum.at(state.player_ids, 2)]
 
     highest_card =
       Enum.max_by(cards, fn %{card: card_a} ->
@@ -464,7 +463,7 @@ defmodule Website45sV3.Game.GameController do
   defp calculate_legal_moves(state, played_card) do
     trump = state.trump
 
-    state.players
+    state.player_ids
     |> Enum.reduce(%{}, fn player, acc ->
       hand = Map.get(state.hands, player, [])
       legal_cards = get_legal_moves(hand, played_card, trump)
@@ -540,8 +539,8 @@ defmodule Website45sV3.Game.GameController do
 
     bid_team =
       if bid_player in [
-           Enum.at(updated_state_with_scores.players, 0),
-           Enum.at(updated_state_with_scores.players, 2)
+           Enum.at(updated_state_with_scores.player_ids, 0),
+           Enum.at(updated_state_with_scores.player_ids, 2)
          ] do
         :team1
       else
@@ -590,8 +589,8 @@ defmodule Website45sV3.Game.GameController do
     team_1_players =
       Enum.join(
         [
-          Enum.at(updated_state_with_scores.players, 0),
-          Enum.at(updated_state_with_scores.players, 2)
+          Enum.at(updated_state_with_scores.player_ids, 0),
+          Enum.at(updated_state_with_scores.player_ids, 2)
         ],
         ", "
       )
@@ -599,8 +598,8 @@ defmodule Website45sV3.Game.GameController do
     team_2_players =
       Enum.join(
         [
-          Enum.at(updated_state_with_scores.players, 1),
-          Enum.at(updated_state_with_scores.players, 3)
+          Enum.at(updated_state_with_scores.player_ids, 1),
+          Enum.at(updated_state_with_scores.player_ids, 3)
         ],
         ", "
       )
@@ -627,7 +626,7 @@ defmodule Website45sV3.Game.GameController do
 
     %{
       updated_state_with_scores
-      | current_player: nil,
+      | current_player_id: nil,
         team_scores: updated_team_scores,
         round_scores: %{team1: 0, team2: 0},
         team_1_history: team_1_history,

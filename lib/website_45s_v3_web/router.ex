@@ -16,7 +16,9 @@ defmodule Website45sV3Web.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug :fetch_session
   end
+
 
   scope "/", Website45sV3Web do
     pipe_through :browser
@@ -44,6 +46,11 @@ defmodule Website45sV3Web.Router do
       live_dashboard "/dashboard", metrics: Website45sV3Web.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+  end
+
+  scope "/api", Website45sV3Web do
+    pipe_through :api
+    post "/get_user_id", SessionController, :get_user_id
   end
 
   ## Authentication routes

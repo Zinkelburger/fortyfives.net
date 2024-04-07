@@ -4,20 +4,29 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.Card
 
-  def mount(%{"id" => game_id}, _session, socket) do
-    {user_id, display_name} = if connected?(socket) do
-      user_id = socket.assigns.user_id
-      display_name = socket.assigns.display_name
-      IO.inspect(user_id, label: "User ID")
-      {user_id, display_name}
-    else
-      IO.inspect("unable to connect to socket")
-      {nil, nil}
-    end
+  def mount(%{"id" => game_id}, session, socket) do
+    IO.inspect(session, label: "Session data")
+    user_id =
+      if session["user_id"] do
+        session["user_id"]
+      else
+        current_user = socket.assigns.current_user
+        if current_user do
+          "user_#{current_user.username}"
+        else
+          raise "User ID not found in session and no current user assigned."
+        end
+      end
+    display_name =
+      if current_user = socket.assigns.current_user do
+        current_user.username
+      else
+        "Anonymous"
+      end
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
-      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{socket.assigns.user_id}")
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
     end
 
 
@@ -268,7 +277,8 @@ defmodule Website45sV3Web.GameLive do
     assigns =
       assigns
       |> assign(:current_bid, elem(assigns.game_state.winning_bid, 0))
-      |> assign(:current_player, assigns.game_state.current_player_id)
+      |> assign(:current_player_id, assigns.game_state.current_player_id)
+      |> assign(:current_player_name, assigns.game_state.player_map[assigns.game_state.current_player_id])
       |> assign(
         :is_current_player,
         assigns.user_id == assigns.game_state.current_player_id
@@ -286,7 +296,7 @@ defmodule Website45sV3Web.GameLive do
     ~H"""
     <div>
       <%= if not @is_current_player do %>
-        <p style="color: #d2e8f9; text-align: center;">It is <%= @current_player %>'s turn</p>
+        <p style="color: #d2e8f9; text-align: center;">It is <%= @current_player_name %>'s turn</p>
       <% else %>
         <%= if @bagged do %>
           <p style="color: #d2e8f9; text-align: center;">You are bagged</p>

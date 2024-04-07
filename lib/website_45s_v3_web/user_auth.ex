@@ -175,30 +175,6 @@ defmodule Website45sV3Web.UserAuth do
     {:cont, mount_current_user(socket, session)}
   end
 
-  defp mount_current_user(socket, session) do
-    socket =
-      Phoenix.Component.assign_new(socket, :current_user, fn ->
-        if user_token = session["user_token"] do
-          Accounts.get_user_by_session_token(user_token)
-        end
-      end)
-
-    socket =
-      Phoenix.Component.assign_new(socket, :user_id, fn ->
-        case socket.assigns.current_user do
-          nil -> Map.get(socket.assigns, :user_id, nil)
-          user -> "user_#{user.username}"
-        end
-      end)
-
-    Phoenix.Component.assign_new(socket, :display_name, fn ->
-      case socket.assigns.current_user do
-        nil -> "Anonymous"
-        user -> user.username
-      end
-    end)
-  end
-
   def on_mount(:redirect_if_user_is_authenticated, _params, session, socket) do
     socket = mount_current_user(socket, session)
 
@@ -207,6 +183,14 @@ defmodule Website45sV3Web.UserAuth do
     else
       {:cont, socket}
     end
+  end
+
+  defp mount_current_user(socket, session) do
+    Phoenix.Component.assign_new(socket, :current_user, fn ->
+      if user_token = session["user_token"] do
+        Accounts.get_user_by_session_token(user_token)
+      end
+    end)
   end
 
   @doc """

@@ -1,18 +1,32 @@
 defmodule Website45sV3Web.QueueLive do
-  # tuple is {display_name, user_id}
   use Website45sV3Web, :live_view
   alias Website45sV3Web.Presence
   alias Website45sV3.Game.QueueStarter
+  alias UUID
 
   def mount(_params, _session, socket) do
+    user_id =
+      if current_user = socket.assigns.current_user do
+        "user_#{current_user.username}"
+      else
+        nil
+      end
+
+    display_name =
+      if current_user = socket.assigns.current_user do
+        current_user.username
+      else
+        "Anonymous"
+      end
+
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
-      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{socket.assigns.user_id}")
+      if user_id, do: Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
     end
 
     initial_queue = Presence.list("queue")
 
-    {:ok, assign(socket, queue: initial_queue, in_queue: false)}
+    {:ok, assign(socket, user_id: user_id, display_name: display_name, queue: initial_queue, in_queue: false)}
   end
 
   def terminate(_reason, socket) do
@@ -22,12 +36,16 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_event("join", _, socket) do
-    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
-    Presence.track(self(), "queue", user_id, %{display_name: display_name})
-
-    QueueStarter.add_player({display_name, user_id})
-
-    {:noreply, assign(socket, in_queue: true)}
+    IO.inspect("User id: #{socket.assigns.user_id}")
+    if socket.assigns.user_id do
+      {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
+      Presence.track(self(), "queue", user_id, %{display_name: display_name})
+      QueueStarter.add_player({display_name, user_id})
+      {:noreply, assign(socket, in_queue: true)}
+    else
+      # Refresh the page if there is no user id
+      IO.inspect("IMPLEMENT THIS!!!!!")
+    end
   end
 
   def handle_event("leave", _, socket) do
@@ -39,8 +57,12 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, assign(socket, in_queue: false, queue: Map.drop(socket.assigns.queue, [user_id]))}
   end
 
-  def handle_event("set-anon-user-id", %{"anonUserId" => anon_user_id}, socket) do
-    {:noreply, assign(socket, :user_id, anon_user_id)}
+  def handle_event("set-anon-user-id", %{"user_id" => user_id}, socket) do
+    updated_socket = assign(socket, :user_id, user_id)
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
+    end
+    {:noreply, updated_socket}
   end
 
   def handle_info(:update_queue, socket) do
@@ -72,7 +94,7 @@ defmodule Website45sV3Web.QueueLive do
 
   def render(assigns) do
     ~H"""
-    <div id="queue-live" phx-hook="AnonUser" style="text-align: center; justify-content:center; margin-top:10px;">
+    <div id="FetchUserId" phx-hook="FetchUserId" style="text-align: center; justify-content:center; margin-top:10px;">
       <h1 style="color: #d2e8f9; margin-bottom: 0px;">Queue</h1>
       <p style="color: #d2e8f9; margin-bottom: 20px;">4-players, teams</p>
       <div class="queue-cards">

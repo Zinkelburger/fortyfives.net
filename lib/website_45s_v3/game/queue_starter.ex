@@ -22,7 +22,7 @@ defmodule Website45sV3.Game.QueueStarter do
   end
 
   def handle_call({:add_player, player}, _from, state) do
-    IO.puts("Before join: (state: #{state})")
+    IO.puts("Before join: (state: #{inspect(state)})")
     updated_state = state ++ [player]
 
     if length(updated_state) >= 4 do
@@ -35,7 +35,7 @@ defmodule Website45sV3.Game.QueueStarter do
   end
 
   def handle_call({:remove_player, player}, _from, state) do
-    IO.puts("Before leave: (state: #{state})")
+    IO.puts("Before leave: (state: #{inspect(state)})")
     updated_state = List.delete(state, player)
     {:reply, :ok, updated_state}
   end

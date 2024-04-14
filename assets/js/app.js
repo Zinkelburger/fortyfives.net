@@ -39,22 +39,7 @@ Hooks.AutoDismissFlash = {
         }
       }, 30);
     }
-  };  
-
-  Hooks.FetchUserId = {
-        mounted() {
-          const fetchAndSetUserId = () => {
-            fetch("/api/get_user_id", { method: "POST" })
-              .then(response => response.json())
-              .then(data => {
-                this.pushEvent("set-anon-user-id", { user_id: data.user_id });
-              });
-          };
-      
-          fetchAndSetUserId();
-      
-        }
-      };
+  };
 
 let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: Hooks})
 

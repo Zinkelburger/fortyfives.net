@@ -4,7 +4,7 @@ defmodule Website45sV3Web.QueueLive do
   alias Website45sV3.Game.QueueStarter
   alias UUID
 
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     display_name =
       if current_user = socket.assigns.current_user do
         current_user.username
@@ -18,7 +18,10 @@ defmodule Website45sV3Web.QueueLive do
 
     initial_queue = Presence.list("queue")
 
-    {:ok, assign(socket, user_id: nil, display_name: display_name, queue: initial_queue, in_queue: false)}
+    user_id = Map.get(session, "user_id", "default_id")
+    Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
+
+    {:ok, assign(socket, user_id: user_id, display_name: display_name, queue: initial_queue, in_queue: false)}
   end
 
   def terminate(_reason, socket) do
@@ -36,7 +39,7 @@ defmodule Website45sV3Web.QueueLive do
       {:noreply, assign(socket, in_queue: true)}
     else
       # TODO: Refresh the page if there is no user id
-      IO.inspect("IMPLEMENT THIS!!!!!")
+      raise "No user ID found in assigns"
     end
   end
 
@@ -47,14 +50,6 @@ defmodule Website45sV3Web.QueueLive do
     QueueStarter.remove_player({display_name, user_id})
 
     {:noreply, assign(socket, in_queue: false, queue: Map.drop(socket.assigns.queue, [user_id]))}
-  end
-
-  def handle_event("set-anon-user-id", %{"user_id" => user_id}, socket) do
-    updated_socket = assign(socket, :user_id, user_id)
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
-    end
-    {:noreply, updated_socket}
   end
 
   def handle_info(:update_queue, socket) do
@@ -86,7 +81,7 @@ defmodule Website45sV3Web.QueueLive do
 
   def render(assigns) do
     ~H"""
-    <div id="FetchUserId" phx-hook="FetchUserId" style="text-align: center; justify-content:center; margin-top:10px;">
+    <div style="text-align: center; justify-content:center; margin-top:10px;">
       <h1 style="color: #d2e8f9; margin-bottom: 0px;">Queue</h1>
       <p style="color: #d2e8f9; margin-bottom: 20px;">4-players, teams</p>
       <div class="queue-cards">

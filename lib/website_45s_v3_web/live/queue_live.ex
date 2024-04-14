@@ -5,13 +5,6 @@ defmodule Website45sV3Web.QueueLive do
   alias UUID
 
   def mount(_params, _session, socket) do
-    user_id =
-      if current_user = socket.assigns.current_user do
-        "user_#{current_user.username}"
-      else
-        nil
-      end
-
     display_name =
       if current_user = socket.assigns.current_user do
         current_user.username
@@ -21,12 +14,11 @@ defmodule Website45sV3Web.QueueLive do
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
-      if user_id, do: Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
     end
 
     initial_queue = Presence.list("queue")
 
-    {:ok, assign(socket, user_id: user_id, display_name: display_name, queue: initial_queue, in_queue: false)}
+    {:ok, assign(socket, user_id: nil, display_name: display_name, queue: initial_queue, in_queue: false)}
   end
 
   def terminate(_reason, socket) do
@@ -43,7 +35,7 @@ defmodule Website45sV3Web.QueueLive do
       QueueStarter.add_player({display_name, user_id})
       {:noreply, assign(socket, in_queue: true)}
     else
-      # Refresh the page if there is no user id
+      # TODO: Refresh the page if there is no user id
       IO.inspect("IMPLEMENT THIS!!!!!")
     end
   end

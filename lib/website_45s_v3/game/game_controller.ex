@@ -166,7 +166,7 @@ defmodule Website45sV3.Game.GameController do
           | current_player_id: nil,
             actions:
               updated_state_with_scores.actions ++
-                ["#{winning_player_id} won trick #{length(state.trick_winning_cards) + 1}"],
+                ["#{state.player_map[winning_player_id]} won trick #{length(state.trick_winning_cards) + 1}"],
             trick_winning_cards: [
               %{player_id: winning_player_id, card: highest_card.card} | state.trick_winning_cards || []
             ],
@@ -192,7 +192,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info(:end_scoring, state) do
-    new_state = Map.merge(state, setup_game(state.player_ids))
+    new_state = Map.merge(state, setup_game(state.player_map))
     # Broadcasting the updated state to the players
     for p <- state.player_ids do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
@@ -330,7 +330,7 @@ defmodule Website45sV3.Game.GameController do
             hands: updated_hands,
             deck: updated_deck,
             actions: [],
-            _id: winning_bid_player_id
+            current_player_id: winning_bid_player_id
         }
       else
         new_state
@@ -437,7 +437,7 @@ defmodule Website45sV3.Game.GameController do
       end)
 
     winning_team =
-      if highest_card.player in team1_players do
+      if highest_card.player_id in team1_players do
         :team1
       else
         :team2
@@ -449,7 +449,7 @@ defmodule Website45sV3.Game.GameController do
         Map.update!(scores, winning_team, fn score -> score + 5 end)
       end)
 
-    {highest_card.player, highest_card, updated_state}
+    {highest_card.player_id, highest_card, updated_state}
   end
 
   defp evaluate_played_cards(state) do

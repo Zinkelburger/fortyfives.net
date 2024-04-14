@@ -48,11 +48,6 @@ defmodule Website45sV3Web.Router do
     end
   end
 
-  scope "/api", Website45sV3Web do
-    pipe_through :api
-    post "/get_user_id", SessionController, :get_user_id
-  end
-
   ## Authentication routes
 
   scope "/", Website45sV3Web do

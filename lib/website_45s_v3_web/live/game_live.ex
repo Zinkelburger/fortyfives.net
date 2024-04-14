@@ -10,12 +10,7 @@ defmodule Website45sV3Web.GameLive do
       if session["user_id"] do
         session["user_id"]
       else
-        current_user = socket.assigns.current_user
-        if current_user do
-          "user_#{current_user.username}"
-        else
           raise "User ID not found in session and no current user assigned."
-        end
       end
     display_name =
       if current_user = socket.assigns.current_user do
@@ -23,12 +18,6 @@ defmodule Website45sV3Web.GameLive do
       else
         "Anonymous"
       end
-
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
-      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
-    end
-
 
     case Registry.lookup(Website45sV3.Registry, game_id) do
       [{game_pid, _}] ->
@@ -51,7 +40,8 @@ defmodule Website45sV3Web.GameLive do
              user_id: user_id,
              display_name: display_name,
              selected_cards: [],
-             confirm_discard_clicked: false
+             confirm_discard_clicked: false,
+             current_player_id: game_state[:current_player_id]
            )}
         else
           # If the user is not in the game, redirect them back to the queue page
@@ -67,11 +57,18 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_info({:update_state, new_state}, socket) do
+    current_player_id = new_state[:current_player_id]
+
+    socket =
+      socket
+      |> assign(:game_state, new_state)
+      |> assign(:current_player_id, current_player_id)
+
     new_assigns =
       if new_state.phase == "Playing" do
-        assign(socket, game_state: new_state, confirm_discard_clicked: false)
+        assign(socket, :confirm_discard_clicked, false)
       else
-        assign(socket, game_state: new_state)
+        socket
       end
 
     {:noreply, new_assigns}
@@ -465,43 +462,48 @@ defmodule Website45sV3Web.GameLive do
   end
 
   defp render_played_cards(assigns) do
-    assigns =
-      assign(
-        assigns,
-        :current_player_position,
-        Enum.find_index(assigns.game_state.player_ids, fn player ->
-          player == assigns.user_id
-        end)
-      )
+    current_player_position = Enum.find_index(assigns.game_state.player_ids, fn player_id ->
+      player_id == assigns.user_id
+    end)
 
-    assigns = assign(assigns, :current_player_id, assigns.game_state.current_player_id)
     is_current_player = assigns.user_id == assigns.current_player_id
 
-    turn_message =
-      cond do
-        assigns.current_player_id == nil -> " "
-        is_current_player -> "Your turn"
-        true -> "#{assigns.display_name}'s turn"
-      end
+    player_names = Enum.map(assigns.game_state.player_ids, fn player_id ->
+      {player_id, assigns.game_state.player_map[player_id] || "Anonymous"}
+    end) |> Map.new()
 
-    assigns = assign(assigns, :is_current_player, is_current_player)
-    assigns = assign(assigns, :turn_message, turn_message)
-    attrs = play_card_button_attrs(assigns)
-    assigns = assign(assigns, :attrs, attrs)
+    turn_message = case {assigns.current_player_id, is_current_player} do
+      {nil, _} -> ""
+      {_, true} -> "Your turn"
+      {_, false} -> "#{player_names[assigns.current_player_id]}'s turn"
+    end
+
+    # Update assigns with all the new values first
+    updated_assigns = assigns
+    |> assign(:current_player_position, current_player_position)
+    |> assign(:is_current_player, is_current_player)
+    |> assign(:player_names, player_names)
+    |> assign(:turn_message, turn_message)
+
+    # Now use the updated assigns to compute attrs
+    attrs = play_card_button_attrs(updated_assigns)
+
+    assigns = assign(updated_assigns, :attrs, attrs)
 
     ~H"""
     <div class="played-cards">
-      <p style="color: #d2e8f9; margin-bottom: 1rem; font-size:">
+      <p style="color: #d2e8f9; margin-bottom: 1rem;">
         <%= @turn_message %>
       </p>
       <div class="table" style="margin-top: -20px;">
-        <%= for %{player: player, card: %Website45sV3.Game.Card{value: value, suit: suit}} <- assigns.game_state.played_cards do %>
-          <% player_position = Enum.find_index(assigns.game_state.players, fn p -> p == player end) %>
+        <%= for %{player_id: player_id, card: %Website45sV3.Game.Card{value: value, suit: suit}} <- @game_state.played_cards do %>
+          <% player_name = @player_names[player_id] %>
+          <% player_position = Enum.find_index(@game_state.player_ids, fn id -> id == player_id end) %>
           <% relative_pos = relative_position(@current_player_position, player_position) %>
           <% card_rotation = if relative_pos in [1, 3], do: "rotate", else: "" %>
 
           <div class={"player-slot player-#{relative_pos}"}>
-            <p style="color: #d2e8f9;"><%= player %></p>
+            <p style="color: #d2e8f9;"><%= player_name %></p>
             <img
               class={"card #{card_rotation}"}
               src={get_image_location({value, suit})}
@@ -518,23 +520,24 @@ defmodule Website45sV3Web.GameLive do
   end
 
   defp render_scoring(assigns) do
-    team_1_players =
-      Enum.join(
-        [Enum.at(assigns.game_state.players, 0), Enum.at(assigns.game_state.players, 2)],
-        ", "
-      )
+      team_1_players =
+        Enum.map([Enum.at(assigns.game_state.player_ids, 0), Enum.at(assigns.game_state.player_ids, 2)], fn id ->
+          assigns.game_state.player_map[id]
+        end)
+        |> Enum.join(", ")
 
-    team_2_players =
-      Enum.join(
-        [Enum.at(assigns.game_state.players, 1), Enum.at(assigns.game_state.players, 3)],
-        ", "
-      )
+      team_2_players =
+        Enum.map([Enum.at(assigns.game_state.player_ids, 1), Enum.at(assigns.game_state.player_ids, 3)], fn id ->
+          assigns.game_state.player_map[id]
+        end)
+        |> Enum.join(", ")
 
     scores = zip_longest(assigns.game_state.team_1_history, assigns.game_state.team_2_history)
 
-    assigns = assign(assigns, :team_1_players, team_1_players)
-    assigns = assign(assigns, :team_2_players, team_2_players)
-    assigns = assign(assigns, :scores, scores)
+    assigns =
+      assign(assigns, :team_1_players, team_1_players)
+      |> assign(:team_2_players, team_2_players)
+      |> assign(:scores, scores)
 
     ~H"""
     <div style="height: 100vh; align-items: center; justify-content: center;">

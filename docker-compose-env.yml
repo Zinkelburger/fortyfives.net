@@ -16,7 +16,7 @@ services:
       - db_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=dataBaseWaterBottle
-      - POSTGRES_DB=website_45s_v3_prod
+      - POSTGRES_DB=website_45s_v3_dev
 
 volumes:
   db_data:

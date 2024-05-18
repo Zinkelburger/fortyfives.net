@@ -5,7 +5,7 @@ config :website_45s_v3, Website45sV3.Repo,
   username: "postgres",
   password: "dataBaseWaterBottle",
   hostname: "db",
-  database: "website_45s_v3_prod",
+  database: "website_45s_v3_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: false,
   pool_size: 10

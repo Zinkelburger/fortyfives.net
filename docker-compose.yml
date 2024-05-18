@@ -6,7 +6,7 @@ services:
     ports:
       - "4000:4000"
     environment:
-      - DATABASE_URL=ecto://postgres:dataBaseWaterBottle@db:5432/website_45s_v3_prod
+      - DATABASE_URL=ecto://postgres:dataBaseWaterBottle@db:5432/website_45s_v3_dev
       - SECRET_KEY_BASE=0/FCNo1bQKnuHMoOZNO83Uzk44yZdp7fCuAcc2dKO6a0F4xdgq4WH7z7VmwuwaHU
     depends_on:
       - db
@@ -16,7 +16,7 @@ services:
       - db_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_PASSWORD=dataBaseWaterBottle
-      - POSTGRES_DB=website_45s_v3_prod
+      - POSTGRES_DB=website_45s_v3_dev
 
 volumes:
   db_data:

@@ -54,7 +54,7 @@ defmodule Website45sV3.MixProject do
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.6", only: [:dev, :test], runtime: false},
       {:uuid, "~> 1.1.8"},
-      {:httpoison, "~> 1.8"},
+      {:httpoison, "~> 2.2"},
       {:hackney, "~> 1.17"}
     ]
   end

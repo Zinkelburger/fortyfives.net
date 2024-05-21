@@ -4,7 +4,7 @@ import Config
 config :website_45s_v3, Website45sV3.Repo,
   username: "postgres",
   password: "dataBaseWaterBottle",
-  hostname: "db",
+  hostname: "localhost",
   database: "website_45s_v3_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: false,

@@ -2,8 +2,8 @@ defmodule Website45sV3.Game.QueueStarter do
   use GenServer
 
   # API
-  def start_link(initial_state \\ []) do
-    GenServer.start_link(__MODULE__, initial_state, name: __MODULE__)
+  def start_link(_args) do
+    GenServer.start_link(__MODULE__, %{players: []}, name: __MODULE__)
   end
 
   def add_player({player_name, player_id}) do
@@ -16,28 +16,54 @@ defmodule Website45sV3.Game.QueueStarter do
     GenServer.call(__MODULE__, {:remove_player, {player_name, player_id}})
   end
 
-  # GenServer callbacks
   def init(state) do
     {:ok, state}
   end
 
-  def handle_call({:add_player, player}, _from, state) do
-    IO.puts("Before join: (state: #{inspect(state)})")
-    updated_state = state ++ [player]
+  def handle_call({:add_player, {incoming_player_name, player_id}}, _from, %{players: players} = state) do
+    assigned_player_name =
+      if String.starts_with?(incoming_player_name, "Anonymous") do
+        assign_anonymous_name(players)
+      else
+        incoming_player_name
+      end
 
-    if length(updated_state) >= 4 do
-      players = Enum.take(updated_state, 4)
+    updated_state = %{state | players: players ++ [{assigned_player_name, player_id}]}
+
+    if length(updated_state.players) >= 4 do
+      players = Enum.take(updated_state.players, 4)
       start_game(players)
-      {:reply, :ok, Enum.drop(updated_state, 4)}
+      {:reply, :ok, %{updated_state | players: Enum.drop(updated_state.players, 4)}}
     else
       {:reply, :ok, updated_state}
     end
   end
 
-  def handle_call({:remove_player, player}, _from, state) do
+  def handle_call({:remove_player, player}, _from, %{players: players} = state) do
     IO.puts("Before leave: (state: #{inspect(state)})")
-    updated_state = List.delete(state, player)
+    updated_players = List.delete(players, player)
+    updated_state = %{state | players: updated_players}
     {:reply, :ok, updated_state}
+  end
+
+  defp assign_anonymous_name(players) do
+    anonymous_players =
+      players
+      |> Enum.filter(fn {name, _id} -> String.starts_with?(name, "Anonymous") end)
+
+    anonymous_numbers =
+      anonymous_players
+      |> Enum.map(fn {name, _id} -> String.replace_prefix(name, "Anonymous", "") end)
+      |> Enum.filter(&(&1 != ""))
+      |> Enum.map(&String.to_integer/1)
+
+    next_anonymous_number =
+      case anonymous_numbers do
+        [] -> 1
+        _ -> Enum.max(anonymous_numbers) + 1
+      end
+
+    "Anonymous#{next_anonymous_number}"
   end
 
   defp start_game(players) do
@@ -80,7 +106,7 @@ defmodule Website45sV3.Game.QueueStarter do
   end
 
   defp generate_game_name do
-    # Using :rand.uniform/1 to get an integer value between 1 and the maximum allowed value.
+    # Hash a random number, take first 12 chars as the game url
     random_number = <<:rand.uniform(:erlang.system_info(:wordsize) * 8 - 1)::integer>>
 
     :crypto.hash(:sha256, random_number)

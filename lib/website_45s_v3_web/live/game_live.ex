@@ -12,12 +12,6 @@ defmodule Website45sV3Web.GameLive do
       else
           raise "User ID not found in session and no current user assigned."
       end
-    display_name =
-      if current_user = socket.assigns.current_user do
-        current_user.username
-      else
-        "Anonymous"
-      end
 
     case Registry.lookup(Website45sV3.Registry, game_id) do
       [{game_pid, _}] ->
@@ -26,6 +20,8 @@ defmodule Website45sV3Web.GameLive do
         IO.inspect(game_state.player_ids, label: "Game State Player IDs")
 
         if user_id in game_state.player_ids do
+          display_name = game_state.player_map[user_id] || "Anonymous"
+
           if connected?(socket) do
             Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
             Presence.track(self(), game_id, user_id, %{})

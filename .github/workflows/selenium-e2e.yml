@@ -1,0 +1,113 @@
+name: Run tbot e2e
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: dataBaseWaterBottle
+          POSTGRES_DB: website_45s_v3_dev
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U postgres && break
+            echo "Waiting for PostgreSQL... Retry #$i"
+            sleep 2
+          done
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y inotify-tools wget unzip
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.16.0'
+          otp-version: '25.2'
+
+      - name: Install Elixir dependencies
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+
+      - name: Install Chrome and ChromeDriver
+        run: |
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+          CHROME_VERSION=$(google-chrome --version | awk '{print $3}')
+          DRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"
+          wget $DRIVER_URL -O chromedriver-linux64.zip
+          unzip chromedriver-linux64.zip -d .
+          mv -f chromedriver-linux64/chromedriver ~/chromedriver
+          chmod +x $HOME/chromedriver
+          google-chrome --version
+          $HOME/chromedriver --version
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.11'
+
+      - name: Create and activate virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          source venv/bin/activate
+          cd python
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tbot instances
+        run: |
+          source venv/bin/activate
+          MIX_ENV=dev mix ecto.create
+          MIX_ENV=dev mix ecto.migrate
+          nohup mix phx.server &
+          for i in {1..30}; do
+            curl --output /dev/null --silent --head --fail http://localhost:4000/play && break
+            echo "Waiting for Elixir application... Retry #$i"
+            sleep 2
+          done
+          echo "Elixir application is ready."
+          timeout 600 bash -c '
+            set -e
+            for i in {1..4}; do
+              python python/tbot.py &
+            done
+            wait
+          '

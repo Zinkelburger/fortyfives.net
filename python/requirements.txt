@@ -1,0 +1,4 @@
+requests
+websockets
+beautifulsoup4
+selenium

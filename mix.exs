@@ -34,8 +34,8 @@ defmodule Website45sV3.MixProject do
     [
       {:bcrypt_elixir, "~> 3.1.0"},
       {:phoenix, "~> 1.7.12"},
-      {:phoenix_ecto, "~> 4.5.1"},
-      {:ecto_sql, "~> 3.11.1"},
+      {:phoenix_ecto, "~> 4.6.1"},
+      {:ecto_sql, "~> 3.11.2"},
       {:postgrex, "~> 0.17.5"},
       {:phoenix_html, "~> 4.1.1"},
       {:phoenix_live_reload, "~> 1.5.3", only: :dev},
@@ -54,8 +54,6 @@ defmodule Website45sV3.MixProject do
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.6", only: [:dev, :test], runtime: false},
       {:uuid, "~> 1.1.8"},
-      {:httpoison, "~> 1.8"},
-      {:hackney, "~> 1.17"}
     ]
   end
 

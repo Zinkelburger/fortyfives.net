@@ -22,6 +22,8 @@ defmodule Website45sV3.Game.GameController do
           |> Map.put(:player_map, player_map)
 
         Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
+        # Schedule termination after 2 hours
+        Process.send_after(self(), :terminate_game, 7200000)
         {:ok, state}
 
       {:error, {:already_registered, _pid}} ->
@@ -90,15 +92,37 @@ defmodule Website45sV3.Game.GameController do
 
   def get_game_state(pid), do: GenServer.call(pid, :get_game_state)
 
-  def terminate(reason, state) do
-    IO.puts("Terminating GameController with reason: #{inspect(reason)} and state: #{inspect(state)}")
+  defp handle_game_end(state, termination_reason) do
+    message =
+      case termination_reason do
+        :normal -> :game_end
+        {:error, reason} -> {:game_crash, reason}
+      end
 
-    # Notify all players to leave the game
+    # Notify all players about the game termination
     for player_id <- state.player_ids do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :leave_game)
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", message)
     end
 
+    IO.puts("GameController terminated with reason: #{inspect(termination_reason)}")
     :ok
+  end
+
+  def terminate(:normal, state) do
+    handle_game_end(state, :normal)
+  end
+
+  def terminate({:error, reason}, state) do
+    handle_game_end(state, {:error, reason})
+  end
+
+  def handle_info(:terminate_game, state) do
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:terminate_error, reason}, state) do
+    IO.puts("Terminating GameController with reason: #{inspect(reason)} and state: #{inspect(state)}")
+    {:stop, {:error, reason}, state}
   end
 
   def handle_info({:play_card, player_id, card}, state) do
@@ -376,7 +400,7 @@ defmodule Website45sV3.Game.GameController do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
 
-    Process.send_after(self(), :end_scoring, 8000)
+    Process.send_after(self(), :end_scoring, 6000)
 
     {:noreply, new_state}
   end
@@ -392,6 +416,9 @@ defmodule Website45sV3.Game.GameController do
     for p <- state.player_ids do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
+
+    # terminate process after 1 minute
+    Process.send_after(self(), :terminate_game, 60_000)
 
     {:noreply, new_state}
   end
@@ -587,22 +614,18 @@ defmodule Website45sV3.Game.GameController do
       Map.update!(updated_team_scores, other_team, fn score -> score + other_team_score_change end)
 
     team_1_players =
-      Enum.join(
-        [
-          Enum.at(updated_state_with_scores.player_ids, 0),
-          Enum.at(updated_state_with_scores.player_ids, 2)
-        ],
-        ", "
-      )
+      [
+        updated_state_with_scores.player_map[Enum.at(updated_state_with_scores.player_ids, 0)],
+        updated_state_with_scores.player_map[Enum.at(updated_state_with_scores.player_ids, 2)]
+      ]
+      |> Enum.join(", ")
 
     team_2_players =
-      Enum.join(
-        [
-          Enum.at(updated_state_with_scores.player_ids, 1),
-          Enum.at(updated_state_with_scores.player_ids, 3)
-        ],
-        ", "
-      )
+      [
+        updated_state_with_scores.player_map[Enum.at(updated_state_with_scores.player_ids, 1)],
+        updated_state_with_scores.player_map[Enum.at(updated_state_with_scores.player_ids, 3)]
+      ]
+      |> Enum.join(", ")
 
     winning_team =
       cond do

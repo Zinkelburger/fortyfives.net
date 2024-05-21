@@ -70,9 +70,13 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, new_assigns}
   end
 
-  def handle_info(:leave_game, socket) do
+  def handle_info(:game_crash, socket) do
     # when the GameController crashes
     {:noreply, push_redirect(socket |> put_flash(:error, "Game ended unexpectedly"), to: "/play")}
+  end
+
+  def handle_info(:game_end, socket) do
+    {:noreply, push_redirect(socket, to: "/play", replace: :replace)}
   end
 
   def handle_event("play-card", _, socket) do
@@ -474,12 +478,19 @@ defmodule Website45sV3Web.GameLive do
       {_, false} -> "#{player_names[assigns.current_player_id]}'s turn"
     end
 
+    card_led_suit =
+      case assigns.game_state.played_cards do
+        [%{card: %Website45sV3.Game.Card{suit: suit}} | _] -> Atom.to_string(suit)
+        _ -> ""
+      end
+
     # Update assigns with all the new values first
     updated_assigns = assigns
     |> assign(:current_player_position, current_player_position)
     |> assign(:is_current_player, is_current_player)
     |> assign(:player_names, player_names)
     |> assign(:turn_message, turn_message)
+    |> assign(:card_led_suit, card_led_suit)
 
     # Now use the updated assigns to compute attrs
     attrs = play_card_button_attrs(updated_assigns)
@@ -511,6 +522,7 @@ defmodule Website45sV3Web.GameLive do
       <button class="blue-button" phx-click="play-card" {@attrs}>
         Play Card
       </button>
+      <div id="card-led-suit" style="display: none;"><%= @card_led_suit %></div> <!-- Hidden input element added here -->
     </div>
     """
   end

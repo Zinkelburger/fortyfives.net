@@ -22,7 +22,7 @@ defmodule Website45sV3.Game.QueueStarter do
 
   def handle_call({:add_player, {incoming_player_name, player_id}}, _from, %{players: players} = state) do
     assigned_player_name =
-      if String.starts_with?(incoming_player_name, "Anonymous") do
+      if String.trim(incoming_player_name) == "" do
         assign_anonymous_name(players)
       else
         incoming_player_name
@@ -53,9 +53,12 @@ defmodule Website45sV3.Game.QueueStarter do
 
     anonymous_numbers =
       anonymous_players
-      |> Enum.map(fn {name, _id} -> String.replace_prefix(name, "Anonymous", "") end)
-      |> Enum.filter(&(&1 != ""))
-      |> Enum.map(&String.to_integer/1)
+      |> Enum.map(fn {name, _id} ->
+        case String.replace_prefix(name, "Anonymous", "") do
+          "" -> 1
+          num -> String.to_integer(num)
+        end
+      end)
 
     next_anonymous_number =
       case anonymous_numbers do

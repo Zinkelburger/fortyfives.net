@@ -178,7 +178,7 @@ class PhxWeb:
             EC.presence_of_element_located((By.CSS_SELECTOR, ".green-button"))
         ).click()
         # Wait for redirect
-        WebDriverWait(self.driver, 60).until(EC.url_changes(self.url))
+        WebDriverWait(self.driver, 10).until(EC.url_changes(self.url))
         redirected_url = self.driver.current_url
         print(f"Redirected to: {redirected_url}")
         self.url = redirected_url

@@ -98,7 +98,8 @@ jobs:
           MIX_ENV=dev mix ecto.migrate
           source venv/bin/activate
           mix phx.server &
-          sleep 180
+          sleep 350
+          python python/wait_play.py
           timeout 600 bash -c '
             for i in {1..4}; do
               python python/tbot.py || exit 1

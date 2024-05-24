@@ -174,7 +174,7 @@ class PhxWeb:
 
     def click_join_queue(self) -> None:
         self.driver.get(self.url)
-        WebDriverWait(self.driver, 10).until(
+        WebDriverWait(self.driver, 60).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".green-button"))
         ).click()
         # Wait for redirect

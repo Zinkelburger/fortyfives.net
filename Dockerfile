@@ -26,11 +26,15 @@ RUN mix local.hex --force && \
 COPY config/ config/
 COPY lib/ lib/
 COPY priv/ priv/
+COPY assets/ assets/
 COPY mix.exs .
 COPY mix.lock .
 
 # Fetch the application dependencies and compile the app
 RUN mix do deps.get, deps.compile, compile
+
+# Digest the static assets
+RUN mix phx.digest
 
 # Copy the entrypoint script to the container
 COPY entrypoint.sh /app/entrypoint.sh

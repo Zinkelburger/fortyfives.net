@@ -22,9 +22,11 @@ def try_access_page_and_click(url: str) -> None:
     
     start_time = time.time()
     max_duration = 3 * 60
+    i = 0
 
     try:
         while time.time() - start_time < max_duration:
+            i += 1
             try:
                 driver.get(url)
                 WebDriverWait(driver, 10).until(
@@ -51,7 +53,7 @@ def try_access_page_and_click(url: str) -> None:
         driver.quit()
         sys.exit(1)
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error: {e}, attempt {i}")
         driver.quit()
         sys.exit(1)
 

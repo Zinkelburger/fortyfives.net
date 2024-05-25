@@ -11,19 +11,7 @@ on:
 jobs:
   e2e-test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: dataBaseWaterBottle
-          POSTGRES_DB: website_45s_v3_dev
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 15
-        ports:
-          - 5432:5432
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -83,32 +71,35 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install docker compose
+        run: |
+          sudo apt update
+          sudo apt install -y docker-compose
+
       - name: Run tbot instances
         run: |
-          docker run -d -p 4000:4000 --name my-elixir-app-container --network host my-elixir-app:latest
+          docker run -d --name postgres-db --network host -e POSTGRES_PASSWORD=dataBaseWaterBottle -e POSTGRES_DB=website_45s_v3_dev postgres:15
+          docker run -d --name my-elixir-app-container --network host -e DATABASE_HOST=localhost -e DATABASE_PORT=5432 -e DATABASE_USER=postgres -e DATABASE_PASSWORD=dataBaseWaterBottle -e DATABASE_NAME=website_45s_v3_dev -p 4000:4000 my-elixir-app:latest
           timeout=300
           start_time=$(date +%s)
           while ! curl -s http://localhost:4000; do
             if [ $(($(date +%s) - start_time)) -ge $timeout ]; then
-              echo "Timeout waiting for the server to be ready."
+              echo "Timeout waiting for the elixir docker container to be ready."
               docker logs my-elixir-app-container
               exit 1
             fi
-            echo 'Waiting for the server...'
+            echo 'Waiting for the elixir docker container...'
             sleep 5
           done
           echo 'Server is ready!'
-          sleep 30
           source venv/bin/activate
-          cd python
-          python wait_play.py
+          echo 'Running wait play'
+          python python/wait_play.py || { echo 'wait_play.py failed'; exit 1; }
+          echo 'Wait play successful'
           timeout 600 bash -c '
             for i in {1..4}; do
-              python tbot.py || exit 1
+              python python/tbot.py &
             done
             wait -n
             wait
-          '
-
-      - name: Stop and remove Docker container
-        run: docker stop my-elixir-app-container && docker rm my-elixir-app-container
+          ' || { echo 'tbot instances failed'; exit 1; }

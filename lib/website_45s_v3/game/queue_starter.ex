@@ -22,7 +22,7 @@ defmodule Website45sV3.Game.QueueStarter do
 
   def handle_call({:add_player, {incoming_player_name, player_id}}, _from, %{players: players} = state) do
     assigned_player_name =
-      if String.trim(incoming_player_name) == "" do
+      if String.trim(incoming_player_name) == "" or String.trim(incoming_player_name) == "Anonymous" do
         assign_anonymous_name(players)
       else
         incoming_player_name
@@ -47,10 +47,12 @@ defmodule Website45sV3.Game.QueueStarter do
   end
 
   defp assign_anonymous_name(players) do
+    IO.inspect(players, label: "Players")
     anonymous_players =
       players
       |> Enum.filter(fn {name, _id} -> String.starts_with?(name, "Anonymous") end)
 
+    IO.inspect(anonymous_players, label: "Anonymous Players")
     anonymous_numbers =
       anonymous_players
       |> Enum.map(fn {name, _id} ->
@@ -60,11 +62,15 @@ defmodule Website45sV3.Game.QueueStarter do
         end
       end)
 
+    IO.inspect(anonymous_numbers, label: "Anonymous Numbers")
+
     next_anonymous_number =
       case anonymous_numbers do
         [] -> 1
         _ -> Enum.max(anonymous_numbers) + 1
       end
+
+    IO.inspect(next_anonymous_number, label: "Next Anonymous Number")
 
     "Anonymous#{next_anonymous_number}"
   end

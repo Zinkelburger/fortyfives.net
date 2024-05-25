@@ -21,7 +21,7 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 15
         ports:
           - 5432:5432
 
@@ -29,28 +29,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Wait for PostgreSQL to be ready
-        run: |
-          for i in {1..30}; do
-            pg_isready -h localhost -p 5432 -U postgres && break
-            echo "Waiting for PostgreSQL... Retry #$i"
-            sleep 2
-          done
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y inotify-tools wget unzip
-
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
+      - name: Cache Docker layers
+        uses: actions/cache@v2
         with:
-          elixir-version: '1.16.0'
-          otp-version: '25.2'
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
 
-      - name: Install Elixir dependencies
-        run: |
-          mix local.hex --force
-          mix local.rebar --force
-          mix deps.get
+      - name: Build Docker image
+        run: docker build --tag my-elixir-app:latest .
 
       - name: Install Chrome and ChromeDriver
         run: |
@@ -94,17 +85,30 @@ jobs:
 
       - name: Run tbot instances
         run: |
-          MIX_ENV=dev mix ecto.create
-          MIX_ENV=dev mix ecto.migrate
+          docker run -d -p 4000:4000 --name my-elixir-app-container --network host my-elixir-app:latest
+          timeout=300
+          start_time=$(date +%s)
+          while ! curl -s http://localhost:4000; do
+            if [ $(($(date +%s) - start_time)) -ge $timeout ]; then
+              echo "Timeout waiting for the server to be ready."
+              docker logs my-elixir-app-container
+              exit 1
+            fi
+            echo 'Waiting for the server...'
+            sleep 5
+          done
+          echo 'Server is ready!'
+          sleep 30
           source venv/bin/activate
-          mix phx.server &
-          sleep 350
-          python python/wait_play.py
+          cd python
+          python wait_play.py
           timeout 600 bash -c '
             for i in {1..4}; do
-              python python/tbot.py || exit 1
+              python tbot.py || exit 1
             done
             wait -n
             wait
           '
-  
+
+      - name: Stop and remove Docker container
+        run: docker stop my-elixir-app-container && docker rm my-elixir-app-container

@@ -14,17 +14,14 @@ def try_access_page_and_click(url: str) -> None:
     chrome_options = Options()
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--no-sandbox")  # Bypass OS security model
-    chrome_options.add_argument("--window-size=1920,1080")  # remove need to scroll for elements
-    chrome_options.add_argument("--headless")  # comment out when debugging
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--headless")
     service = Service(os.path.expanduser("~/chromedriver"))
     driver = webdriver.Chrome(service=service, options=chrome_options)
     
     start_time = time.time()
-    max_duration = 3 * 60  # 3 minutes
-    retry_interval = 30  # seconds
-    click_wait_time = 10  # seconds
-    click_attempts = 5
+    max_duration = 3 * 60
 
     try:
         while time.time() - start_time < max_duration:
@@ -33,20 +30,22 @@ def try_access_page_and_click(url: str) -> None:
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, ".green-button"))
                 )
-                for _ in range(click_attempts):
+                for _ in range(3):
                     button = driver.find_element(By.CSS_SELECTOR, ".green-button")
                     button.click()
-                    time.sleep(click_wait_time)
-                    button = driver.find_element(By.CSS_SELECTOR, ".red-button")
+                    time.sleep(1)
+                    button = WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".red-button"))
+                    )
                     button.click()
-                    time.sleep(click_wait_time)
+                    time.sleep(1)
 
-                # If no exception is raised, exit with status 0
                 driver.quit()
-                sys.exit(0)
+                print("Clicked button 5 times!")
+                return
             except Exception as e:
                 print(f"Attempt failed: {e}")
-                time.sleep(retry_interval)
+                time.sleep(20)
         
         # If the loop completes without successful click, exit with status 1
         driver.quit()

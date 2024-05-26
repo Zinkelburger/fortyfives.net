@@ -31,20 +31,23 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp setup_game(player_map, starting_player \\ nil) do
+  defp setup_game(player_map, previous_dealer_id) do
     player_ids = Map.keys(player_map)
     deck = Deck.new() |> Deck.shuffle(5)
     {hands, deck} = deal_cards(player_ids, deck, 5)
 
-    starting_player_id =
-      case starting_player do
+    new_dealer_id =
+      case previous_dealer_id do
         nil ->
-          [first_player_id | remaining_player_ids] = player_ids
-          List.first(remaining_player_ids ++ [first_player_id])
+          Enum.random(player_ids)
 
-        starting_player_id ->
-          starting_player_id
+        dealer_id ->
+          current_dealer_index = Enum.find_index(player_ids, fn id -> id == dealer_id end)
+          Enum.at(player_ids, rem(current_dealer_index + 1, length(player_ids)))
       end
+
+    current_dealer_index = Enum.find_index(player_ids, fn id -> id == new_dealer_id end)
+    starting_player_id = Enum.at(player_ids, rem(current_dealer_index + 1, length(player_ids)))
 
     %{
       phase: "Bidding",
@@ -153,9 +156,10 @@ defmodule Website45sV3.Game.GameController do
 
     # set the suit led if there are no cards played
     suit_led =
-      case state.played_cards do
-        [] -> card.suit
-        _ -> state.suit_led
+      if Enum.empty?(state.played_cards) do
+        card.suit
+      else
+        state.suit_led
       end
 
     # Increment the current player to the next player
@@ -172,14 +176,13 @@ defmodule Website45sV3.Game.GameController do
         legal_moves: legal_moves
     }
 
-    # Check if 4 cards have been played
+    # if 4 cards have been played, the trick is over
     new_state =
       if length(updated_played_cards) >= 4 do
         {winning_player_id, highest_card, updated_state_with_scores} =
           evaluate_played_cards(new_state)
 
-        # if it is not the last trick, end the bid
-        # if it is the last trick, handle_scoring_phase has you covered
+        # will transition to scoring if `length(state.trick_winning_cards) == 5`
         if length(state.trick_winning_cards) < 5 do
           Process.send_after(self(), {:transition_to_end_bid, winning_player_id}, 2000)
         end
@@ -200,6 +203,7 @@ defmodule Website45sV3.Game.GameController do
         new_state
       end
 
+    # if 5 tricks have been played, its now the scoring phase
     new_state =
       if length(new_state.trick_winning_cards) >= 5 do
         handle_scoring_phase(new_state)
@@ -207,7 +211,6 @@ defmodule Website45sV3.Game.GameController do
         new_state
       end
 
-    # Broadcasting the updated state to the players
     for p_id <- state.player_ids do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p_id}", {:update_state, new_state})
     end
@@ -216,7 +219,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info(:end_scoring, state) do
-    new_state = Map.merge(state, setup_game(state.player_map))
+    new_state = Map.merge(state, setup_game(state.player_map, state.dealing_player_id))
     # Broadcasting the updated state to the players
     for p <- state.player_ids do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})

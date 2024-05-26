@@ -89,6 +89,7 @@ jobs:
               exit 1
             fi
             echo 'Waiting for the elixir docker container...'
+            docker logs my-elixir-app-container
             sleep 5
           done
           echo 'Server is ready!'
@@ -96,10 +97,27 @@ jobs:
           echo 'Running wait play'
           python python/wait_play.py || { echo 'wait_play.py failed'; exit 1; }
           echo 'Wait play successful'
+          docker logs my-elixir-app-container
           timeout 600 bash -c '
             for i in {1..4}; do
-              python python/tbot.py &
+              python python/tbot.py > tbot_$i.log 2>&1 &
             done
             wait -n
             wait
           ' || { echo 'tbot instances failed'; exit 1; }
+
+      - name: Check tbot logs for success
+        run: |
+          for i in {1..4}; do
+            if ! tail -n 3 tbot_$i.log | grep -q "Final Scoring detected"; then
+              echo "Log file tbot_$i.log did not contain the expected 'Final Scoring detected.' line."
+              cat tbot_$i.log
+              exit 1
+            fi
+            if ! tail -n 3 tbot_$i.log | grep -q "WebDriver closed"; then
+              echo "Log file tbot_$i.log did not contain the expected 'WebDriver closed' line."
+              cat tbot_$i.log
+              exit 1
+            fi
+          done
+        shell: bash

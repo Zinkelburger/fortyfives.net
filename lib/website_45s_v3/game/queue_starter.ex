@@ -13,7 +13,7 @@ defmodule Website45sV3.Game.QueueStarter do
 
   def remove_player({player_name, player_id}) do
     IO.puts("Player left: #{player_name} (ID: #{player_id})")
-    GenServer.call(__MODULE__, {:remove_player, {player_name, player_id}})
+    GenServer.call(__MODULE__, {:remove_player, player_id})
   end
 
   def init(state) do
@@ -39,10 +39,11 @@ defmodule Website45sV3.Game.QueueStarter do
     end
   end
 
-  def handle_call({:remove_player, player}, _from, %{players: players} = state) do
+  def handle_call({:remove_player, player_id}, _from, %{players: players} = state) do
     IO.puts("Before leave: (state: #{inspect(state)})")
-    updated_players = List.delete(players, player)
+    updated_players = Enum.reject(players, fn {_username, id} -> id == player_id end)
     updated_state = %{state | players: updated_players}
+    IO.puts("After leave: (state: #{inspect(updated_state)})")
     {:reply, :ok, updated_state}
   end
 

@@ -164,11 +164,11 @@ class PhxWeb:
         chrome_options = Options()
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--no-sandbox")  # Bypass OS security model
+        chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument(
             "--window-size=1920,1080"
-        )  # remove need to scroll for elements
-        chrome_options.add_argument("--headless")  # comment out when debugging
+        )
+        chrome_options.add_argument("--headless")
         service = Service(os.path.expanduser("~/chromedriver"))
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
 
@@ -178,7 +178,7 @@ class PhxWeb:
             EC.presence_of_element_located((By.CSS_SELECTOR, ".green-button"))
         ).click()
         # Wait for redirect
-        WebDriverWait(self.driver, 10).until(EC.url_changes(self.url))
+        WebDriverWait(self.driver, 30).until(EC.url_changes(self.url))
         redirected_url = self.driver.current_url
         print(f"Redirected to: {redirected_url}")
         self.url = redirected_url

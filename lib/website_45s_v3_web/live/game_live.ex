@@ -4,13 +4,15 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.Card
 
+  import Phoenix.LiveView
+
   def mount(%{"id" => game_id}, session, socket) do
     IO.inspect(session, label: "Session data")
     user_id =
       if session["user_id"] do
         session["user_id"]
       else
-          raise "User ID not found in session and no current user assigned."
+        raise "User ID not found in session and no current user assigned."
       end
 
     case Registry.lookup(Website45sV3.Registry, game_id) do
@@ -27,8 +29,13 @@ defmodule Website45sV3Web.GameLive do
             Presence.track(self(), game_id, user_id, %{})
           end
 
+          played_cards_with_id = Enum.map(game_state.played_cards, fn %{card: %Website45sV3.Game.Card{value: value, suit: suit}, player_id: player_id} ->
+            %{id: "#{value}_#{suit}", card: %Website45sV3.Game.Card{value: value, suit: suit}, player_id: player_id}
+          end)
+
           {:ok,
-           assign(socket,
+           socket
+           |> assign(
              game_id: game_id,
              game_state: game_state,
              selected_suit: nil,
@@ -38,7 +45,8 @@ defmodule Website45sV3Web.GameLive do
              selected_cards: [],
              confirm_discard_clicked: false,
              current_player_id: game_state[:current_player_id]
-           )}
+           )
+           |> stream(:played_cards, played_cards_with_id)}
         else
           # If the user is not in the game, redirect them back to the queue page
           IO.puts("User #{user_id} not in game, redirecting to /play")
@@ -55,19 +63,29 @@ defmodule Website45sV3Web.GameLive do
   def handle_info({:update_state, new_state}, socket) do
     current_player_id = new_state[:current_player_id]
 
+    played_cards_with_id = Enum.map(new_state.played_cards, fn %{card: %Website45sV3.Game.Card{value: value, suit: suit}, player_id: player_id} ->
+      %{id: "#{value}_#{suit}_#{player_id}", card: %Website45sV3.Game.Card{value: value, suit: suit}, player_id: player_id}
+    end)
+
     socket =
       socket
       |> assign(:game_state, new_state)
       |> assign(:current_player_id, current_player_id)
+      |> assign(:confirm_discard_clicked, false)
 
-    new_assigns =
-      if new_state.phase == "Playing" do
-        assign(socket, :confirm_discard_clicked, false)
+    if new_state.phase == "Playing" do
+      if played_cards_with_id == [] do
+        {:noreply, stream(socket, :played_cards, [], reset: true)}
       else
-        socket
-      end
+        socket = Enum.reduce(played_cards_with_id, socket, fn card, acc ->
+          stream_insert(acc, :played_cards, card, at: -1)
+        end)
 
-    {:noreply, new_assigns}
+        {:noreply, socket}
+      end
+    else
+      {:noreply, stream(socket, :played_cards, played_cards_with_id, reset: true)}
+    end
   end
 
   def handle_info(:game_crash, socket) do
@@ -484,32 +502,29 @@ defmodule Website45sV3Web.GameLive do
         _ -> ""
       end
 
-    # Update assigns with all the new values first
-    updated_assigns = assigns
-    |> assign(:current_player_position, current_player_position)
-    |> assign(:is_current_player, is_current_player)
-    |> assign(:player_names, player_names)
-    |> assign(:turn_message, turn_message)
-    |> assign(:card_led_suit, card_led_suit)
+    assigns = assigns
+      |> assign(:current_player_position, current_player_position)
+      |> assign(:is_current_player, is_current_player)
+      |> assign(:player_names, player_names)
+      |> assign(:turn_message, turn_message)
+      |> assign(:card_led_suit, card_led_suit)
 
-    # Now use the updated assigns to compute attrs
-    attrs = play_card_button_attrs(updated_assigns)
-
-    assigns = assign(updated_assigns, :attrs, attrs)
+    attrs = play_card_button_attrs(assigns)
+    assigns = assign(assigns, :attrs, attrs)
 
     ~H"""
     <div class="played-cards">
       <p style="color: #d2e8f9; margin-bottom: 1rem;">
         <%= @turn_message %>
       </p>
-      <div class="table" style="margin-top: -20px;">
-        <%= for %{player_id: player_id, card: %Website45sV3.Game.Card{value: value, suit: suit}} <- @game_state.played_cards do %>
+      <div id="table" class="table" phx-update="stream" style="margin-top: -20px;">
+        <%= for {dom_id, %{player_id: player_id, card: %Website45sV3.Game.Card{value: value, suit: suit}}} <- @streams.played_cards do %>
           <% player_name = @player_names[player_id] %>
           <% player_position = Enum.find_index(@game_state.player_ids, fn id -> id == player_id end) %>
           <% relative_pos = relative_position(@current_player_position, player_position) %>
           <% card_rotation = if relative_pos in [1, 3], do: "rotate", else: "" %>
 
-          <div class={"player-slot player-#{relative_pos}"}>
+          <div id={dom_id} class={"player-slot player-#{relative_pos}"}>
             <p style="color: #d2e8f9;"><%= player_name %></p>
             <img
               class={"card #{card_rotation}"}
@@ -522,7 +537,7 @@ defmodule Website45sV3Web.GameLive do
       <button class="blue-button" phx-click="play-card" {@attrs}>
         Play Card
       </button>
-      <div id="card-led-suit" style="display: none;"><%= @card_led_suit %></div> <!-- Hidden input element added here -->
+      <div id="card-led-suit" style="display: none;"><%= @card_led_suit %></div>
     </div>
     """
   end

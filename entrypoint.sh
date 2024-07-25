@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Initialize variables
-host="localhost"
+host="db"
 port="5432"
 max_attempts=15
 current_attempt=1

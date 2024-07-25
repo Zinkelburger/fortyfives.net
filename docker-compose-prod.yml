@@ -1,0 +1,26 @@
+services:
+  web:
+    image: thwar/fortyfives.net:latest
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    entrypoint: ["/app/entrypoint.sh"]
+
+  db:
+    image: postgres:15
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+
+volumes:
+  db_data:

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Initialize variables
-host="localhost"
+host="db"
 port="5432"
 max_attempts=15
 current_attempt=1
@@ -22,8 +22,11 @@ done
 
 echo "PostgreSQL is up and running!"
 
+# Change to the release directory
+cd /app || exit
+
 # Run migrations
-mix ecto.migrate
+/app/bin/website_45s_v3 eval "Website45sV3.Release.migrate"
 
 # Start the Phoenix server
-exec mix phx.server
+exec /app/bin/website_45s_v3 start

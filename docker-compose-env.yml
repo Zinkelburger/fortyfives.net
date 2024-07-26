@@ -5,11 +5,8 @@ services:
       - "4000:4000"
     depends_on:
       - db
-    volumes:
-      - .:/app
     env_file:
       - .env
-    entrypoint: ["/app/entrypoint.sh"]
 
   db:
     image: postgres:15
@@ -17,10 +14,8 @@ services:
       - db_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+    env_file:
+      - .env
 
 volumes:
   db_data:

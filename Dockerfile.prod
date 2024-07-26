@@ -1,0 +1,76 @@
+# Use the official Elixir image as the base image
+FROM elixir:1.16-alpine as build
+
+# Install build dependencies
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add --no-cache \
+      build-base \
+      gcc \
+      git \
+      make \
+      libc-dev \
+      bash \
+      inotify-tools \
+      postgresql-client \
+      erlang-dev
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Install Hex and Rebar
+RUN mix local.hex --force && \
+    mix local.rebar --force
+
+# Set environment to prod for building
+ENV MIX_ENV=prod
+
+# Copy over the necessary application files and directories
+COPY config/ config/
+COPY lib/ lib/
+COPY priv/ priv/
+COPY assets/ assets/
+COPY mix.exs .
+COPY mix.lock .
+
+# Fetch the application dependencies and compile the app
+RUN mix deps.get --only prod && \
+    mix deps.compile
+
+# Compile assets and digest them (assuming esbuild or another tool is configured in your mix.exs)
+RUN mix assets.deploy && \
+    mix phx.digest
+
+# Build the release
+RUN mix release
+
+# Start a new build stage to create a cleaner final image
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add --no-cache \
+      bash \
+      openssl \
+      ncurses-libs \
+      postgresql-client \
+      libstdc++
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the release from the build stage
+COPY --from=build /app/_build/prod/rel/website_45s_v3 ./
+
+# Copy the entrypoint script to the container
+COPY prod_entrypoint.sh /app/entrypoint.sh
+
+# Make the script executable
+RUN chmod +x /app/entrypoint.sh
+
+# Expose port 4000 for the app
+EXPOSE 4000
+
+# Use the entrypoint script to run migrations and then start the Phoenix server
+ENTRYPOINT ["/app/entrypoint.sh"]

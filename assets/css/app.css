@@ -38,8 +38,15 @@
   margin: -1rem 0 2rem;
 }
 
+footer {
+    background: #071f31;
+    display: flex;
+    align-items: center;
+    font-size: 1.1rem;
+}
+
 li {
-        display: inline-block;
+  color: #d2e8f9;
 }
 
 li a {
@@ -48,7 +55,7 @@ li a {
 }
 
 li a:hover {
-        opacity: 0.6;
+        opacity: 0.9;
         transition: opacity 0.3s ease;
         text-decoration: underline;
 }
@@ -114,6 +121,14 @@ li a:hover {
 *, *:after, *:before {
 	box-sizing: inherit
 }
+
+html, body {
+        height: 100%;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+}
+
 body {
 	color: #000000;
 	font-family: 'Helvetica', 'Arial', sans-serif;
@@ -409,7 +424,8 @@ ol {
 	list-style: decimal inside
 }
 ul {
-	list-style: circle inside
+	list-style: circle inside;
+  color: #d2e8f9;
 }
 .button, button, dd, dt, li {
 	margin-bottom: 1.0rem
@@ -437,12 +453,18 @@ b, strong {
 }
 p {
 	margin-top: 0
+    d2e8f9
 }
 h1, h2, h3, h4, h5, h6 {
 	font-weight: 300;
 	letter-spacing: -.1rem;
 	margin-bottom: 2.0rem;
-	margin-top: 0
+	margin-top: 0;
+    color: #d2e8f9;
+}
+
+p {
+    color: #d2e8f9;
 }
 h1 {
 	font-size: 4.6rem;
@@ -501,6 +523,19 @@ pre{padding: 1em;}
   position: relative;
   width: 100%
 }
+.learn-container {
+  max-width: 800px;
+}
+
+.learn-hero {
+  text-align: center;
+  background: #041624;
+  border-radius: 20px;
+  font-weight: 200;
+  font-size: 120%;
+  color: #d2e8f9;
+}
+
 select {
   width: auto;
 }
@@ -560,6 +595,21 @@ header nav ul {
 }
 header nav a {
   display: block;
+}
+
+.navbar-list {
+  margin-right:100px;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0px;
+  list-style-type: none; /* Remove bullets */
+}
+
+.list-container {
+  max-width: 315px; /* Specify the width of the list wrapper */
+  margin: 0 auto;
+  text-align: left;
 }
 
 @media (min-width: 40.0rem) { /* Small devices (landscape phones, 576px and up) */
@@ -699,6 +749,6 @@ header nav a {
     box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.1);
 }
 
-    
-     
-      
+.content {
+        flex: 1;
+}

@@ -24,6 +24,7 @@ defmodule Website45sV3Web.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/learn", PageController, :learn
   end
 
   # Other scopes may use custom stacks.

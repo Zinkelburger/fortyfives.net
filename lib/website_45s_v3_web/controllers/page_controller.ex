@@ -6,4 +6,8 @@ defmodule Website45sV3Web.PageController do
     # so skip the default app layout.
     render(conn, :home, layout: false)
   end
+
+  def learn(conn, _params) do
+    render(conn, :learn)
+  end
 end

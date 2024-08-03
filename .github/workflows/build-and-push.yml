@@ -26,5 +26,5 @@ jobs:
           file: Dockerfile.prod
           push: true
           tags: |
-            thwar/fortyfives.net:${GITHUB_REF_NAME}
+            thwar/fortyfives.net:${{ github.ref_name }}
             thwar/fortyfives.net:latest

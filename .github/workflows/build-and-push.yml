@@ -23,6 +23,8 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.prod
           push: true
-          tags: thwar/fortyfives.net:${GITHUB_REF_NAME}
+          tags: |
+            thwar/fortyfives.net:${GITHUB_REF_NAME}
+            thwar/fortyfives.net:latest

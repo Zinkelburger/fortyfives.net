@@ -15,7 +15,7 @@
     </script>
   </head>
   <body style="background: #041624;">
-    <div style="background: #071f31; border-bottom: 2px solid #d2e8f9; display: flex; align-items: center">
+    <div style="background: #071f31; border-bottom: 2px solid #d2e8f9; display: flex;">
       <a href="/">
         <img
           src={~p"/images/phoenix.png"}
@@ -25,50 +25,50 @@
       </a>
       <ul class="navbar-list">
         <%= if @conn.request_path != "/play" and @conn.request_path != "/game" and not String.starts_with?(@conn.request_path, "/game") do %>
-          <li style="margin-bottom: 0px;">
+          <li class="navbar-list-element">
             <.link href={~p"/play"} style="font-size: 1.25rem;">
               Play
             </.link>
           </li>
         <% else %>
-          <li style="margin-bottom: 0px;">
+          <li class="navbar-list-element">
             <.link href={~p"/"} style="font-size: 1.25rem;">
               Home
             </.link>
           </li>
         <% end %>
         <%= if @current_user do %>
-          <li style="margin-bottom: 0px;">
+          <li class="navbar-list-element">
             <.link href={~p"/profile"} style="font-size: 1.25rem;">
               <%= @current_user.username %>
             </.link>
           </li>
           <%= if @conn.request_path != "/users/settings" do %>
-            <li style="margin-bottom: 0px;">
+            <li class="navbar-list-element">
               <.link href={~p"/users/settings"} style="font-size: 1.25rem;">
                 Settings
               </.link>
             </li>
           <% else %>
-            <li style="margin-bottom: 0px;">
+            <li class="navbar-list-element">
               <.link href={~p"/"} style="font-size: 1.25rem;">
                 Home
               </.link>
             </li>
           <% end %>
-            <li style="margin-bottom: 0px;">
+            <li class="navbar-list-element">
               <.link href={~p"/users/log_out"} method="delete" style="font-size: 1.25rem;">
                 Log out
               </.link>
             </li>
           <% else %>
-            <li style="margin-bottom: 0px;">
+            <li class="navbar-list-element">
               <.link href={~p"/users/register"} style="font-size: 1.25rem;">
                 Register
               </.link>
             </li>
-            <li style="margin-bottom: 0px;">
-              <.link href={~p"/users/log_in"} style="font-size: 1.25rem; margin-bottom: 0px;">
+            <li class="navbar-list-element">
+              <.link href={~p"/users/log_in"} style="font-size: 1.25rem;">
                 Log in
               </.link>
             </li>

@@ -622,7 +622,14 @@ header nav a {
   display: flex;
   flex-direction: column;
   margin-bottom: 0px;
+  margin-top: 0px;
+  justify-content: center;
   list-style-type: none; /* Remove bullets */
+}
+
+.navbar-list-element {
+  margin-bottom: 8px;
+  line-height: 1;
 }
 
 .list-container {

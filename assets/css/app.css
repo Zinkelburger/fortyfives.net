@@ -90,6 +90,7 @@ li a:hover {
         color: #d2e8f9;
         font-size: 1.5rem;
         line-height: 3rem;
+        transition: all 0.3s ease;
 }
 
 .red-button {
@@ -101,16 +102,33 @@ li a:hover {
         text-shadow: #000000;
         font-size: 1.5rem;
         line-height: 3rem;
+        transition: all 0.3s ease;
 }
 
 .red-button:hover {
-        background-color: #960319;
-        transition: background-color 0.3s ease;
+        background-color: #b9031c;
+        transform: translateY(-1px);
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Probably terrible practice.
+Change to green to make a cleaner transititon between the two on the queue page */
+.red-button:active {
+        background-color: #5e905a;
+        transform: translateY(1px);
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
 .green-button:hover {
-        background-color: #008000;
-        transition: background-color 0.3s ease;
+        background-color: #52904f;
+        transform: translateY(-1px);
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+}
+    
+.green-button:active {
+        background-color: #457d44;
+        transform: translateY(1px);
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
 .phx-hero {
@@ -127,11 +145,12 @@ html, body {
         margin: 0;
         display: flex;
         flex-direction: column;
+	font-size: 20px;
 }
 
 body {
 	color: #000000;
-	font-family: 'Helvetica', 'Arial', sans-serif;
+	font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
 	font-size: 1.6em;
 	font-weight: 300;
 	line-height: 1.6
@@ -723,21 +742,21 @@ header nav a {
 
 .btn {
     display: inline-block;
-    padding: 0.5rem 1.5rem;
+    padding: 0.7rem 1.5rem;
     border: none;
-    border-radius: 0.5rem;
-    font-size: 2rem;
-    font-weight: 600;
-    line-height: 1.5;
+    border-radius: 0.7rem;
+    font-weight: 500;
+    font-size: 1.5rem;
+    line-height: 1.75rem;
     text-align: center;
     cursor: pointer;
     transition: all 0.3s;
-    box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
     outline: none;
     border-radius: 10px;
-    color: #000000;
+    color: #040b12;
     background-color: #81cbf8;
-}    
+}
 
 .btn:hover {
     transform: translateY(-2px);

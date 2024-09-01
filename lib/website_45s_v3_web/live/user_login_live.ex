@@ -45,7 +45,7 @@ defmodule Website45sV3Web.UserLoginLive do
           />
             <:actions>
               <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
-              <li style="margin-top:-20px; margin-bottom: -25px;">
+              <li style="margin-top:-20px; margin-bottom: -25px; list-style-type: none;">
                 <.link href={~p"/users/reset_password"} class="text-sm font-semibold">
                   Forgot your password?
                 </.link>

@@ -188,18 +188,25 @@ defmodule Website45sV3Web.CoreComponents do
       role="alert"
       class={[
         "fixed top-2 left-2 w-80 sm:w-96 z-50 rounded-lg p-3 ring-1",
-        @kind == :info && "bg-emerald-50 text-emerald-800 ring-emerald-500 fill-cyan-900",
-        @kind == :error && "bg-rose-50 text-rose-900 shadow-md ring-rose-500 fill-rose-900"
+        @kind == :info && "bg-emerald-50 ring-emerald-500 fill-cyan-900",
+        @kind == :error && "bg-rose-50 shadow-md ring-rose-500 fill-rose-900"
       ]}
       {@rest}
       phx-hook="AutoDismissFlash"
     >
-      <p :if={@title} class="flex items-center gap-1.5 text-sm font-semibold leading-6">
+      <p :if={@title}
+         class="flex items-center gap-1.5 text-sm font-semibold leading-6"
+         style={if @kind == :info, do: "color: rgb(6, 95, 70);", else: "color: rgb(190, 18, 60);"}
+      >
         <.icon :if={@kind == :info} name="hero-information-circle-mini" class="h-4 w-4" />
         <.icon :if={@kind == :error} name="hero-exclamation-circle-mini" class="h-4 w-4" />
         <%= @title %>
       </p>
-      <p class="mt-2 text-sm leading-5"><%= msg %></p>
+      <p class="mt-2 text-sm leading-5"
+         style={if @kind == :info, do: "color: rgb(6, 95, 70);", else: "color: rgb(190, 18, 60);"}
+      >
+        <%= msg %>
+      </p>
       <button
         type="button"
         class="group absolute top-1 right-1 p-2 border border-black-300 rounded"

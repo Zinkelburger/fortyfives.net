@@ -64,7 +64,9 @@ if config_env() == :prod do
     secret_key_base: secret_key_base,
     check_origin: [
       "https://fortyfives.net",
-      "https://www.fortyfives.net"
+      "https://www.fortyfives.net",
+      "https://fortyfives.gigalixirapp.com",
+      "https://www.fortyfives.gigalixirapp.com"
     ]
 
   # ## SSL Support

@@ -78,10 +78,18 @@ defmodule Website45sV3Web.Router do
   scope "/", Website45sV3Web do
     pipe_through [:browser, :potentially_anonymous_user]
 
-    live_session :potentially_anonymous_user,
-      on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}] do
-      live "/play", QueueLive, :new
-      live "/game/:id", GameLive, :new
+    # default session for “play”
+    live_session :default,
+      on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}],
+      root_layout: {Website45sV3Web.Layouts, :root} do
+        live "/play", QueueLive, :new
+    end
+
+    # separate session for “game” with its own root layout
+    live_session :game,
+      on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}],
+      root_layout: {Website45sV3Web.Layouts, :game_root} do
+        live "/game/:id", GameLive, :new
     end
   end
 

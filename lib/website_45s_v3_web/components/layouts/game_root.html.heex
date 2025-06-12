@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" class="[scrollbar-gutter:stable]">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <link rel="icon" href="/images/favicon.ico" type="image/x-icon" />
+    <meta name="description" content="A website for the card game forty fives. You can learn and play the game online.">
+    <.live_title>
+      <%= assigns[:page_title] || "Forty Fives" %>
+    </.live_title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    </script>
+  </head>
+  <body style="background: #041624;">
+    <div style="background: #071f31; display: flex; justify-content: center;">
+      <a href="/">
+        <img
+          src={~p"/images/noBlue.png"}
+          alt="Forty Fives Logo"
+          style="width: 25%; margin: 0 auto"
+        />
+      </a>
+    </div>
+    <div class="content">
+      <%= @inner_content %>
+    </div>
+  </body>
+</html>

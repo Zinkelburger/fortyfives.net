@@ -44,7 +44,8 @@ defmodule Website45sV3Web.GameLive do
              display_name: display_name,
              selected_cards: [],
              confirm_discard_clicked: false,
-             current_player_id: game_state[:current_player_id]
+             current_player_id: game_state[:current_player_id],
+             overlay_visible: false
            )
            |> stream(:played_cards, played_cards_with_id)}
         else
@@ -244,6 +245,10 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, assign(socket, selected_cards: updated_selected_cards)}
   end
 
+  def handle_event("toggle_score_overlay", _params, socket) do
+    {:noreply, assign(socket, overlay_visible: !socket.assigns.overlay_visible)}
+  end
+
   def render(assigns) do
     ~H"""
     <div class="game">
@@ -261,8 +266,20 @@ defmodule Website45sV3Web.GameLive do
         <%= render_phase_content(assigns) %>
 
         <%= render_player_hand(assigns) %>
+
+        <%= if assigns.game_state.phase not in ["Scoring", "Final Scoring"] do %>
+          <button class="blue-button" phx-click="toggle_score_overlay" style="margin-top: 1rem;">
+            View Scores
+          </button>
+        <% end %>
       </div>
     </div>
+
+    <%= if @overlay_visible and @game_state.phase not in ["Scoring", "Final Scoring"] do %>
+      <div class="score-overlay" phx-click="toggle_score_overlay">
+        <%= render_scoring(assigns) %>
+      </div>
+    <% end %>
     """
   end
 
@@ -562,6 +579,13 @@ defmodule Website45sV3Web.GameLive do
       |> assign(:team_2_players, team_2_players)
       |> assign(:scores, scores)
 
+    seconds =
+      case assigns.game_state.phase do
+        "Scoring" -> 6
+        "Final Scoring" -> 60
+        _ -> nil
+      end
+
     ~H"""
     <div style="height: 100vh; align-items: center; justify-content: center;">
       <table style="color: #d2e8f9; max-width: 40%; margin: auto;">
@@ -580,6 +604,11 @@ defmodule Website45sV3Web.GameLive do
           <% end %>
         </tbody>
       </table>
+      <%= if seconds do %>
+        <div id="scoring-countdown" phx-hook="ScoringCountdown" data-seconds={seconds} style="color: #d2e8f9; text-align: center; margin-top: 1rem;">
+          <%= seconds %>
+        </div>
+      <% end %>
     </div>
     """
   end

@@ -21,7 +21,7 @@ jobs:
         uses: docker/setup-buildx-action@v2
 
       - name: Cache Docker layers
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -30,21 +30,6 @@ jobs:
 
       - name: Build Docker image
         run: docker build --tag my-elixir-app:latest .
-
-      - name: Install Chrome and ChromeDriver
-        run: |
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          CHROME_VERSION=$(google-chrome --version | awk '{print $3}')
-          DRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"
-          wget $DRIVER_URL -O chromedriver-linux64.zip
-          unzip chromedriver-linux64.zip -d .
-          mv -f chromedriver-linux64/chromedriver ~/chromedriver
-          chmod +x $HOME/chromedriver
-          google-chrome --version
-          $HOME/chromedriver --version
 
       - name: Set up Python
         uses: actions/setup-python@v2

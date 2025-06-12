@@ -1,4 +1,4 @@
 requests
 websockets
 beautifulsoup4
-selenium
+selenium>=4.11

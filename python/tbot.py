@@ -168,9 +168,8 @@ class PhxWeb:
         chrome_options.add_argument(
             "--window-size=1920,1080"
         )
-        chrome_options.add_argument("--headless")
-        service = Service(os.path.expanduser("~/chromedriver"))
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        chrome_options.add_argument("--headless=new")
+        self.driver = webdriver.Chrome(options=chrome_options)
 
     def click_join_queue(self) -> None:
         self.driver.get(self.url)

@@ -249,6 +249,10 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, assign(socket, overlay_visible: !socket.assigns.overlay_visible)}
   end
 
+   def handle_event("exit_game", _params, socket) do
+    {:noreply, push_redirect(socket, to: "/play")}
+  end
+
   def render(assigns) do
     ~H"""
     <div class="game">
@@ -608,6 +612,9 @@ defmodule Website45sV3Web.GameLive do
         <div id="scoring-countdown" phx-hook="ScoringCountdown" data-seconds={seconds} style="color: #d2e8f9; text-align: center; margin-top: 1rem;">
           <%= seconds %>
         </div>
+      <% end %>
+      <%= if @game_state.phase == "Final Scoring" do %>
+        <button class="blue-button" phx-click="exit_game" style="margin-top: 1rem;">Exit</button>
       <% end %>
     </div>
     """

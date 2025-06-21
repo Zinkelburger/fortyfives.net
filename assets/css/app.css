@@ -265,7 +265,10 @@ input[type='email'], input[type='text'], input[type='number'], input[type='passw
 	box-sizing: inherit;
 	height: 1.5rem;
 	padding: .6rem 1.0rem;
-	width: 90%
+	width: 90%;
+}
+#login_form input[type="password"] {
+  margin-bottom: 0;
 }
 input[type='email']:focus, input[type='text']:focus, input[type='number']:focus, input[type='password']:focus, input[type='search']:focus, input[type='tel']:focus, input[type='text']:focus, input[type='url']:focus, textarea:focus, select:focus {
 	outline: 0;
@@ -836,3 +839,44 @@ header nav a {
   margin-bottom: 2rem;
   font-weight: bold;
 }
+
+
+.google-button {
+  cursor: pointer;
+  background-color: #ffffff;
+  color: #555555;
+  border: none;
+  outline: none;
+  font-size: 1.5rem;
+  line-height: 3rem;
+  font-weight: 500;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  padding: 0 15px;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.15);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0rem auto;
+  margin-bottom: 0.5rem
+}
+
+.google-button:hover {
+  background-color: #f2f2f2;
+  transform: translateY(-1px);
+  box-shadow: 0 7px 15px rgba(0, 0, 0, 0.2);
+}
+
+.google-button:active {
+  background-color: #e6e6e6;
+  transform: translateY(1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.google-button img {
+  width: 24px;
+  height: 24px;
+  margin-right: 10px;
+}
+

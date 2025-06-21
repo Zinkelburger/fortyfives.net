@@ -402,24 +402,29 @@ defmodule Website45sV3Web.CoreComponents do
       assign_new(assigns, :checked, fn -> Phoenix.HTML.Form.normalize_value("checkbox", value) end)
 
     ~H"""
-    <div phx-feedback-for={@name}>
+    <div phx-feedback-for={@name} class="mt-4">
       <label
-        class="flex items-center text-sm gap-2 leading-6"
-        style={"color: ##{@text_color}; margin-top: -10px; margin-bottom: -20px;"}
+        class="flex items-center text-sm gap-1.5"
+        style={"color: ##{@text_color}; margin-bottom: 0;"}
       >
         <input type="hidden" name={@name} value="false" />
+
         <input
           type="checkbox"
           id={@id}
           name={@name}
           value="true"
           checked={@checked}
-          class="mt-5 rounded border-zinc-300 text-zinc-900 focus:ring-0"
+          class="mb-0 h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-0"
           style="color: #5e905a"
           {@rest}
         />
-        <%= @label %>
+
+        <span class="relative -top-px">
+          <%= @label %>
+        </span>
       </label>
+
       <.error :for={msg <- @errors}><%= msg %></.error>
     </div>
     """
@@ -583,13 +588,13 @@ defmodule Website45sV3Web.CoreComponents do
     ~H"""
     <header
       class={[@actions != [] && "flex items-center justify-between gap-6", @class]}
-      style="background-color: #041624; border: #041624 solid 2px;"
+      style="background-color: #041624; border: #041624 solid 2px; margin-bottom: 1rem;"
     >
       <div style="background-color: #071f31; padding-bottom:5px; border: 2px solid #d2e8f9; border-radius: 10px;">
         <h1 class="font-semibold leading-8 mt-3" style="color: #d2e8f9; font-size: 2rem; ">
           <%= render_slot(@inner_block) %>
         </h1>
-        <p :if={@subtitle != []} class="text-xl leading-6" style="color: #d2e8f9; margin-top: -20px;">
+        <p :if={@subtitle != []} class="text-xl leading-6" style="color: #d2e8f9; margin-top: -1.5rem; margin-bottom: 0.6rem;">
           <%= render_slot(@subtitle) %>
         </p>
       </div>

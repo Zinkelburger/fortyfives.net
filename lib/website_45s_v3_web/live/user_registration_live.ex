@@ -7,9 +7,9 @@ defmodule Website45sV3Web.UserRegistrationLive do
   def render(assigns) do
     ~H"""
     <.header class="text-center mx-auto max-w-sm mt-3">
-      Register for an account
+      Register
       <:subtitle>
-        Already registered?
+        Or
         <.link
           navigate={~p"/users/log_in"}
           class="font-semibold link"
@@ -17,7 +17,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
         >
         <span style="text-decoration: underline;">Sign in</span>
         </.link>
-        to your account now.
+        to your account
       </:subtitle>
     </.header>
     <div

@@ -256,12 +256,14 @@ defmodule Website45sV3Web.GameLive do
   def render(assigns) do
     ~H"""
     <div class="game">
-      <h1 class="game-state-style">
-        <%= assigns.game_state.phase %>
-      </h1>
+      <%= if assigns.game_state.phase != "Playing" do %>
+        <h1 class="game-state-style">
+          <%= assigns.game_state.phase %>
+        </h1>
+      <% end %>
       <div style="text-align: center;">
         <%= if assigns.game_state.phase == "Playing" do %>
-          <p style="color: #d2e8f9; line-height: 1; font-size: 0.9rem;">
+          <p style="color: #d2e8f9; line-height: 1; font-size: 0.9rem; margin-top: -2rem;">
             Trump: <%= capitalize_first(Atom.to_string(assigns.game_state.trump)) %>
           </p>
         <% end %>
@@ -453,7 +455,7 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div>
-      <p style="color: #d2e8f9"><%= @discard_message %></p>
+      <p class="actions-list" style="font-size: 1.1rem"><%= @discard_message %></p>
       <button class="blue-button" phx-click="confirm_discard" {@attrs}>Confirm Keep</button>
     </div>
     """

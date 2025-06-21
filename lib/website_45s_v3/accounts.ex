@@ -364,4 +364,35 @@ defmodule Website45sV3.Accounts do
   def get_user_by_username!(username) when is_binary(username) do
     Repo.get_by!(User, username: username)
   end
+
+  def get_user_by_google_uid(uid) when is_binary(uid) do
+    Repo.get_by(User, google_uid: uid)
+  end
+
+  def get_or_create_google_user(%Ueberauth.Auth{uid: uid, info: info}) do
+    Repo.transaction(fn ->
+      case get_user_by_google_uid(uid) || get_user_by_email(info.email) do
+        nil ->
+          password = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
+          username = String.split(info.email, "@") |> hd()
+
+          %User{}
+          |> User.registration_changeset(%{email: info.email, username: username, password: password})
+          |> Ecto.Changeset.change(confirmed_at: NaiveDateTime.utc_now(), google_uid: uid)
+          |> Repo.insert()
+
+        %User{} = user when is_nil(user.google_uid) ->
+          user
+          |> Ecto.Changeset.change(google_uid: uid, confirmed_at: user.confirmed_at || NaiveDateTime.utc_now())
+          |> Repo.update()
+
+        %User{} = user ->
+          {:ok, user}
+      end
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
+    end
+  end
 end

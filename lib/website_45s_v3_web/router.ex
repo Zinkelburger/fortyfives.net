@@ -32,7 +32,7 @@ defmodule Website45sV3Web.Router do
   #   pipe_through :api
   # end
 
-  # Enable LiveDashboard and Swoosh mailbox preview in development
+  #  Bamboo mailbox preview in development
   if Application.compile_env(:website_45s_v3, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put
     # it behind authentication and allow only admins to access it.
@@ -45,8 +45,16 @@ defmodule Website45sV3Web.Router do
       pipe_through :browser
 
       live_dashboard "/dashboard", metrics: Website45sV3Web.Telemetry
-      forward "/mailbox", Plug.Swoosh.MailboxPreview
+      forward "/mailbox", Bamboo.SentEmailViewerPlug
     end
+  end
+
+  scope "/auth", Website45sV3Web do
+    pipe_through [:browser]
+
+    get "/:provider", AuthController, :request
+    get "/:provider/callback", AuthController, :callback
+    post "/:provider/callback", AuthController, :callback
   end
 
   ## Authentication routes

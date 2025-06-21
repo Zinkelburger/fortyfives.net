@@ -1,20 +1,17 @@
 defmodule Website45sV3.Accounts.UserNotifier do
-  import Swoosh.Email
+  import Bamboo.Email
 
   alias Website45sV3.Mailer
 
   # Delivers the email using the application mailer.
   defp deliver(recipient, subject, body) do
-    email =
-      new()
-      |> to(recipient)
-      |> from({"Website45sV3", "contact@example.com"})
-      |> subject(subject)
-      |> text_body(body)
-
-    with {:ok, _metadata} <- Mailer.deliver(email) do
-      {:ok, email}
-    end
+    new_email(
+      to: recipient,
+      from: {"FortyFives", "noreply@fortyfives.net"},
+      subject: subject,
+      text_body: body
+    )
+    |> Mailer.deliver_now()
   end
 
   @doc """

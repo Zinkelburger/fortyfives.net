@@ -815,7 +815,7 @@ header nav a {
 .actions-list {
   color: #d2e8f9;
   margin-bottom: 1rem;
-  margin-top: 1rem;
+  margin-top: 0.3rem;
   text-align: center;
   font-size: 0.9rem;
   line-height: 1;
@@ -836,7 +836,8 @@ header nav a {
   text-align: center;
   line-height: 1;
   font-size: 1.5rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
+  margin-top: 0;
   font-weight: bold;
 }
 

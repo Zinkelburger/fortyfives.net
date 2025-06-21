@@ -6,16 +6,15 @@ defmodule Website45sV3Web.UserLoginLive do
     <div class="mx-auto max-w-sm mt-3">
       <.header class="text-center">
         Sign in
-        <:subtitle>
-          Don't have an account?
-          <.link
-            navigate={~p"/users/register"}
-            class="font-semibold link"
-          >
-          <span style="text-decoration: underline;">Sign up</span>
-          </.link>
-          for an account now.
-        </:subtitle>
+          <:subtitle>
+            Don't have an account?
+            <.link
+              navigate={~p"/users/register"}
+              class="font-semibold link"
+            >
+            <span style="text-decoration: underline;">Sign up</span>
+            </.link>
+          </:subtitle>
       </.header>
 
       <div
@@ -45,23 +44,25 @@ defmodule Website45sV3Web.UserLoginLive do
           />
             <:actions>
               <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
-              <li style="margin-top:-20px; margin-bottom: -25px; list-style-type: none;">
+              <li style="margin-top: 0.25rem; margin-bottom: 0; list-style-type: none;">
                 <.link href={~p"/users/reset_password"} class="text-sm font-semibold">
                   Forgot your password?
                 </.link>
               </li>
             </:actions>
             <:actions>
-            <.button phx-disable-with="Signing in..." class="w-full green-button">
+            <.button phx-disable-with="Signing in..." class="green-button w-full" style="margin-bottom: 0; margin-top: 0;">
               Sign in <span aria-hidden="true">→</span>
             </.button>
           </:actions>
           <:actions>
-            <div class="text-center mt-2">
-              <.link href={~p"/auth/google"} class="underline font-semibold">
-                Sign in with Google
+              <.link
+                href={~p"/auth/google"}
+                class="google-button w-full"
+              >
+                <img src="/images/google_logo.svg" alt="Google logo" />
+                <span>Sign in with Google</span>
               </.link>
-            </div>
           </:actions>
         </.simple_form>
       </div>

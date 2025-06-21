@@ -80,6 +80,10 @@ li a:hover {
 
 .player-hand img {
         margin-right: 5px;
+        max-width: 160px;
+        max-height: 245px;
+        width: 100px;
+        height: 160px;
 }    
 
 .green-button {
@@ -719,12 +723,25 @@ header nav a {
 
 .player-1 p, .player-3 p {
         position: absolute;
-        top: -55%;
+        top: -37%;
+}
+
+.player-2 p {
+  top: -5%;
 }
 
 .player-0 p {
         position: absolute;
-        top:-25%;
+        top:-12%;
+        background-color: rgba(7, 31, 49, 0.5);
+        z-index: 1;
+        padding: 0 1px;
+        border: none;
+}
+
+.player-slot .player-name {
+  font-size: 0.9rem;    /* tweak to taste */
+  line-height: 1;       /* optional, to tighten vertical spacing */
 }
 
 .filter-text {
@@ -790,4 +807,32 @@ header nav a {
         align-items: center;
         justify-content: center;
         z-index: 1000;
+}
+
+.actions-list {
+  color: #d2e8f9;
+  margin-bottom: 1rem;
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.game-state-style {
+  color: #d2e8f9;
+  margin-bottom: 0px;
+  text-align: center;
+  margin-top: -2rem;
+  margin-bottom: 1rem;
+  line-height: 1;
+  font-size: 2.5rem;
+}
+
+.turn-text {
+  color: #d2e8f9;
+  text-align: center;
+  line-height: 1;
+  font-size: 1.5rem;
+  margin-bottom: 2rem;
+  font-weight: bold;
 }

@@ -256,12 +256,12 @@ defmodule Website45sV3Web.GameLive do
   def render(assigns) do
     ~H"""
     <div class="game">
-      <h1 style="color: #d2e8f9; margin-bottom: 0px; text-align: center; letter-spacing: 0rem; margin-top: 1rem;">
+      <h1 class="game-state-style">
         <%= assigns.game_state.phase %>
       </h1>
       <div style="text-align: center;">
         <%= if assigns.game_state.phase == "Playing" do %>
-          <p style="color: #d2e8f9;">
+          <p style="color: #d2e8f9; line-height: 1; font-size: 0.9rem;">
             Trump: <%= capitalize_first(Atom.to_string(assigns.game_state.trump)) %>
           </p>
         <% end %>
@@ -292,7 +292,7 @@ defmodule Website45sV3Web.GameLive do
     assigns = assign(assigns, :actions_string, actions_string)
 
     ~H"""
-    <div class="actions-list" style="color: #d2e8f9; margin-bottom: 1rem; text-align: center;">
+    <div class="actions-list">
       <%= @actions_string %>
     </div>
     """
@@ -535,7 +535,7 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div class="played-cards">
-      <p style="color: #d2e8f9; margin-bottom: 1rem;">
+      <p class="turn-text">
         <%= @turn_message %>
       </p>
       <div id="table" class="table" phx-update="stream" style="margin-top: -20px;">
@@ -546,7 +546,7 @@ defmodule Website45sV3Web.GameLive do
           <% card_rotation = if relative_pos in [1, 3], do: "rotate", else: "" %>
 
           <div id={dom_id} class={"player-slot player-#{relative_pos}"}>
-            <p style="color: #d2e8f9;"><%= player_name %></p>
+            <p class="player-name"><%= player_name %></p>
             <img
               class={"card #{card_rotation}"}
               src={get_image_location({value, suit})}

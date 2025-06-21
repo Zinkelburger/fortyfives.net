@@ -37,3 +37,7 @@ npm-debug.log
 
 .env
 venv
+
+ios
+node_modules
+__pycache__

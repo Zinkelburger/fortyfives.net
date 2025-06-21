@@ -41,6 +41,24 @@ Hooks.AutoDismissFlash = {
     }
   };
 
+  Hooks.ScoringCountdown = {
+  mounted() {
+    this.seconds = parseInt(this.el.dataset.seconds || "0")
+    this.el.innerText = this.seconds
+    this.interval = setInterval(() => {
+      this.seconds--
+      if (this.seconds >= 0) {
+        this.el.innerText = this.seconds
+      } else {
+        clearInterval(this.interval)
+      }
+    }, 1000)
+  },
+  destroyed() {
+    if (this.interval) clearInterval(this.interval)
+  }
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: Hooks})
 
 // Show progress bar on live navigation and form submits

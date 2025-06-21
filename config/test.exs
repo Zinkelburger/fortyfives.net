@@ -24,7 +24,7 @@ config :website_45s_v3, Website45sV3Web.Endpoint,
   server: false
 
 # In test we don't send emails.
-config :website_45s_v3, Website45sV3.Mailer, adapter: Swoosh.Adapters.Test
+config :website_45s_v3, Website45sV3.Mailer, adapter: Bamboo.TestAdapter
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false

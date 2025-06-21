@@ -69,6 +69,15 @@ if config_env() == :prod do
       "https://www.fortyfives.gigalixirapp.com"
     ]
 
+  config :website_45s_v3, Website45sV3.Mailer,
+    adapter: Bamboo.SesAdapter,
+    access_key_id: System.fetch_env!("AWS_ACCESS_KEY_ID"),
+    secret_access_key: System.fetch_env!("AWS_SECRET_ACCESS_KEY"),
+    region: System.get_env("AWS_SES_REGION", "us-east-1")
+
+  config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+    client_id: System.fetch_env!("GOOGLE_CLIENT_ID"),
+    client_secret: System.fetch_env!("GOOGLE_CLIENT_SECRET")
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key

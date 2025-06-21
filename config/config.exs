@@ -27,7 +27,7 @@ config :website_45s_v3, Website45sV3Web.Endpoint,
 #
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
-config :website_45s_v3, Website45sV3.Mailer, adapter: Swoosh.Adapters.Local
+config :website_45s_v3, Website45sV3.Mailer, adapter: Bamboo.LocalAdapter
 
 # Configure esbuild (the version is required)
 config :esbuild,
@@ -58,6 +58,11 @@ config :logger, :console,
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+
+config :ueberauth, Ueberauth,
+  providers: [
+    google: {Ueberauth.Strategy.Google, [default_scope: "email profile"]}
+  ]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

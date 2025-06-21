@@ -52,11 +52,18 @@ defmodule Website45sV3Web.UserLoginLive do
               </li>
             </:actions>
             <:actions>
-              <.button phx-disable-with="Signing in..." class="w-full green-button">
-                Sign in <span aria-hidden="true">→</span>
-              </.button>
-            </:actions>
-          </.simple_form>
+            <.button phx-disable-with="Signing in..." class="w-full green-button">
+              Sign in <span aria-hidden="true">→</span>
+            </.button>
+          </:actions>
+          <:actions>
+            <div class="text-center mt-2">
+              <.link href={~p"/auth/google"} class="underline font-semibold">
+                Sign in with Google
+              </.link>
+            </div>
+          </:actions>
+        </.simple_form>
       </div>
     </div>
     """

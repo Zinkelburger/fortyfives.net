@@ -51,9 +51,18 @@ defmodule Website45sV3Web.UserRegistrationLive do
         />
 
         <:actions>
-          <.button phx-disable-with="Creating account..." class="w-full green-button mt-5">
+          <.button phx-disable-with="Creating account..." class="w-full green-button" style="margin-bottom: 0; margin-top: 0;">
             Create an account
           </.button>
+        </:actions>
+        <:actions>
+          <.link
+            href={~p"/auth/google"}
+            class="google-button w-full"
+          >
+            <img src="/images/google_logo.svg" alt="Google logo" />
+            <span>Sign up with Google</span>
+          </.link>
         </:actions>
       </.simple_form>
     </div>

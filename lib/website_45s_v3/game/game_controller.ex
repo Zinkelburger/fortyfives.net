@@ -3,6 +3,8 @@ defmodule Website45sV3.Game.GameController do
   alias Deck
   alias Suit
   alias Website45sV3.Game.Card
+  alias Website45sV3.Game.GameLog
+  alias Website45sV3.Repo
 
   def start_game(game_name, player_tuples) do
     GenServer.start_link(__MODULE__, {game_name, player_tuples})
@@ -106,6 +108,15 @@ defmodule Website45sV3.Game.GameController do
     for player_id <- state.player_ids do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", message)
     end
+
+    player_usernames =
+      Enum.map(state.player_ids, fn id ->
+        Map.get(state.player_map, id, "Anonymous")
+      end)
+
+    %GameLog{}
+    |> GameLog.changeset(%{player_usernames: player_usernames})
+    |> Repo.insert()
 
     IO.puts("GameController terminated with reason: #{inspect(termination_reason)}")
     :ok

@@ -91,6 +91,7 @@ defmodule Website45sV3Web.Router do
       on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}],
       root_layout: {Website45sV3Web.Layouts, :root} do
         live "/play", QueueLive, :new
+        live "/play/private/:id", QueueLive, :private_game
     end
 
     # separate session for “game” with its own root layout

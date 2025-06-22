@@ -4,7 +4,7 @@ defmodule Website45sV3Web.QueueLive do
   alias Website45sV3.Game.QueueStarter
   alias UUID
 
-  def mount(_params, session, socket) do
+  def mount(params, session, socket) do
     display_name =
       if current_user = socket.assigns.current_user do
         current_user.username
@@ -17,11 +17,21 @@ defmodule Website45sV3Web.QueueLive do
     end
 
     initial_queue = Presence.list("queue")
-
     user_id = Map.get(session, "user_id", "default_id")
     Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
 
-    {:ok, assign(socket, user_id: user_id, display_name: display_name, queue: initial_queue, in_queue: false)}
+    socket =
+      socket
+      |> assign(
+          user_id: user_id,
+          display_name: display_name,
+          queue: initial_queue,
+          in_queue: false,
+          # track which tab is showing
+          tab: Map.get(params, "tab", "public")
+        )
+
+    {:ok, socket}
   end
 
   def terminate(_reason, socket) do
@@ -50,6 +60,20 @@ defmodule Website45sV3Web.QueueLive do
     QueueStarter.remove_player({display_name, user_id})
 
     {:noreply, assign(socket, in_queue: false, queue: Map.drop(socket.assigns.queue, [user_id]))}
+  end
+
+  def handle_event("switch_tab", %{"tab" => tab}, socket) do
+    {:noreply, assign(socket, tab: tab)}
+  end
+
+  def handle_event("create_private", _payload, socket) do
+    # generate a random UUID for the private game
+    private_id = UUID.generate()
+    # redirect to e.g. /play/private/:id
+    {:noreply,
+    push_redirect(socket,
+      to: Routes.live_path(socket, Website45sV3Web.QueueLive, :private_game, private_id)
+    )}
   end
 
   def handle_info(:update_queue, socket) do
@@ -81,37 +105,78 @@ defmodule Website45sV3Web.QueueLive do
 
   def render(assigns) do
     ~H"""
-    <div style="text-align: center; justify-content:center; margin-top:10px;">
-      <h1 style="color: #d2e8f9; margin-bottom: 0px;">Queue</h1>
-      <p style="color: #d2e8f9; margin-bottom: 20px;">4-players, teams</p>
-      <div class="queue-cards">
-        <%= for {_user_id, presence} <- @queue do %>
-          <%= for meta <- presence.metas do %>
-            <div class="player-card">
-              <p><%= meta.display_name %></p>
-            </div>
-          <% end %>
-        <% end %>
+    <div class="tabs-container">
+      <!-- Tab nav -->
+      <div class="tabs">
+        <button
+          phx-click="switch_tab"
+          phx-value-tab="public"
+          class={"tab #{@tab == "public" && "active"}"}
+        >
+          Public Queue
+        </button>
+        <button
+          phx-click="switch_tab"
+          phx-value-tab="private"
+          class={"tab #{@tab == "private" && "active"}"}
+        >
+          Play a Friend
+        </button>
       </div>
-      <%= if !@in_queue do %>
-        <form phx-submit="join">
-          <button
-            type="submit"
-            class="text-sm font-semibold leading-6 text-white active:text-white/80 rounded-lg bg-zinc-900 py-2 px-3 green-button"
-          >
-            Join Queue
-          </button>
-        </form>
+
+      <!-- Tab content -->
+      <%= if @tab == "public" do %>
+        <!-- your existing queue UI -->
+        <div style="text-align: center; margin-top:10px;">
+          <h1 style="color: #d2e8f9; margin-bottom: 0px;">Queue</h1>
+          <p style="color: #d2e8f9; margin-bottom: 20px;">4-players, teams</p>
+          <div class="queue-cards">
+            <%= for {_user_id, presence} <- @queue do %>
+              <%= for meta <- presence.metas do %>
+                <div class="player-card">
+                  <p><%= meta.display_name %></p>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+
+          <%= if !@in_queue do %>
+            <form phx-submit="join">
+              <button
+                type="submit"
+                class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+              >
+                Join Queue
+              </button>
+            </form>
+          <% else %>
+            <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the queue</p>
+            <form phx-submit="leave">
+              <button
+                type="submit"
+                class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+              >
+                Leave Queue
+              </button>
+            </form>
+          <% end %>
+        </div>
+
       <% else %>
-        <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the queue</p>
-        <form phx-submit="leave">
-          <button
-            type="submit"
-            class="text-sm font-semibold leading-6 text-white active:text-white/80 rounded-lg bg-zinc-900 py-2 px-3 red-button"
-          >
-            Leave Queue
-          </button>
-        </form>
+        <!-- Play a Friend tab -->
+        <div style="text-align: center; margin-top: 2rem;">
+          <p style="color: #d2e8f9; margin-bottom: 1rem;">
+            Invite a friend with a private link:
+          </p>
+          <form phx-submit="create_private">
+            <button
+              type="submit"
+              class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+            >
+              Create Private Game
+            </button>
+          </form>
+        </div>
       <% end %>
     </div>
     """

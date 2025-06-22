@@ -908,3 +908,26 @@ header nav a {
   color: #fff;
   border-color: #888;
 }
+
+.tabs {
+  display: inline-flex;
+  border-bottom: 2px solid #444;
+  margin: 0 auto;
+}
+
+.tab {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  background: #222;
+  color: #aaa;
+  border: 1px solid #444;
+  border-bottom: none;
+  border-radius: 0.5rem 0.5rem 0 0;
+  margin-right: 0.25rem;
+}
+
+.tab.active {
+  background: #071f31;
+  color: #fff;
+  border-color: #d2e8f9;
+}

@@ -262,18 +262,27 @@ defmodule Website45sV3Web.GameLive do
         </h1>
       <% end %>
       <div style="text-align: center;">
-        <%= if assigns.game_state.phase == "Playing" do %>
-          <p style="color: #d2e8f9; line-height: 1; font-size: 0.9rem; margin-top: -2rem;">
-            Trump: <%= capitalize_first(Atom.to_string(assigns.game_state.trump)) %>
-          </p>
-        <% end %>
+          <%= if assigns.game_state.phase == "Playing" do %>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: -2rem;">
+              <p style="color: #d2e8f9; line-height: 1; font-size: 0.9rem; margin: 0;">
+                Trump: <%= capitalize_first(Atom.to_string(assigns.game_state.trump)) %>
+              </p>
+              <button
+                class="score-button"
+                phx-click="toggle_score_overlay"
+              >
+                View Scores
+              </button>
+            </div>
+          <% end %>
+
         <%= render_actions(assigns) %>
 
         <%= render_phase_content(assigns) %>
 
         <%= render_player_hand(assigns) %>
 
-        <%= if assigns.game_state.phase not in ["Scoring", "Final Scoring"] do %>
+        <%= if assigns.game_state.phase not in ["Playing", "Scoring", "Final Scoring"] do %>
           <button class="blue-button" phx-click="toggle_score_overlay" style="margin-top: 1rem;">
             View Scores
           </button>
@@ -334,12 +343,12 @@ defmodule Website45sV3Web.GameLive do
     ~H"""
     <div>
       <%= if not @is_current_player do %>
-        <p style="color: #d2e8f9; text-align: center;">It is <%= @current_player_name %>'s turn</p>
+        <p style="color: #d2e8f9; text-align: center; font-size: 1rem;">It is <%= @current_player_name %>'s turn</p>
       <% else %>
         <%= if @bagged do %>
-          <p style="color: #d2e8f9; text-align: center;">You are bagged</p>
+          <p style="color: #d2e8f9; text-align: center; font-size: 1rem; font-weight: bold;">You are bagged</p>
         <% else %>
-          <p style="color: #d2e8f9; text-align: center;">It is your turn</p>
+          <p style="color: #d2e8f9; text-align: center; font-size: 1rem; font-weight: bold;">It is your turn</p>
         <% end %>
       <% end %>
       <!-- Bid options -->
@@ -455,7 +464,7 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div>
-      <p class="actions-list" style="font-size: 1.1rem"><%= @discard_message %></p>
+      <p class="discard-message"><%= @discard_message %></p>
       <button class="blue-button" phx-click="confirm_discard" {@attrs}>Confirm Keep</button>
     </div>
     """

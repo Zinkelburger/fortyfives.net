@@ -78,11 +78,11 @@ window.liveSocket = liveSocket
 window.addEventListener("load", function() {
         document.querySelectorAll(".password-visibility-button").forEach(function(button) {
           button.addEventListener("click", function() {
-        var passwordInput = this.parentNode.querySelector("input[type='password'], input[type='text']");
+        var passwordInput = this.parentNode.querySelector("input[type='password'], input[type='password-text']");
             var icon = this.querySelector("i");
             if (passwordInput && icon) {
               if (passwordInput.type === "password") {
-                passwordInput.type = "text";
+                passwordInput.type = "password-text";
                 icon.classList.remove("fa-eye");
                 icon.classList.add("fa-eye-slash");
               } else {
@@ -93,4 +93,4 @@ window.addEventListener("load", function() {
             }
           });
         });
-      });      
+      });

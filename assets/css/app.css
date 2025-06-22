@@ -254,7 +254,7 @@ hr {
 	border-top: 0.1rem solid #f4f5f6;
 	margin: 3.0rem 0
 }
-input[type='email'], input[type='text'], input[type='number'], input[type='password'], input[type='search'], input[type='tel'], input[type='text'], input[type='url'], textarea, select {
+input[type='email'], input[type='text'], input[type='number'], input[type='password-text'], input[type='password'], input[type='search'], input[type='tel'], input[type='text'], input[type='url'], textarea, select {
 	-webkit-appearance: none;
 	-moz-appearance: none;
 	appearance: none;
@@ -267,7 +267,8 @@ input[type='email'], input[type='text'], input[type='number'], input[type='passw
 	padding: .6rem 1.0rem;
 	width: 90%;
 }
-#login_form input[type="password"] {
+#login_form input[type="password"],
+#login_form input[type="password-text"] {
   margin-bottom: 0;
 }
 input[type='email']:focus, input[type='text']:focus, input[type='number']:focus, input[type='password']:focus, input[type='search']:focus, input[type='tel']:focus, input[type='text']:focus, input[type='url']:focus, textarea:focus, select:focus {
@@ -674,14 +675,14 @@ header nav a {
 .table {
         margin: 0 auto;
         display: grid;
-        grid-template-rows: 200px 80px 150px;
+        grid-template-rows: 150px 80px 140px;
         grid-template-columns: 200px 130px 200px;
         gap: 1vw;
         width: 100%;
         justify-content: center;
         align-content: center;
 }
-    
+
 
 .table img {
         max-width: 160px;
@@ -815,9 +816,18 @@ header nav a {
 .actions-list {
   color: #d2e8f9;
   margin-bottom: 1rem;
-  margin-top: 0.3rem;
+  margin-top: 0.5rem;
   text-align: center;
   font-size: 0.9rem;
+  line-height: 1;
+}
+
+.discard-message {
+  color: #d2e8f9;
+  margin-bottom: 0.5rem;
+  margin-top: 0.5rem;
+  text-align: center;
+  font-size: 1.1rem;
   line-height: 1;
 }
 
@@ -826,7 +836,7 @@ header nav a {
   margin-bottom: 0px;
   text-align: center;
   margin-top: -2rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0rem;
   line-height: 1;
   font-size: 2.5rem;
 }
@@ -881,3 +891,19 @@ header nav a {
   margin-right: 10px;
 }
 
+.score-button {
+  background-color: transparent;
+  border: 1px solid #d2e8f9;
+  color: #d2e8f9;
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.9rem;
+  transition: color 0.2s, border-color 0.2s;
+  align-self: flex-end;
+  margin-bottom: 0;
+}
+
+.score-button:hover {
+  color: #fff;
+  border-color: #888;
+}

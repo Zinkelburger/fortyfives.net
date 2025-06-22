@@ -396,14 +396,15 @@ class PhxWeb:
         # wait for other players to finish
         while True:
             soup = BeautifulSoup(self.driver.page_source, "html.parser")
-            waiting_message = soup.find("p", string="Waiting for other players...")
-            h1_tag = soup.find("h1")
+            waiting = soup.find("p", string="Waiting for other players…")
 
-            if not waiting_message and h1_tag and "Playing" in h1_tag.get_text():
-                print("Transitioned to the Playing phase.")
+            playing = soup.find("div", class_="played-cards")
+
+            if not waiting and playing:
+                print("👉 Transitioned to the Playing phase.")
                 break
 
-            print("Waiting for other players to finish...")
+            print("Waiting for other players to finish…")
             time.sleep(2)
 
     def extract_current_cards(self, soup: BeautifulSoup) -> None:

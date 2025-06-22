@@ -475,7 +475,7 @@ defmodule Website45sV3Web.CoreComponents do
       <.label for={@id}><%= @label %></.label>
       <div class="relative">
         <input
-          type={if show, do: "text", else: "password"}
+          type={if show, do: "password-text", else: "password"}
           name={@name}
           id={@id}
           value={Phoenix.HTML.Form.normalize_value("password", @value)}

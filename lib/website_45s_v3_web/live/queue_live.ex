@@ -113,13 +113,10 @@ defmodule Website45sV3Web.QueueLive do
 
   def handle_event("create_private", _payload, socket) do
     # generate a random UUID for the private game
-    private_id = UUID.generate()
+    private_id = UUID.uuid4()
     case PrivateQueueManager.create_queue(private_id, socket.assigns.user_id) do
       :ok ->
-        {:noreply,
-         push_redirect(socket,
-           to: Routes.live_path(socket, Website45sV3Web.QueueLive, :private_game, private_id)
-         )}
+        {:noreply, push_redirect(socket, to: ~p"/play/private/#{private_id}")}
       {:error, :too_soon} ->
         {:noreply, put_flash(socket, :error, "Please wait before creating another link")}
     end

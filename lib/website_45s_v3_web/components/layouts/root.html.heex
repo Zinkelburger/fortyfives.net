@@ -38,11 +38,6 @@
           </li>
         <% end %>
         <%= if @current_user do %>
-          <li class="navbar-list-element">
-            <.link href={~p"/profile"} style="font-size: 1.25rem;">
-              <%= @current_user.username %>
-            </.link>
-          </li>
           <%= if @conn.request_path != "/users/settings" do %>
             <li class="navbar-list-element">
               <.link href={~p"/users/settings"} style="font-size: 1.25rem;">

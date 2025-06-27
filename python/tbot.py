@@ -11,6 +11,27 @@ from typing import Optional
 import os
 
 
+def get_driver() -> webdriver.Chrome:
+    """
+    Returns a Chrome WebDriver instance.
+    Prefers a manually installed chromedriver at /usr/local/bin/chromedriver;
+    falls back to Selenium Manager-managed driver if not found.
+    """
+    chrome_options = Options()
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--headless=new")
+
+    chromedriver_path = "/usr/local/bin/chromedriver"
+    if os.path.exists(chromedriver_path):
+        service = Service(executable_path=chromedriver_path)
+        return webdriver.Chrome(service=service, options=chrome_options)
+    else:
+        # Selenium Manager will handle downloading the correct driver
+        return webdriver.Chrome(options=chrome_options)
+
 def evaluate_hand_bid(player_hand: list[Card]) -> tuple[int, Suit]:
     # eventually have it reference a lookup table
     # always returns a suit, but may return a value less than 15
@@ -159,17 +180,7 @@ class PhxWeb:
     def __init__(self, url: str) -> None:
         self.url = url
         self.game_state = GameState()
-
-        # Setup Selenium WebDriver
-        chrome_options = Options()
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument(
-            "--window-size=1920,1080"
-        )
-        chrome_options.add_argument("--headless=new")
-        self.driver = webdriver.Chrome(options=chrome_options)
+        self.driver = get_driver()
 
     def click_join_queue(self) -> None:
         self.driver.get(self.url)

@@ -2,11 +2,9 @@ name: Run tbot e2e
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   e2e-test:
@@ -30,6 +28,21 @@ jobs:
 
       - name: Build Docker image
         run: docker build --tag my-elixir-app:latest .
+
+      - name: Install Chrome and ChromeDriver
+        run: |
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable unzip
+          CHROME_VERSION=$(google-chrome --version | awk '{print $3}')
+          DRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"
+          wget $DRIVER_URL -O chromedriver-linux64.zip
+          unzip chromedriver-linux64.zip
+          sudo mv -f chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/chromedriver
+          google-chrome --version
+          chromedriver --version
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -56,53 +69,59 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install docker compose
+      - name: Run tbot instances   
         run: |
-          sudo apt update
-          sudo apt install -y docker-compose
+          docker rm -f postgres-db my-elixir-app-container 2>/dev/null || true
 
-      - name: Run tbot instances
-        run: |
-          docker run -d --name postgres-db --network host -e POSTGRES_PASSWORD=dataBaseWaterBottle -e POSTGRES_DB=website_45s_v3_dev postgres:15
-          docker run -d --name my-elixir-app-container --network host -e DATABASE_HOST=localhost -e DATABASE_PORT=5432 -e DATABASE_USER=postgres -e DATABASE_PASSWORD=dataBaseWaterBottle -e DATABASE_NAME=website_45s_v3_dev -p 4000:4000 my-elixir-app:latest
-          timeout=300
-          start_time=$(date +%s)
-          while ! curl -s http://localhost:4000; do
-            if [ $(($(date +%s) - start_time)) -ge $timeout ]; then
-              echo "Timeout waiting for the elixir docker container to be ready."
+          docker run -d --name postgres-db --network host \
+            -e POSTGRES_PASSWORD=dataBaseWaterBottle \
+            -e POSTGRES_DB=website_45s_v3_dev \
+            postgres:15
+
+          docker run -d --name my-elixir-app-container --network host \
+            -e DATABASE_HOST=localhost \
+            -e DATABASE_PORT=5432 \
+            -e DATABASE_USER=postgres \
+            -e DATABASE_PASSWORD=dataBaseWaterBottle \
+            -e DATABASE_NAME=website_45s_v3_dev \
+            -p 4000:4000 \
+            my-elixir-app:latest
+
+          timeout=300 start_time=$(date +%s)
+          until curl -s http://localhost:4000; do
+            if (( $(date +%s) - start_time >= timeout )); then
+              echo "Timeout waiting for the elixir app"
               docker logs my-elixir-app-container
               exit 1
             fi
-            echo 'Waiting for the elixir docker container...'
-            docker logs my-elixir-app-container
+            echo "Waiting…"
             sleep 5
           done
-          echo 'Server is ready!'
+
           source venv/bin/activate
-          echo 'Running wait play'
-          python python/wait_play.py || { echo 'wait_play.py failed'; exit 1; }
-          echo 'Wait play successful'
-          docker logs my-elixir-app-container
-          timeout 600 bash -c '
-            for i in {1..4}; do
-              python python/tbot.py > tbot_$i.log 2>&1 &
-            done
-            wait -n
-            wait
-          ' || { echo 'tbot instances failed'; exit 1; }
+          echo 'Running wait_play'
+          python python/wait_play.py
+
+          echo 'Running 4 tbot instances…'
+          for i in {1..4}; do
+            python python/tbot.py 2>&1 | tee tbot_$i.log &
+          done
+          wait
+
+      - name: Upload tbot logs to Actions
+        if: always()
+        run: |
+          for i in {1..4}; do
+            echo "::group::tbot instance $i log"
+            cat tbot_$i.log
+            echo "::endgroup::"
+          done
 
       - name: Check tbot logs for success
         run: |
           for i in {1..4}; do
-            if ! tail -n 3 tbot_$i.log | grep -q "Final Scoring detected"; then
-              echo "Log file tbot_$i.log did not contain the expected 'Final Scoring detected.' line."
-              cat tbot_$i.log
-              exit 1
-            fi
-            if ! tail -n 3 tbot_$i.log | grep -q "WebDriver closed"; then
-              echo "Log file tbot_$i.log did not contain the expected 'WebDriver closed' line."
-              cat tbot_$i.log
-              exit 1
-            fi
+            tail -n3 tbot_$i.log | grep -q "Final Scoring detected" \
+              || { echo "Missing scoring in tbot_$i.log"; exit 1; }
+            tail -n3 tbot_$i.log | grep -q "WebDriver closed" \
+              || { echo "Missing WebDriver closed in tbot_$i.log"; exit 1; }
           done
-        shell: bash

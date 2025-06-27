@@ -378,12 +378,19 @@ defmodule Website45sV3.Accounts do
 
           %User{}
           |> User.registration_changeset(%{email: info.email, username: username, password: password})
-          |> Ecto.Changeset.change(confirmed_at: NaiveDateTime.utc_now(), google_uid: uid)
+          |> Ecto.Changeset.change(
+                      confirmed_at: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second),
+                      google_uid: uid
+                    )
           |> Repo.insert()
 
         %User{} = user when is_nil(user.google_uid) ->
           user
-          |> Ecto.Changeset.change(google_uid: uid, confirmed_at: user.confirmed_at || NaiveDateTime.utc_now())
+          |> Ecto.Changeset.change(
+            google_uid: uid,
+            confirmed_at:
+              user.confirmed_at || NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+          )
           |> Repo.update()
 
         %User{} = user ->

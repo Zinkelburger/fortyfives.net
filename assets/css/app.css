@@ -909,10 +909,15 @@ header nav a {
   border-color: #888;
 }
 
+.tabs-container {
+  text-align: center;
+  padding-top: 1.5%;
+}
+
 .tabs {
   display: inline-flex;
   border-bottom: 2px solid #444;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .tab {

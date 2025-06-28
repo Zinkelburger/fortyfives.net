@@ -160,20 +160,45 @@ defmodule Website45sV3Web.QueueLive do
           id="copy_button"
           type="button"
           title="Copy link"
-          onclick="navigator.clipboard.writeText(document.getElementById('share_link').value)"
-          style="font-size: 1rem; background: none; border: 1px solid #fff; border-radius: 4px; cursor: pointer; padding: 0.45rem; opacity: 0.8; transition: opacity 0.2s;"
+          onclick='navigator.clipboard.writeText(document.getElementById("share_link").value),this.textContent="✔",setTimeout(()=>this.textContent="📋",300)'
+          style="color: #d2e8f9; font-size: 1rem; background: none; border: 1px solid #fff; border-radius: 4px; cursor: pointer; padding: 0.45rem; opacity: 0.8; transition: opacity 0.2s;"
           onmouseover="this.style.opacity=1"
           onmouseout="this.style.opacity=0.8"
         >
           📋
         </button>
-        <input
+        <span
           id="share_link"
-          type="text"
-          readonly
-          value={"/play/private/#{@private_id}"}
-          style="width: 70%; color: #d2e8f9; background: transparent; border: 1px solid #fff; border-radius: 4px; padding: 0.5rem;"
-        />
+          onclick='
+            navigator.clipboard.writeText(this.textContent);
+            this.style.transition="background 0.3s";
+            this.style.background="rgba(255,255,255,0.2)";
+            setTimeout(()=>this.style.background="transparent",300)
+          '
+          style="
+            display: inline-block;
+            color: #d2e8f9;
+            background: transparent;
+            border: 1px solid #fff;
+            border-radius: 4px;
+            padding: 0.45rem;
+            cursor: copy;
+            user-select: all;
+            font-size: 1rem;
+          "
+        >
+          <%= url(~p"/play/private/#{@private_id}") %>
+        </span>
+      </div>
+
+      <div class="queue-cards">
+        <%= for {_user_id, presence} <- @queue do %>
+          <%= for meta <- presence.metas do %>
+            <div class="player-card">
+              <p><%= meta.display_name %></p>
+            </div>
+          <% end %>
+        <% end %>
       </div>
 
       <%= if !@in_queue do %>

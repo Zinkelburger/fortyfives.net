@@ -40,14 +40,21 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     end
   end
 
-  def handle_call({:add_player, id, {name, user_id}}, _from, state) do
+  def handle_call({:add_player, id, {incoming_name, user_id}}, _from, state) do
     queue = Map.get(state.queues, id, %{players: []})
     players = queue.players
 
     if Enum.any?(players, fn {_n, id2} -> id2 == user_id end) do
       {:reply, :ok, state}
     else
-      updated_players = players ++ [{name, user_id}]
+      assigned_name =
+        if String.trim(incoming_name) == "" or String.trim(incoming_name) == "Anonymous" do
+          assign_anonymous_name(players)
+        else
+          incoming_name
+        end
+
+      updated_players = players ++ [{assigned_name, user_id}]
       state = put_in(state.queues[id], %{queue | players: updated_players})
 
       if length(updated_players) >= 4 do
@@ -70,6 +77,29 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   def handle_call({:queue_players, id}, _from, state) do
     players = get_in(state.queues, [id, :players]) || []
     {:reply, players, state}
+  end
+
+  defp assign_anonymous_name(players) do
+    anonymous_players =
+      players
+      |> Enum.filter(fn {name, _id} -> String.starts_with?(name, "Anonymous") end)
+
+    anonymous_numbers =
+      anonymous_players
+      |> Enum.map(fn {name, _id} ->
+        case String.replace_prefix(name, "Anonymous", "") do
+          "" -> 1
+          num -> String.to_integer(num)
+        end
+      end)
+
+    next_anonymous_number =
+      case anonymous_numbers do
+        [] -> 1
+        _ -> Enum.max(anonymous_numbers) + 1
+      end
+
+    "Anonymous#{next_anonymous_number}"
   end
 
   defp start_game(players) do

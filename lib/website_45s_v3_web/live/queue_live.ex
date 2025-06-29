@@ -283,14 +283,23 @@ defmodule Website45sV3Web.QueueLive do
             </div>
           <% else %>
             <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the queue</p>
-            <form phx-submit="leave">
+            <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+              <form phx-submit="leave">
+                <button
+                  type="submit"
+                  class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+                >
+                  Leave Queue
+                </button>
+              </form>
               <button
-                type="submit"
-                class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+                phx-click="request_bot"
+                class="request-bot-button"
+                title="Request Bot"
               >
-                Leave Queue
+                🤖
               </button>
-            </form>
+            </div>
           <% end %>
         </div>
 

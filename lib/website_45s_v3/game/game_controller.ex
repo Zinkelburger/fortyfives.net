@@ -331,9 +331,14 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info({:confirm_discard, player, selected_cards_invalid}, state) do
-    selected_cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
-    # Get the current hand of the player
-    current_hand = Map.get(state.hands, player, [])
+    # Ignore discard messages once the phase has advanced or the player already
+    # discarded to prevent corrupting the game state.
+    if state.phase != "Discard" or player in state.received_discards_from do
+      {:noreply, state}
+    else
+      selected_cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
+      # Get the current hand of the player
+      current_hand = Map.get(state.hands, player, [])
 
     # Filter the hand, keeping only the selected cards
     new_hand = Enum.filter(current_hand, fn card -> card in selected_cards end)
@@ -345,41 +350,42 @@ defmodule Website45sV3.Game.GameController do
     discarded_cards = Enum.filter(current_hand, fn card -> card not in selected_cards end)
     updated_discard_deck = state.discardDeck ++ discarded_cards
 
-    updated_discarded_players = [player | state.received_discards_from]
+      updated_discarded_players = Enum.uniq([player | state.received_discards_from])
 
     # Create the initial new state with the updated hands and discard deck
-    new_state = %{
-      state
-      | hands: updated_hands,
-        discardDeck: updated_discard_deck,
-        received_discards_from: updated_discarded_players
-    }
+      new_state = %{
+        state
+        | hands: updated_hands,
+          discardDeck: updated_discard_deck,
+          received_discards_from: updated_discarded_players
+      }
 
     # Update the phase if all players have discarded
-    new_state =
-      if length(updated_discarded_players) == length(state.player_ids) do
-        {updated_hands, updated_deck} = deal_additional_cards(new_state, state.player_ids)
-        winning_bid_player_id = new_state.winning_bid |> elem(1)
+      new_state =
+        if length(updated_discarded_players) == length(state.player_ids) do
+          {updated_hands, updated_deck} = deal_additional_cards(new_state, state.player_ids)
+          winning_bid_player_id = new_state.winning_bid |> elem(1)
 
-        %{
+          %{
+            new_state
+            | phase: "Playing",
+              received_discards_from: [],
+              hands: updated_hands,
+              deck: updated_deck,
+              actions: [],
+              current_player_id: winning_bid_player_id
+          }
+        else
           new_state
-          | phase: "Playing",
-            received_discards_from: [],
-            hands: updated_hands,
-            deck: updated_deck,
-            actions: [],
-            current_player_id: winning_bid_player_id
-        }
-      else
-        new_state
+        end
+
+      # Broadcast the updated state to the players
+      for p <- state.player_ids do
+        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
       end
 
-    # Broadcast the updated state to the players
-    for p <- state.player_ids do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
+      {:noreply, new_state}
     end
-
-    {:noreply, new_state}
   end
 
   def handle_info({:transition_to_end_bid, winning_player_id}, state) do

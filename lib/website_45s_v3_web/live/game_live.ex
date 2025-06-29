@@ -98,6 +98,14 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, push_redirect(socket, to: "/play", replace: :replace)}
   end
 
+  def handle_info(:auto_playing, socket) do
+    {:noreply, put_flash(socket, :info, "You took too long. A bot is playing for you.")}
+  end
+
+  def handle_info(:auto_play_disabled, socket) do
+    {:noreply, put_flash(socket, :info, "You are no longer being auto-played.")}
+  end
+
   def handle_event("play-card", _, socket) do
     selected_cards = socket.assigns.selected_cards
 

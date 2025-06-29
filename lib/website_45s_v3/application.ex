@@ -22,7 +22,8 @@ defmodule Website45sV3.Application do
       # Start the Endpoint (http/https)
       Website45sV3Web.Endpoint,
       Website45sV3.Game.QueueStarter,
-      Website45sV3.Game.PrivateQueueManager
+      Website45sV3.Game.PrivateQueueManager,
+      Website45sV3.Game.BotSupervisor
       # Start a worker by calling: Website45sV3.Worker.start_link(arg)
       # {Website45sV3.Worker, arg}
     ]

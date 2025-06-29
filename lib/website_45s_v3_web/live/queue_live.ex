@@ -122,6 +122,11 @@ defmodule Website45sV3Web.QueueLive do
     end
   end
 
+  def handle_event("request_bot", _payload, socket) do
+    Website45sV3.Game.BotSupervisor.start_bot()
+    {:noreply, socket}
+  end
+
   def handle_info(:update_queue, socket) do
     queue = Presence.list("queue") |> Map.keys()
     {:noreply, assign(socket, queue: queue)}
@@ -257,14 +262,25 @@ defmodule Website45sV3Web.QueueLive do
           </div>
 
           <%= if !@in_queue do %>
-            <form phx-submit="join">
+            <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+              <form phx-submit="join">
+                <button
+                  type="submit"
+                  class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+                >
+                  Join Queue
+                </button>
+              </form>
+
+              <!-- our new circular button -->
               <button
-                type="submit"
-                class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+                phx-click="request_bot"
+                class="request-bot-button"
+              title="Request Bot"
               >
-                Join Queue
+                🤖
               </button>
-            </form>
+            </div>
           <% else %>
             <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the queue</p>
             <form phx-submit="leave">

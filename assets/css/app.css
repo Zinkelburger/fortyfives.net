@@ -936,3 +936,16 @@ header nav a {
   color: #fff;
   border-color: #d2e8f9;
 }
+
+.request-bot-button {
+  width: 2.5rem;              /* fixed width */
+  height: 2.5rem;             /* same as width → makes it square */
+  border-radius: 50%;         /* turns a square into a circle */
+  background-color: #2563eb;  /* Tailwind “bg-blue-600” */
+  color: #fff;                /* white icon/text */
+  border: none;               /* remove default border */
+  display: flex;              /* for centering the icon/text */
+  align-items: center;        /* vertical centering */
+  justify-content: center;    /* horizontal centering */
+  cursor: pointer;            /* pointer on hover */
+}

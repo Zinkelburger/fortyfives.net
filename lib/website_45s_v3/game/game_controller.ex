@@ -180,13 +180,31 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, state}
   end
 
-  def handle_info({:play_card, player_id, card}, state) do
-    handle_play_card(player_id, card, state, false)
+  def handle_info({:play_card, player_id, card}, %{phase: "Playing", current_player_id: player_id} = state) do
+    current_hand = Map.get(state.hands, player_id, [])
+    legal = Map.get(state.legal_moves, player_id, current_hand)
+
+    if card in legal and card in current_hand do
+      handle_play_card(player_id, card, state, false)
+    else
+      {:noreply, state}
+    end
   end
 
-  def handle_info({:play_card, player_id, card, :bot}, state) do
-    handle_play_card(player_id, card, state, true)
+  def handle_info({:play_card, _player_id, _card}, state), do: {:noreply, state}
+
+  def handle_info({:play_card, player_id, card, :bot}, %{phase: "Playing", current_player_id: player_id} = state) do
+    current_hand = Map.get(state.hands, player_id, [])
+    legal = Map.get(state.legal_moves, player_id, current_hand)
+
+    if card in legal and card in current_hand do
+      handle_play_card(player_id, card, state, true)
+    else
+      {:noreply, state}
+    end
   end
+
+  def handle_info({:play_card, _player_id, _card, :bot}, state), do: {:noreply, state}
 
   defp handle_play_card(player_id, card, state, from_bot) do
     state =
@@ -275,13 +293,25 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, new_state}
   end
 
-  def handle_info({:player_bid, player_id, bid, suit}, state) do
-    handle_player_bid(player_id, bid, suit, state, false)
+  def handle_info({:player_bid, player_id, bid, suit}, %{phase: "Bidding", current_player_id: player_id} = state) do
+    if valid_bid?(bid, suit) do
+      handle_player_bid(player_id, bid, suit, state, false)
+    else
+      {:noreply, state}
+    end
   end
 
-  def handle_info({:player_bid, player_id, bid, suit, :bot}, state) do
-    handle_player_bid(player_id, bid, suit, state, true)
+  def handle_info({:player_bid, _player_id, _bid, _suit}, state), do: {:noreply, state}
+
+  def handle_info({:player_bid, player_id, bid, suit, :bot}, %{phase: "Bidding", current_player_id: player_id} = state) do
+    if valid_bid?(bid, suit) do
+      handle_player_bid(player_id, bid, suit, state, true)
+    else
+      {:noreply, state}
+    end
   end
+
+  def handle_info({:player_bid, _player_id, _bid, _suit, :bot}, state), do: {:noreply, state}
 
   defp handle_player_bid(player_id, bid, suit, state, from_bot) do
     state =
@@ -359,6 +389,17 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, new_state}
   end
 
+  defp valid_bid?(bid, suit) do
+    bid in ["0", "15", "20", "25", "30"] and
+      (bid == "0" and suit == "pass" or suit in ["hearts", "diamonds", "clubs", "spades"])
+  end
+
+  defp valid_discard?(player, selected_cards_invalid, state) do
+    hand = Map.get(state.hands, player, [])
+    cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
+    length(cards) == 5 and Enum.all?(cards, &(&1 in hand))
+  end
+
   def handle_info(
         %Phoenix.Socket.Broadcast{
           event: "presence_diff",
@@ -383,41 +424,50 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, new_state}
   end
 
-  def handle_info({:confirm_discard, player, selected_cards_invalid}, state) do
-    do_confirm_discard(player, selected_cards_invalid, state, false)
+  def handle_info({:confirm_discard, player, selected_cards_invalid}, %{phase: "Discard"} = state) do
+    if valid_discard?(player, selected_cards_invalid, state) do
+      do_confirm_discard(player, selected_cards_invalid, state, false)
+    else
+      {:noreply, state}
+    end
   end
 
-  def handle_info({:confirm_discard, player, selected_cards_invalid, :bot}, state) do
-    do_confirm_discard(player, selected_cards_invalid, state, true)
+  def handle_info({:confirm_discard, _player, _selected_cards_invalid}, state), do: {:noreply, state}
+
+  def handle_info({:confirm_discard, player, selected_cards_invalid, :bot}, %{phase: "Discard"} = state) do
+    if valid_discard?(player, selected_cards_invalid, state) do
+      do_confirm_discard(player, selected_cards_invalid, state, true)
+    else
+      {:noreply, state}
+    end
   end
+
+  def handle_info({:confirm_discard, _player, _cards, :bot}, state), do: {:noreply, state}
 
   defp do_confirm_discard(player, selected_cards_invalid, state, from_bot) do
-    state =
-      if MapSet.member?(state.bot_players, player) and not from_bot do
-        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", :auto_play_disabled)
-        %{state | bot_players: MapSet.delete(state.bot_players, player)}
-      else
-        state
-      end
-    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
+    unless valid_discard?(player, selected_cards_invalid, state) do
+      {:noreply, state}
+    else
+      state =
+        if MapSet.member?(state.bot_players, player) and not from_bot do
+          Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", :auto_play_disabled)
+          %{state | bot_players: MapSet.delete(state.bot_players, player)}
+        else
+          state
+        end
 
-    selected_cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
-    # Get the current hand of the player
-    current_hand = Map.get(state.hands, player, [])
+      if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
 
-    # Filter the hand, keeping only the selected cards
-    new_hand = Enum.filter(current_hand, fn card -> card in selected_cards end)
+      selected_cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
+      current_hand = Map.get(state.hands, player, [])
+      new_hand = Enum.filter(current_hand, fn card -> card in selected_cards end)
+      updated_hands = Map.put(state.hands, player, new_hand)
 
-    # Update the hands state by setting the new hand for the player
-    updated_hands = Map.put(state.hands, player, new_hand)
-
-    # Add the discarded cards to the discard deck
-    discarded_cards = Enum.filter(current_hand, fn card -> card not in selected_cards end)
-    updated_discard_deck = state.discardDeck ++ discarded_cards
+      discarded_cards = Enum.filter(current_hand, fn card -> card not in selected_cards end)
+      updated_discard_deck = state.discardDeck ++ discarded_cards
 
       updated_discarded_players = Enum.uniq([player | state.received_discards_from])
 
-    # Create the initial new state with the updated hands and discard deck
       new_state = %{
         state
         | hands: updated_hands,
@@ -425,7 +475,6 @@ defmodule Website45sV3.Game.GameController do
           received_discards_from: updated_discarded_players
       }
 
-    # Update the phase if all players have discarded
       new_state =
         if length(updated_discarded_players) == length(state.player_ids) do
           {updated_hands, updated_deck} = deal_additional_cards(new_state, state.player_ids)
@@ -444,15 +493,13 @@ defmodule Website45sV3.Game.GameController do
           new_state
         end
 
-      # Broadcast the updated state to the players
       for p <- state.player_ids do
         Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
       end
 
+      new_state = schedule_idle_timer(new_state)
       {:noreply, new_state}
     end
-    new_state = schedule_idle_timer(new_state)
-    {:noreply, new_state}
   end
 
   def handle_info({:transition_to_end_bid, winning_player_id}, state) do
@@ -509,6 +556,8 @@ defmodule Website45sV3.Game.GameController do
     new_state = schedule_idle_timer(new_state)
     {:noreply, new_state}
   end
+
+  def handle_info(_msg, state), do: {:noreply, state}
 
   defp convert_to_card_format(card_string) do
     [value, suit] = String.split(card_string, "_")

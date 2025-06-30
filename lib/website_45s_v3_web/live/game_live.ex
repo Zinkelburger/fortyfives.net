@@ -67,11 +67,18 @@ defmodule Website45sV3Web.GameLive do
       %{id: "#{value}_#{suit}_#{player_id}", card: %Website45sV3.Game.Card{value: value, suit: suit}, player_id: player_id}
     end)
 
+    confirm_discard_clicked =
+      if new_state.phase == "Discard" do
+        socket.assigns.user_id in new_state.received_discards_from
+      else
+        false
+      end
+
     socket =
       socket
       |> assign(:game_state, new_state)
       |> assign(:current_player_id, current_player_id)
-      |> assign(:confirm_discard_clicked, false)
+      |> assign(:confirm_discard_clicked, confirm_discard_clicked)
 
     if new_state.phase == "Playing" do
       if played_cards_with_id == [] do

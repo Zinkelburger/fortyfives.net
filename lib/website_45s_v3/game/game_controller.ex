@@ -487,9 +487,11 @@ defmodule Website45sV3.Game.GameController do
 
   defp valid_bid?(bid, suit, state) do
     suit_string = if is_atom(suit), do: Atom.to_string(suit), else: suit
+
     base_valid =
       bid in ["0", "15", "20", "25", "30"] and
-        (bid == "0" and suit == "pass" or suit_string in ["hearts", "diamonds", "clubs", "spades"])
+        ((bid == "0" and suit_string == "pass") or
+           (bid != "0" and suit_string in ["hearts", "diamonds", "clubs", "spades"]))
 
     if state.bagged do
       base_valid and bid != "0"

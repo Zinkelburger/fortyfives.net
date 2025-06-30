@@ -22,6 +22,19 @@ defmodule Website45sV3.Game.BotPlayerServer do
   def handle_info({:redirect, "/game/" <> game_name}, state) do
     Presence.untrack(self(), "queue", state.user_id)
     Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
+
+    # Just like a real player, fetch the current game state so the bot
+    # can immediately act on its turn. We lookup the GameController
+    # process via the Registry and send ourselves an `:update_state`
+    # message with the initial state.
+    case Registry.lookup(Website45sV3.Registry, game_name) do
+      [{game_pid, _}] ->
+        game_state = Website45sV3.Game.GameController.get_game_state(game_pid)
+        send(self(), {:update_state, game_state})
+      _ ->
+        :ok
+    end
+
     {:noreply, %{state | game: game_name}}
   end
 

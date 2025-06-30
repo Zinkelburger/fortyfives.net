@@ -10,6 +10,12 @@ defmodule Website45sV3.Game.BotPlayerServer do
   end
 
   @impl true
+  def child_spec(arg) do
+    super(arg)
+    |> Map.put(:restart, :temporary)
+  end
+
+  @impl true
   def init(display_name) do
     user_id = "bot_" <> UUID.uuid4()
     Presence.track(self(), "queue", user_id, %{display_name: display_name})

@@ -40,21 +40,23 @@ defmodule Website45sV3.Game.BotPlayerServer do
   end
 
   def handle_info({:update_state, new_state}, %{user_id: id, game: game_name} = state) do
-    if game_name && new_state.current_player_id == id do
-      case new_state.phase do
-        "Bidding" ->
-          {bid, suit} = BotPlayer.pick_bid(new_state, id)
-          schedule_move(game_name, {:player_bid, id, Integer.to_string(bid), suit, :bot})
-        "Discard" ->
-          cards = BotPlayer.pick_discard(new_state, id)
-          schedule_move(game_name, {:confirm_discard, id, cards, :bot})
-        "Playing" ->
-          card = BotPlayer.pick_card(new_state, id)
-          schedule_move(game_name, {:play_card, id, card, :bot})
-        _ ->
-          :ok
-      end
+    cond do
+      game_name && new_state.phase == "Bidding" && new_state.current_player_id == id ->
+        {bid, suit} = BotPlayer.pick_bid(new_state, id)
+        schedule_move(game_name, {:player_bid, id, Integer.to_string(bid), suit, :bot})
+
+      game_name && new_state.phase == "Discard" && id not in new_state.received_discards_from ->
+        cards = BotPlayer.pick_discard(new_state, id)
+        schedule_move(game_name, {:confirm_discard, id, cards, :bot})
+
+      game_name && new_state.phase == "Playing" && new_state.current_player_id == id ->
+        card = BotPlayer.pick_card(new_state, id)
+        schedule_move(game_name, {:play_card, id, card, :bot})
+
+      true ->
+        :ok
     end
+
     {:noreply, state}
   end
 

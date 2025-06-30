@@ -156,6 +156,14 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, assign(socket, queue: queue)}
   end
 
+  # Ignore game updates that might still be broadcast to the user after they
+  # navigate away from the game page. Without this clause the LiveView would
+  # crash when it receives a `{:update_state, _}` message while the user is in
+  # the queue.
+  def handle_info({:update_state, _new_state}, socket) do
+    {:noreply, socket}
+  end
+
   def handle_info({:redirect, url}, socket) do
     IO.inspect("user id in assigns: #{socket.assigns.user_id}")
     {:noreply, push_navigate(socket, to: url, replace: :replace)}

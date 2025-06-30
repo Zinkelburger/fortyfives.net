@@ -49,13 +49,13 @@ defmodule Website45sV3.Game.BotPlayerServer do
     {:noreply, state}
   end
 
-  defp schedule_move(game_name, message) do
-    Process.send_after(self(), {:delayed_move, game_name, message}, 1000)
-  end
-
   def handle_info(:game_end, state), do: {:stop, :normal, state}
   def handle_info(:game_crash, state), do: {:stop, :normal, state}
   def handle_info(_, state), do: {:noreply, state}
+
+  defp schedule_move(game_name, message) do
+    Process.send_after(self(), {:delayed_move, game_name, message}, 1000)
+  end
 
   @impl true
   def terminate(_reason, state) do

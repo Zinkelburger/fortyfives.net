@@ -27,47 +27,49 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let Hooks = {};
 
 Hooks.CardSelection = {
+  // Called when the hook is first mounted. Initializes local state and
+  // binds click handlers on each card in the player's hand.
   mounted() {
-    this.selectedCards = []
     this.discardLimit = 5
+    this.phase = null
     this.locked = false
-    this.updatePhase()
+    this.selectedCards = []
+
+    this.handlePhaseChange()
     this.bindClicks()
+    this.render()
+    this.sync()
 
     this.el.addEventListener('discard-confirmed', () => {
       this.locked = true
-      this.selectedCards = []
-      this.render()
-      this.store()
+      this.clear()
     })
-
-    this.observer = new MutationObserver(() => {
-      this.updatePhase()
-    })
-    this.observer.observe(this.el, { attributes: true })
   },
+
+  // Called whenever the DOM element is patched by LiveView. We simply
+  // rebind any new card elements and react to possible phase changes.
   updated() {
-    this.updatePhase()
+    this.handlePhaseChange()
     this.bindClicks()
     this.render()
-    this.store()
+    this.sync()
   },
-  destroyed() {
-    if (this.observer) this.observer.disconnect()
-  },
-  updatePhase() {
+
+  // Check for a phase transition. When entering the Discard or Playing phase
+  // we reset the local selection and unlock the hand.
+  handlePhaseChange() {
     const newPhase = this.el.dataset.phase
-    if (newPhase && newPhase !== this.phase) {
+    if (newPhase !== this.phase) {
       this.phase = newPhase
-      if (this.phase === 'Discard' || this.phase === 'Playing') {
+      if (['Discard', 'Playing'].includes(this.phase)) {
         this.locked = false
-        this.selectedCards = []
-        this.store()
+        this.clear()
+      } else {
+        this.locked = true
       }
-    } else {
-      this.phase = newPhase
     }
   },
+
   bindClicks() {
     this.el.querySelectorAll('img[data-card-value]').forEach(img => {
       if (img.dataset.bound !== 'true') {
@@ -76,10 +78,10 @@ Hooks.CardSelection = {
       }
     })
   },
+
+  // Toggle the provided card depending on the current phase.
   toggle(img) {
-    if (this.locked || (this.phase !== 'Discard' && this.phase !== 'Playing')) {
-      return
-    }
+    if (this.locked || !['Discard', 'Playing'].includes(this.phase)) return
 
     const value = img.dataset.cardValue
     if (this.phase === 'Discard') {
@@ -93,16 +95,15 @@ Hooks.CardSelection = {
         }
         this.selectedCards.push(value)
       }
-    } else if (this.phase === 'Playing') {
-      if (this.selectedCards.includes(value)) {
-        this.selectedCards = []
-      } else {
-        this.selectedCards = [value]
-      }
+    } else {
+      this.selectedCards = this.selectedCards.includes(value) ? [] : [value]
     }
+
     this.render()
-    this.store()
+    this.sync()
   },
+
+  // Update card CSS classes based on the current selection.
   render() {
     this.el.querySelectorAll('img[data-card-value]').forEach(img => {
       if (this.selectedCards.includes(img.dataset.cardValue)) {
@@ -112,7 +113,14 @@ Hooks.CardSelection = {
       }
     })
   },
-  store() {
+
+  clear() {
+    this.selectedCards = []
+    this.render()
+    this.sync()
+  },
+
+  sync() {
     this.el.dataset.selectedCards = JSON.stringify(this.selectedCards)
   }
 }

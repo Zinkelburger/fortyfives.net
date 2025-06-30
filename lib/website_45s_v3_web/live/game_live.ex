@@ -120,30 +120,38 @@ defmodule Website45sV3Web.GameLive do
      )}
   end
 
+  @doc """
+  Called when the client requests to play a card. The payload contains a single
+  card value in the form of `"10_hearts"`. We parse the value and broadcast an
+  instruction to the running game process.
+  """
   def handle_event("play-card", %{"cards" => [card_value]}, socket) do
-    {value, suit} = card_value |> String.split("_") |> parse_card_string()
-    card = %Website45sV3.Game.Card{value: value, suit: Atom.to_string(suit)}
+    with [value, suit] <- String.split(card_value, "_"),
+         {int_val, suit_atom} <- parse_card_string([value, suit]) do
+      card = %Website45sV3.Game.Card{value: int_val, suit: Atom.to_string(suit_atom)}
 
-    Phoenix.PubSub.broadcast(
-      Website45sV3.PubSub,
-      socket.assigns.game_state.game_name,
-      {:play_card, socket.assigns.user_id, card}
-    )
+      Phoenix.PubSub.broadcast(
+        Website45sV3.PubSub,
+        socket.assigns.game_state.game_name,
+        {:play_card, socket.assigns.user_id, card}
+      )
+    end
 
     {:noreply, socket}
   end
 
-  def handle_event("play-card", _params, socket) do
-    {:noreply, socket}
-  end
+  def handle_event("play-card", _params, socket), do: {:noreply, socket}
 
+  @doc """
+  Receive the list of cards the player chose to keep during the discard phase
+  and notify the running game. The client sends the cards in order of
+  appearance from the CardSelection hook.
+  """
   def handle_event("confirm_discard", %{"cards" => cards_to_keep}, socket) do
-    current_player_id = socket.assigns.user_id
-
     Phoenix.PubSub.broadcast(
       Website45sV3.PubSub,
       socket.assigns.game_state.game_name,
-      {:confirm_discard, current_player_id, cards_to_keep}
+      {:confirm_discard, socket.assigns.user_id, cards_to_keep}
     )
 
     {:noreply, assign(socket, confirm_discard_clicked: true)}

@@ -227,7 +227,7 @@ defmodule Website45sV3Web.CoreComponents do
       <div
       class="progress-bar"
       style={
-        "width: 100%; height: 4px; position: absolute; bottom: 0; background-color: " <>
+        "width: 100%; height: 4px; position: absolute; left: 0; right: 0; bottom: 0; background-color: " <>
         if(@kind == :info, do: "rgba(0, 255, 0, 0.5)", else: "rgba(255, 0, 0, 0.5)")
       }
     ></div>

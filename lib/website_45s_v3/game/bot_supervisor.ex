@@ -10,7 +10,7 @@ defmodule Website45sV3.Game.BotSupervisor do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
-  def start_bot do
-    DynamicSupervisor.start_child(__MODULE__, {Website45sV3.Game.BotPlayerServer, []})
+  def start_bot(display_name) do
+    DynamicSupervisor.start_child(__MODULE__, {Website45sV3.Game.BotPlayerServer, display_name})
   end
 end

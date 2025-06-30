@@ -5,14 +5,13 @@ defmodule Website45sV3.Game.BotPlayerServer do
   alias Website45sV3.Game.BotPlayer
   alias UUID
 
-  def start_link(_args) do
-    GenServer.start_link(__MODULE__, %{})
+  def start_link(display_name) do
+    GenServer.start_link(__MODULE__, display_name)
   end
 
   @impl true
-  def init(_) do
+  def init(display_name) do
     user_id = "bot_" <> UUID.uuid4()
-    display_name = "AnonymousBot"
     Presence.track(self(), "queue", user_id, %{display_name: display_name})
     Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
     QueueStarter.add_player({display_name, user_id})

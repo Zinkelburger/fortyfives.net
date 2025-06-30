@@ -123,7 +123,31 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_event("request_bot", _payload, socket) do
-    Website45sV3.Game.BotSupervisor.start_bot()
+    queue = socket.assigns.queue
+
+    existing_bot_numbers =
+      queue
+      |> Map.values()
+      |> Enum.flat_map(fn %{metas: metas} ->
+        Enum.map(metas, & &1.display_name)
+      end)
+      |> Enum.filter(&String.starts_with?(&1, "Bot"))
+      |> Enum.map(fn "Bot" <> num ->
+        case Integer.parse(num) do
+          {int, ""} -> int
+          _         -> 0
+        end
+      end)
+
+    next_number =
+      case existing_bot_numbers do
+        [] -> 1
+        nums -> Enum.max(nums) + 1
+      end
+
+    display_name = "Bot" <> Integer.to_string(next_number)
+
+    Website45sV3.Game.BotSupervisor.start_bot(display_name)
     {:noreply, socket}
   end
 

@@ -37,10 +37,13 @@ Hooks.CardSelection = {
     this.updatePhase()
     this.bindClicks()
     this.render()
+    this.store()
   },
   updatePhase() {
     this.phase = this.el.dataset.phase
-    this.selectedCards = JSON.parse(this.el.dataset.selectedCards || "[]")
+    if (this.el.dataset.selectedCards) {
+      this.selectedCards = JSON.parse(this.el.dataset.selectedCards)
+    }
   },
   bindClicks() {
     this.el.querySelectorAll('img[data-card-value]').forEach(img => {

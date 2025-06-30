@@ -26,6 +26,67 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 
 let Hooks = {};
 
+Hooks.CardSelection = {
+  mounted() {
+    this.selectedCards = []
+    this.discardLimit = 5
+    this.updatePhase()
+    this.bindClicks()
+  },
+  updated() {
+    this.updatePhase()
+    this.bindClicks()
+    this.render()
+  },
+  updatePhase() {
+    this.phase = this.el.dataset.phase
+    this.selectedCards = JSON.parse(this.el.dataset.selectedCards || "[]")
+  },
+  bindClicks() {
+    this.el.querySelectorAll('img[data-card-value]').forEach(img => {
+      if (img.dataset.bound !== 'true') {
+        img.dataset.bound = 'true'
+        img.addEventListener('click', () => this.toggle(img))
+      }
+    })
+  },
+  toggle(img) {
+    const value = img.dataset.cardValue
+    if (this.phase === 'Discard') {
+      if (this.selectedCards.includes(value)) {
+        this.selectedCards = this.selectedCards.filter(v => v !== value)
+      } else {
+        if (this.selectedCards.length >= this.discardLimit) {
+          const removed = this.selectedCards.shift()
+          const old = this.el.querySelector(`img[data-card-value="${removed}"]`)
+          if (old) old.classList.remove('selected-card')
+        }
+        this.selectedCards.push(value)
+      }
+    } else if (this.phase === 'Playing') {
+      if (this.selectedCards.includes(value)) {
+        this.selectedCards = []
+      } else {
+        this.selectedCards = [value]
+      }
+    }
+    this.render()
+    this.store()
+  },
+  render() {
+    this.el.querySelectorAll('img[data-card-value]').forEach(img => {
+      if (this.selectedCards.includes(img.dataset.cardValue)) {
+        img.classList.add('selected-card')
+      } else {
+        img.classList.remove('selected-card')
+      }
+    })
+  },
+  store() {
+    this.el.dataset.selectedCards = JSON.stringify(this.selectedCards)
+  }
+}
+
 Hooks.AutoDismissFlash = {
     mounted() {
       let progressBar = this.el.querySelector('.progress-bar');
@@ -41,7 +102,7 @@ Hooks.AutoDismissFlash = {
     }
   };
 
-  Hooks.ScoringCountdown = {
+Hooks.ScoringCountdown = {
   mounted() {
     this.seconds = parseInt(this.el.dataset.seconds || "0")
     this.el.innerText = this.seconds
@@ -56,6 +117,32 @@ Hooks.AutoDismissFlash = {
   },
   destroyed() {
     if (this.interval) clearInterval(this.interval)
+  }
+}
+
+Hooks.PlayCardButton = {
+  mounted() {
+    this.el.addEventListener('click', () => {
+      const hand = document.getElementById('player-hand')
+      if (!hand) { return }
+      const cards = JSON.parse(hand.dataset.selectedCards || '[]')
+      if (cards.length === 1) {
+        this.pushEvent('play-card', {cards: cards})
+      }
+    })
+  }
+}
+
+Hooks.ConfirmDiscardButton = {
+  mounted() {
+    this.el.addEventListener('click', () => {
+      const hand = document.getElementById('player-hand')
+      if (!hand) { return }
+      const cards = JSON.parse(hand.dataset.selectedCards || '[]')
+      if (cards.length > 0 && cards.length <= 5) {
+        this.pushEvent('confirm_discard', {cards: cards})
+      }
+    })
   }
 }
 

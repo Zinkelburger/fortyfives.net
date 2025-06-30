@@ -42,8 +42,7 @@ defmodule Website45sV3Web.GameLive do
              selected_bid: nil,
              user_id: user_id,
              display_name: display_name,
-             selected_cards: [],
-             confirm_discard_clicked: false,
+            confirm_discard_clicked: false,
              current_player_id: game_state[:current_player_id],
              overlay_visible: false
            )
@@ -106,33 +105,25 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, put_flash(socket, :info, "You are no longer being auto-played.")}
   end
 
-  def handle_event("play-card", _, socket) do
-    selected_cards = socket.assigns.selected_cards
+  def handle_event("play-card", %{"cards" => [card_value]}, socket) do
+    {value, suit} = card_value |> String.split("_") |> parse_card_string()
+    card = %Website45sV3.Game.Card{value: value, suit: Atom.to_string(suit)}
 
-    # Confirm that a card is selected
-    if length(selected_cards) == 1 do
-      card_value = hd(selected_cards)
-      {value, suit} = card_value |> String.split("_") |> parse_card_string()
-      card = %Website45sV3.Game.Card{value: value, suit: Atom.to_string(suit)}
+    Phoenix.PubSub.broadcast(
+      Website45sV3.PubSub,
+      socket.assigns.game_state.game_name,
+      {:play_card, socket.assigns.user_id, card}
+    )
 
-      # Broadcast a message to the server to play the card
-      Phoenix.PubSub.broadcast(
-        Website45sV3.PubSub,
-        socket.assigns.game_state.game_name,
-        {:play_card, socket.assigns.user_id, card}
-      )
-
-      # Clear the selected card
-      {:noreply, assign(socket, selected_cards: [])}
-    else
-      # No card or more than one card is selected
-      {:noreply, socket}
-    end
+    {:noreply, socket}
   end
 
-  def handle_event("confirm_discard", _params, socket) do
+  def handle_event("play-card", _params, socket) do
+    {:noreply, socket}
+  end
+
+  def handle_event("confirm_discard", %{"cards" => cards_to_keep}, socket) do
     current_player_id = socket.assigns.user_id
-    cards_to_keep = socket.assigns.selected_cards
 
     Phoenix.PubSub.broadcast(
       Website45sV3.PubSub,
@@ -140,7 +131,7 @@ defmodule Website45sV3Web.GameLive do
       {:confirm_discard, current_player_id, cards_to_keep}
     )
 
-    {:noreply, assign(socket, selected_cards: [], confirm_discard_clicked: true)}
+    {:noreply, assign(socket, confirm_discard_clicked: true)}
   end
 
   def handle_event("confirm_bid", _params, socket) do
@@ -217,41 +208,6 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, assign(socket, new_assigns)}
   end
 
-  def handle_event("toggle_card_selection", %{"card" => card_value}, socket) do
-    selected_cards = socket.assigns.selected_cards
-    game_phase = socket.assigns.game_state.phase
-
-    updated_selected_cards =
-      case game_phase do
-        "Discard" ->
-          cond do
-            card_value in selected_cards ->
-              Enum.filter(selected_cards, fn card -> card != card_value end)
-
-            length(selected_cards) >= 5 ->
-              # Remove the oldest card and add the new one for discard phase
-              [card_value | Enum.drop(selected_cards, -1)]
-
-            true ->
-              [card_value | selected_cards]
-          end
-
-        "Playing" ->
-          # For the playing phase, only allow one card to be selected.
-          # If another card is clicked, replace the previous selection.
-          if card_value in selected_cards do
-            []
-          else
-            [card_value]
-          end
-
-        _ ->
-          # Handle other game phases if necessary, or just retain current selection
-          selected_cards
-      end
-
-    {:noreply, assign(socket, selected_cards: updated_selected_cards)}
-  end
 
   def handle_event("toggle_score_overlay", _params, socket) do
     {:noreply, assign(socket, overlay_visible: !socket.assigns.overlay_visible)}
@@ -466,20 +422,19 @@ defmodule Website45sV3Web.GameLive do
 
     assigns = assign(assigns, :discard_message, discard_message)
 
-    assigns = assign(assigns, :card_count, length(assigns.selected_cards))
     attrs = discard_button_attrs(assigns)
     assigns = assign(assigns, :attrs, attrs)
 
     ~H"""
     <div>
       <p class="discard-message"><%= @discard_message %></p>
-      <button class="blue-button" phx-click="confirm_discard" {@attrs}>Confirm Keep</button>
+      <button class="blue-button" phx-hook="ConfirmDiscardButton" {@attrs}>Confirm Keep</button>
     </div>
     """
   end
 
   defp discard_button_attrs(assigns) do
-    if assigns.card_count < 1 or assigns.confirm_discard_clicked or assigns.card_count > 5 do
+    if assigns.confirm_discard_clicked do
       [disabled: true]
     else
       []
@@ -488,7 +443,7 @@ defmodule Website45sV3Web.GameLive do
 
   defp render_player_hand(assigns) do
     ~H"""
-    <div class="player-hand">
+    <div id="player-hand" class="player-hand" phx-hook="CardSelection" data-phase={@game_state.phase}>
       <%= for %Website45sV3.Game.Card{value: value, suit: suit} <- assigns.game_state.hands[assigns.user_id] do %>
         <% card_value = Integer.to_string(value) <> "_" <> Atom.to_string(suit) %>
         <% legal_moves = Map.get(assigns.game_state.legal_moves, assigns.user_id, []) %>
@@ -503,7 +458,7 @@ defmodule Website45sV3Web.GameLive do
             (assigns.game_state.phase == "Discard" ||
                (is_playing_phase && is_current_player_turn && is_card_legal)) %>
         <% card_class =
-          if(card_value in assigns.selected_cards, do: "selected-card", else: "card") <>
+          "card" <>
             if is_playing_phase && (!is_card_legal || !is_current_player_turn),
               do: " grayed-out",
               else: "" %>
@@ -511,8 +466,7 @@ defmodule Website45sV3Web.GameLive do
         <img
           src={get_image_location({value, suit})}
           class={card_class}
-          phx-click={if can_select_card, do: "toggle_card_selection", else: nil}
-          phx-value-card={if can_select_card, do: card_value, else: nil}
+          data-card-value={card_value}
         />
       <% end %>
     </div>
@@ -574,7 +528,7 @@ defmodule Website45sV3Web.GameLive do
           </div>
         <% end %>
       </div>
-      <button class="blue-button" phx-click="play-card" {@attrs}>
+      <button class="blue-button" phx-hook="PlayCardButton" {@attrs}>
         Play Card
       </button>
       <div id="card-led-suit" style="display: none;"><%= @card_led_suit %></div>
@@ -660,7 +614,7 @@ defmodule Website45sV3Web.GameLive do
   end
 
   defp play_card_button_attrs(assigns) do
-    if length(assigns.selected_cards) != 1 or not assigns.is_current_player do
+    if not assigns.is_current_player do
       [disabled: true]
     else
       []

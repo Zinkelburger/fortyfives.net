@@ -22,6 +22,7 @@ defmodule Website45sV3.Game.BotPlayerServer do
   def handle_info({:redirect, "/game/" <> game_name}, state) do
     Presence.untrack(self(), "queue", state.user_id)
     Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
+    Presence.track(self(), game_name, state.user_id, %{})
 
     # Just like a real player, fetch the current game state so the bot
     # can immediately act on its turn. We lookup the GameController
@@ -73,6 +74,9 @@ defmodule Website45sV3.Game.BotPlayerServer do
   @impl true
   def terminate(_reason, state) do
     Presence.untrack(self(), "queue", state.user_id)
+    if state.game do
+      Presence.untrack(self(), state.game, state.user_id)
+    end
     :ok
   end
 end

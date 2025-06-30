@@ -33,6 +33,8 @@ defmodule Website45sV3Web.GameLive do
             %{id: "#{value}_#{suit}", card: %Website45sV3.Game.Card{value: value, suit: suit}, player_id: player_id}
           end)
 
+          auto_playing = MapSet.member?(game_state.bot_players, user_id)
+
           {:ok,
            socket
            |> assign(
@@ -45,7 +47,8 @@ defmodule Website45sV3Web.GameLive do
              confirm_discard_clicked: false,
              current_player_id: game_state[:current_player_id],
              overlay_visible: false,
-             game_over: false
+             game_over: false,
+             auto_playing: auto_playing
            )
            |> stream(:played_cards, played_cards_with_id)}
         else
@@ -108,16 +111,20 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_info(:auto_playing, socket) do
-    {:noreply, put_flash(socket, :info, "You took too long. A bot is playing for you.")}
+    {:noreply,
+     socket
+     |> put_flash(:info, "You took too long. A bot is playing for you.")
+     |> assign(:auto_playing, true)}
   end
 
   def handle_info(:auto_play_disabled, socket) do
     {:noreply,
-     put_flash(
-       socket,
+     socket
+     |> put_flash(
        :info,
        "Welcome back! A bot was playing for you when you left. Auto-play has been disabled."
-     )}
+     )
+     |> assign(:auto_playing, false)}
   end
 
   @doc """
@@ -246,6 +253,16 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, push_navigate(socket, to: "/play")}
   end
 
+  def handle_event("resume_control", _params, socket) do
+    Phoenix.PubSub.broadcast(
+      Website45sV3.PubSub,
+      socket.assigns.game_state.game_name,
+      {:resume_control, socket.assigns.user_id}
+    )
+
+    {:noreply, socket}
+  end
+
   @impl true
   def terminate(_reason, socket) do
     unless socket.assigns[:game_over] do
@@ -289,9 +306,13 @@ defmodule Website45sV3Web.GameLive do
         <%= render_player_hand(assigns) %>
 
         <%= if assigns.game_state.phase not in ["Playing", "Scoring", "Final Scoring"] do %>
-          <button class="blue-button" phx-click="toggle_score_overlay" style="margin-top: 1rem;">
-            View Scores
-          </button>
+          <%= if @auto_playing do %>
+            <button class="blue-button" phx-click="resume_control" style="margin-top: 1rem;">Resume Game!</button>
+          <% else %>
+            <button class="blue-button" phx-click="toggle_score_overlay" style="margin-top: 1rem;">
+              View Scores
+            </button>
+          <% end %>
         <% end %>
       </div>
     </div>
@@ -566,9 +587,13 @@ defmodule Website45sV3Web.GameLive do
           </div>
         <% end %>
       </div>
-      <button class="blue-button" phx-hook="PlayCardButton" {@attrs}>
-        Play Card
-      </button>
+      <%= if @auto_playing do %>
+        <button class="blue-button" phx-click="resume_control">Resume Game!</button>
+      <% else %>
+        <button class="blue-button" phx-hook="PlayCardButton" {@attrs}>
+          Play Card
+        </button>
+      <% end %>
       <div id="card-led-suit" style="display: none;"><%= @card_led_suit %></div>
     </div>
     """
@@ -652,10 +677,10 @@ defmodule Website45sV3Web.GameLive do
   end
 
   defp play_card_button_attrs(assigns) do
-    if not assigns.is_current_player do
-      [disabled: true]
-    else
-      []
+    cond do
+      assigns.auto_playing -> []
+      not assigns.is_current_player -> [disabled: true]
+      true -> []
     end
   end
 

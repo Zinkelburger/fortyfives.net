@@ -325,6 +325,17 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, new_state}
   end
 
+  def handle_info({:resume_control, player_id}, state) do
+    if MapSet.member?(state.bot_players, player_id) do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
+      new_state = %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
+      new_state = schedule_idle_timer(new_state)
+      {:noreply, new_state}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:confirm_discard, player, selected_cards_invalid}, %{phase: "Discard"} = state) do
     if valid_discard?(player, selected_cards_invalid, state) do
       do_confirm_discard(player, selected_cards_invalid, state, false)

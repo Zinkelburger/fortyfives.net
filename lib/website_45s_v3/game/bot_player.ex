@@ -41,14 +41,7 @@ defmodule Website45sV3.Game.BotPlayer do
 
     keep = if keep == [], do: [List.first(hand)], else: keep
 
-    remaining = hand -- keep
-    additional =
-      remaining
-      |> Enum.sort_by(& &1.value, :desc)
-      |> Enum.take(max(0, 5 - length(keep)))
-
-    (keep ++ additional)
-    |> Enum.take(5)
+    keep
     |> Enum.map(&format_card/1)
   end
 

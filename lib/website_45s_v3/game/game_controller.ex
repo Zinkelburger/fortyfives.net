@@ -64,7 +64,7 @@ defmodule Website45sV3.Game.GameController do
     %{
       phase: "Bidding",
       current_player_id: starting_player_id,
-      dealing_player_id: starting_player_id,
+      dealing_player_id: new_dealer_id,
       player_ids: player_ids,
       player_map: player_map,
       hands: hands,

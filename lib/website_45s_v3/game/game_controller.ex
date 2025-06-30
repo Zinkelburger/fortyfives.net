@@ -218,7 +218,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info({:player_bid, player_id, bid, suit}, %{phase: "Bidding", current_player_id: player_id} = state) do
-    if valid_bid?(bid, suit) do
+    if valid_bid?(bid, suit, state) do
       handle_player_bid(player_id, bid, suit, state, false)
     else
       {:noreply, state}
@@ -228,7 +228,7 @@ defmodule Website45sV3.Game.GameController do
   def handle_info({:player_bid, _player_id, _bid, _suit}, state), do: {:noreply, state}
 
   def handle_info({:player_bid, player_id, bid, suit, :bot}, %{phase: "Bidding", current_player_id: player_id} = state) do
-    if valid_bid?(bid, suit) do
+    if valid_bid?(bid, suit, state) do
       handle_player_bid(player_id, bid, suit, state, true)
     else
       {:noreply, state}
@@ -463,7 +463,8 @@ defmodule Website45sV3.Game.GameController do
 
     winning_bid_action = "#{state.player_map[winning_bid_player]} won with #{winning_bid_value} #{winning_bid_suit}"
     actions = if phase == "Discard", do: [winning_bid_action], else: actions
-    trump = if phase == "Discard", do: String.to_atom(winning_bid_suit), else: state.trump
+    # Set trump if phase is Discard
+    trump = if phase == "Discard", do: winning_bid_suit, else: state.trump
 
     new_state = %{
       state
@@ -485,9 +486,10 @@ defmodule Website45sV3.Game.GameController do
   end
 
   defp valid_bid?(bid, suit, state) do
+    suit_string = if is_atom(suit), do: Atom.to_string(suit), else: suit
     base_valid =
       bid in ["0", "15", "20", "25", "30"] and
-        (bid == "0" and suit == "pass" or suit in ["hearts", "diamonds", "clubs", "spades"])
+        (bid == "0" and suit == "pass" or suit_string in ["hearts", "diamonds", "clubs", "spades"])
 
     if state.bagged do
       base_valid and bid != "0"
@@ -562,7 +564,7 @@ defmodule Website45sV3.Game.GameController do
 
   defp convert_to_card_format(card_string) do
     [value, suit] = String.split(card_string, "_")
-    Website45sV3.Game.Card.new(String.to_integer(value), String.to_atom(suit))
+    Website45sV3.Game.Card.new(String.to_integer(value), String.to_existing_atom(suit))
   end
 
   defp deal_additional_cards(state, player_ids) do

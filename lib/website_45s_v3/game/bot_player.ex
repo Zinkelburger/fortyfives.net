@@ -14,7 +14,7 @@ defmodule Website45sV3.Game.BotPlayer do
 
     {bid, suit} = evaluate_hand_bid(hand)
 
-    bid_suit = if bid == 0, do: "pass", else: Atom.to_string(suit)
+    bid_suit = if bid == 0, do: :pass, else: suit
     {bid, bid_suit}
   end
 

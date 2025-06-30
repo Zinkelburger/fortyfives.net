@@ -172,10 +172,16 @@ defmodule Website45sV3Web.GameLive do
 
       true ->
         # Broadcast the bid information
+        suit_atom =
+          case current_suit do
+            "pass" -> :pass
+            _ -> String.to_existing_atom(current_suit)
+          end
+
         Phoenix.PubSub.broadcast(
           Website45sV3.PubSub,
           socket.assigns.game_state.game_name,
-          {:player_bid, current_player_id, current_bid, current_suit}
+          {:player_bid, current_player_id, current_bid, suit_atom}
         )
 
         # Clear the assigns for selected_suit and selected_bid
@@ -202,7 +208,7 @@ defmodule Website45sV3Web.GameLive do
     Phoenix.PubSub.broadcast(
       Website45sV3.PubSub,
       socket.assigns.game_state.game_name,
-      {:player_bid, socket.assigns.user_id, "0", "pass"}
+      {:player_bid, socket.assigns.user_id, "0", :pass}
     )
 
     {:noreply, assign(socket, new_assigns)}

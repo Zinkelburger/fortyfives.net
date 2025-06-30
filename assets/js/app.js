@@ -62,13 +62,10 @@ Hooks.CardSelection = {
       if (this.phase === 'Discard' || this.phase === 'Playing') {
         this.locked = false
         this.selectedCards = []
+        this.store()
       }
     } else {
       this.phase = newPhase
-    }
-
-    if (this.el.dataset.selectedCards) {
-      this.selectedCards = JSON.parse(this.el.dataset.selectedCards)
     }
   },
   bindClicks() {

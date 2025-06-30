@@ -500,10 +500,13 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp valid_discard?(player, selected_cards_invalid, state) do
+  defp valid_discard?(player, selected_card_strings, state) do
     hand = Map.get(state.hands, player, [])
-    cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
-    length(cards) == 5 and Enum.all?(cards, &(&1 in hand))
+    # convert string identifiers into Card structs
+    cards = Enum.map(selected_card_strings, &convert_to_card_format/1)
+
+    # must keep between 1 and 5 cards, and all kept cards must actually be in hand
+    length(cards) in 1..5 and Enum.all?(cards, &(&1 in hand))
   end
 
   defp do_confirm_discard(player, selected_cards_invalid, state, from_bot) do

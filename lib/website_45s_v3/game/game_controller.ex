@@ -484,9 +484,16 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, new_state}
   end
 
-  defp valid_bid?(bid, suit) do
-    bid in ["0", "15", "20", "25", "30"] and
-      (bid == "0" and suit == "pass" or suit in ["hearts", "diamonds", "clubs", "spades"])
+  defp valid_bid?(bid, suit, state) do
+    base_valid =
+      bid in ["0", "15", "20", "25", "30"] and
+        (bid == "0" and suit == "pass" or suit in ["hearts", "diamonds", "clubs", "spades"])
+
+    if state.bagged do
+      base_valid and bid != "0"
+    else
+      base_valid
+    end
   end
 
   defp valid_discard?(player, selected_cards_invalid, state) do

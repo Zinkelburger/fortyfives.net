@@ -110,11 +110,22 @@ defmodule Website45sV3.Game.GameController do
       Process.cancel_timer(state.idle_timer_ref)
     end
 
-    if state.current_player_id do
-      ref = Process.send_after(self(), {:idle_timeout, state.current_player_id, state.phase}, 60_000)
-      %{state | idle_timer_ref: ref}
-    else
-      %{state | idle_timer_ref: nil}
+    cond do
+      state.current_player_id && MapSet.member?(state.bot_players, state.current_player_id) ->
+        Process.send_after(self(), {:bot_execute, state.current_player_id, state.phase}, 1_000)
+        %{state | idle_timer_ref: nil}
+
+      state.current_player_id ->
+        ref =
+          Process.send_after(
+            self(),
+            {:idle_timeout, state.current_player_id, state.phase},
+            30_000
+          )
+        %{state | idle_timer_ref: ref}
+
+      true ->
+        %{state | idle_timer_ref: nil}
     end
   end
 
@@ -269,7 +280,18 @@ defmodule Website45sV3.Game.GameController do
       |> Enum.concat(joined_players)
       |> Enum.filter(fn player -> player not in left_players end)
 
-    new_state = %{state | active_players: updated_active_players}
+    updated_bot_players =
+      Enum.reduce(joined_players, state.bot_players, fn player, bot_set ->
+        if MapSet.member?(bot_set, player) do
+          Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", :auto_play_disabled)
+          MapSet.delete(bot_set, player)
+        else
+          bot_set
+        end
+      end)
+
+    new_state = %{state | active_players: updated_active_players, bot_players: updated_bot_players}
+    new_state = schedule_idle_timer(new_state)
 
     IO.puts("Updated active players: #{inspect(new_state.active_players)}")
 

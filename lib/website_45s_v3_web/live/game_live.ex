@@ -112,7 +112,12 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_info(:auto_play_disabled, socket) do
-    {:noreply, put_flash(socket, :info, "You are no longer being auto-played.")}
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "Welcome back! A bot was playing for you when you left. Auto-play has been disabled."
+     )}
   end
 
   def handle_event("play-card", %{"cards" => [card_value]}, socket) do

@@ -180,6 +180,13 @@ defmodule Website45sV3Web.CoreComponents do
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
   def flash(assigns) do
+    msg = Phoenix.Flash.get(assigns.flash, assigns.kind)
+    persistent_messages = [
+      "You took too long. A bot is playing for you.",
+      "Welcome back! A bot was playing for you when you left. Auto-play has been disabled."
+    ]
+    assigns = assign(assigns, persistent_flash: msg in persistent_messages)
+
     ~H"""
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
@@ -192,7 +199,7 @@ defmodule Website45sV3Web.CoreComponents do
         @kind == :error && "bg-rose-50 shadow-md ring-rose-500 fill-rose-900"
       ]}
       {@rest}
-      phx-hook="AutoDismissFlash"
+      phx-hook={unless @persistent_flash, do: "AutoDismissFlash"}
     >
       <p :if={@title}
          class="flex items-center gap-1.5 text-sm font-semibold leading-6"

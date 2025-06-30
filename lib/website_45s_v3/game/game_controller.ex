@@ -233,7 +233,11 @@ defmodule Website45sV3.Game.GameController do
 
 
   def handle_info(:end_scoring, state) do
-    new_state = Map.merge(state, setup_game(state.player_map, state.dealing_player_id))
+    new_state =
+      state
+      |> Map.merge(setup_game(state.player_map, state.dealing_player_id))
+      |> Map.put(:active_players, state.active_players)
+      |> Map.put(:bot_players, state.bot_players)
     # Broadcasting the updated state to the players
     for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})

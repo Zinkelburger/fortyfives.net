@@ -9,7 +9,6 @@ defmodule Website45sV3.Game.BotPlayerServer do
     GenServer.start_link(__MODULE__, display_name)
   end
 
-  @impl true
   def child_spec(arg) do
     super(arg)
     |> Map.put(:restart, :temporary)

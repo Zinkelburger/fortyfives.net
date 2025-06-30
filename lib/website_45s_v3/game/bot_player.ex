@@ -14,6 +14,13 @@ defmodule Website45sV3.Game.BotPlayer do
 
     {bid, suit} = evaluate_hand_bid(hand)
 
+    {bid, suit} =
+      if state.bagged && player_id == state.current_player_id do
+        {15, suit}
+      else
+        {bid, suit}
+      end
+
     bid_suit = if bid == 0, do: :pass, else: suit
     {bid, bid_suit}
   end

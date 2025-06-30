@@ -48,30 +48,20 @@ defmodule Website45sV3.Game.QueueStarter do
   end
 
   defp assign_anonymous_name(players) do
-    IO.inspect(players, label: "Players")
-    anonymous_players =
-      players
-      |> Enum.filter(fn {name, _id} -> String.starts_with?(name, "Anonymous") end)
-
-    IO.inspect(anonymous_players, label: "Anonymous Players")
     anonymous_numbers =
-      anonymous_players
-      |> Enum.map(fn {name, _id} ->
-        case String.replace_prefix(name, "Anonymous", "") do
-          "" -> 1
-          num -> String.to_integer(num)
+      players
+      |> Enum.flat_map(fn {name, _id} ->
+        case Regex.run(~r/^Anonymous(\d+)$/, name) do
+          [_, num] -> [String.to_integer(num)]
+          _ -> []
         end
       end)
-
-    IO.inspect(anonymous_numbers, label: "Anonymous Numbers")
 
     next_anonymous_number =
       case anonymous_numbers do
         [] -> 1
         _ -> Enum.max(anonymous_numbers) + 1
       end
-
-    IO.inspect(next_anonymous_number, label: "Next Anonymous Number")
 
     "Anonymous#{next_anonymous_number}"
   end

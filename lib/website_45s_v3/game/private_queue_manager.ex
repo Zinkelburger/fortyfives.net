@@ -80,16 +80,12 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   end
 
   defp assign_anonymous_name(players) do
-    anonymous_players =
-      players
-      |> Enum.filter(fn {name, _id} -> String.starts_with?(name, "Anonymous") end)
-
     anonymous_numbers =
-      anonymous_players
-      |> Enum.map(fn {name, _id} ->
-        case String.replace_prefix(name, "Anonymous", "") do
-          "" -> 1
-          num -> String.to_integer(num)
+      players
+      |> Enum.flat_map(fn {name, _id} ->
+        case Regex.run(~r/^Anonymous(\d+)$/, name) do
+          [_, num] -> [String.to_integer(num)]
+          _ -> []
         end
       end)
 

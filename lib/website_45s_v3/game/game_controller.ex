@@ -22,12 +22,21 @@ defmodule Website45sV3.Game.GameController do
           |> Map.put(:team_2_history, [])
           |> Map.put(:game_name, game_name)
           |> Map.put(:player_map, player_map)
-          |> schedule_idle_timer()
 
         Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
-        # Schedule termination after 2 hours
-        Process.send_after(self(), :terminate_game, 7200000)
-        {:ok, state}
+
+        players_are_all_bots? =
+          Enum.all?(Map.keys(player_map), fn id -> String.starts_with?(id, "bot_") end)
+
+        if players_are_all_bots? do
+          handle_game_end(state, :normal)
+          {:stop, :normal, state}
+        else
+          state = schedule_idle_timer(state)
+          # Schedule termination after 2 hours
+          Process.send_after(self(), :terminate_game, 7200000)
+          {:ok, state}
+        end
 
       {:error, {:already_registered, _pid}} ->
         {:stop, {:already_registered, game_name}}
@@ -125,14 +134,19 @@ defmodule Website45sV3.Game.GameController do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", message)
     end
 
-    player_usernames =
-      Enum.map(state.player_ids, fn id ->
-        Map.get(state.player_map, id, "Anonymous")
-      end)
+    players_are_all_bots? =
+      Enum.all?(state.player_ids, fn id -> String.starts_with?(id, "bot_") end)
 
-    %GameLog{}
-    |> GameLog.changeset(%{player_usernames: player_usernames})
-    |> Repo.insert()
+    unless players_are_all_bots? do
+      player_usernames =
+        Enum.map(state.player_ids, fn id ->
+          Map.get(state.player_map, id, "Anonymous")
+        end)
+
+      %GameLog{}
+      |> GameLog.changeset(%{player_usernames: player_usernames})
+      |> Repo.insert()
+    end
 
     IO.puts("GameController terminated with reason: #{inspect(termination_reason)}")
     :ok

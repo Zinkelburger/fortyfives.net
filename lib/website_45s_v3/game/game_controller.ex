@@ -110,22 +110,45 @@ defmodule Website45sV3.Game.GameController do
       Process.cancel_timer(state.idle_timer_ref)
     end
 
-    cond do
-      state.current_player_id && MapSet.member?(state.bot_players, state.current_player_id) ->
-        Process.send_after(self(), {:bot_execute, state.current_player_id, state.phase}, 1_000)
-        %{state | idle_timer_ref: nil}
+    if state.phase == "Discard" do
+      Enum.each(state.player_ids, fn player_id ->
+        if player_id not in state.received_discards_from and
+             MapSet.member?(state.bot_players, player_id) do
+          Process.send_after(self(), {:bot_execute, player_id, "Discard"}, 1_000)
+        end
+      end)
 
-      state.current_player_id ->
-        ref =
-          Process.send_after(
-            self(),
-            {:idle_timeout, state.current_player_id, state.phase},
-            30_000
-          )
-        %{state | idle_timer_ref: ref}
+      cond do
+        state.current_player_id &&
+            not MapSet.member?(state.bot_players, state.current_player_id) ->
+          ref =
+            Process.send_after(
+              self(),
+              {:idle_timeout, state.current_player_id, state.phase},
+              30_000
+            )
+          %{state | idle_timer_ref: ref}
+        true ->
+          %{state | idle_timer_ref: nil}
+      end
+    else
+      cond do
+        state.current_player_id && MapSet.member?(state.bot_players, state.current_player_id) ->
+          Process.send_after(self(), {:bot_execute, state.current_player_id, state.phase}, 1_000)
+          %{state | idle_timer_ref: nil}
 
-      true ->
-        %{state | idle_timer_ref: nil}
+        state.current_player_id ->
+          ref =
+            Process.send_after(
+              self(),
+              {:idle_timeout, state.current_player_id, state.phase},
+              30_000
+            )
+          %{state | idle_timer_ref: ref}
+
+        true ->
+          %{state | idle_timer_ref: nil}
+      end
     end
   end
 

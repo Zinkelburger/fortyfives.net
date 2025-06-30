@@ -42,9 +42,10 @@ defmodule Website45sV3Web.GameLive do
              selected_bid: nil,
              user_id: user_id,
              display_name: display_name,
-            confirm_discard_clicked: false,
+             confirm_discard_clicked: false,
              current_player_id: game_state[:current_player_id],
-             overlay_visible: false
+             overlay_visible: false,
+             game_over: false
            )
            |> stream(:played_cards, played_cards_with_id)}
         else
@@ -97,10 +98,12 @@ defmodule Website45sV3Web.GameLive do
 
   def handle_info(:game_crash, socket) do
     # when the GameController crashes
+    socket = assign(socket, :game_over, true)
     {:noreply, push_navigate(socket |> put_flash(:error, "Game ended unexpectedly"), to: "/play")}
   end
 
   def handle_info(:game_end, socket) do
+    socket = assign(socket, :game_over, true)
     {:noreply, push_navigate(socket, to: "/play", replace: :replace)}
   end
 
@@ -228,6 +231,19 @@ defmodule Website45sV3Web.GameLive do
 
   def handle_event("exit_game", _params, socket) do
     {:noreply, push_navigate(socket, to: "/play")}
+  end
+
+  @impl true
+  def terminate(_reason, socket) do
+    unless socket.assigns[:game_over] do
+      Phoenix.PubSub.broadcast(
+        Website45sV3.PubSub,
+        "user:#{socket.assigns.user_id}",
+        {:left_game, socket.assigns.game_id}
+      )
+    end
+
+    :ok
   end
 
   def render(assigns) do

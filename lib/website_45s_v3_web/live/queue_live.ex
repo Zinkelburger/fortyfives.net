@@ -33,7 +33,8 @@ defmodule Website45sV3Web.QueueLive do
            display_name: display_name,
            queue: initial_queue,
            in_queue: false,
-           private_id: private_id
+           private_id: private_id,
+           left_game_info: nil
          )}
 
       _ ->
@@ -51,7 +52,8 @@ defmodule Website45sV3Web.QueueLive do
            queue: initial_queue,
            in_queue: false,
            # track which tab is showing
-           tab: Map.get(params, "tab", "public")
+           tab: Map.get(params, "tab", "public"),
+           left_game_info: nil
          )}
     end
   end
@@ -164,6 +166,14 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, socket}
   end
 
+  def handle_info({:left_game, game_id}, socket) do
+    message =
+      "You have left /game/#{game_id}. Please rejoin " <>
+        "<a href=\"/game/#{game_id}\">here</a>"
+
+    {:noreply, assign(socket, left_game_info: message)}
+  end
+
   def handle_info({:redirect, url}, socket) do
     IO.inspect("user id in assigns: #{socket.assigns.user_id}")
     {:noreply, push_navigate(socket, to: url, replace: :replace)}
@@ -189,6 +199,11 @@ defmodule Website45sV3Web.QueueLive do
   def render(%{live_action: :private_game} = assigns) do
     ~H"""
     <div style="text-align: center; margin-top:10px;">
+      <%= if @left_game_info do %>
+        <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem;">
+          <%= raw @left_game_info %>
+        </div>
+      <% end %>
       <p style="color: #d2e8f9; margin-bottom: 1rem;">
         Share this link with friends:
       </p>
@@ -259,6 +274,11 @@ defmodule Website45sV3Web.QueueLive do
   def render(assigns) do
     ~H"""
     <div class="tabs-container">
+      <%= if @left_game_info do %>
+        <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem; text-align:center;">
+          <%= raw @left_game_info %>
+        </div>
+      <% end %>
       <!-- Tab nav -->
       <div class="tabs">
         <button

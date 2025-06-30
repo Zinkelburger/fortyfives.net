@@ -210,7 +210,7 @@ defmodule Website45sV3.Game.GameController do
   def handle_info(:end_scoring, state) do
     new_state = Map.merge(state, setup_game(state.player_map, state.dealing_player_id))
     # Broadcasting the updated state to the players
-    for p <- state.player_ids do
+    for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
     new_state = schedule_idle_timer(new_state)
@@ -292,7 +292,7 @@ defmodule Website45sV3.Game.GameController do
     }
 
     # Broadcast the updated state to the players
-    for p <- state.player_ids do
+    for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
     new_state = schedule_idle_timer(new_state)
@@ -311,7 +311,7 @@ defmodule Website45sV3.Game.GameController do
     }
 
     # Broadcast the updated state to the players
-    for p <- state.player_ids do
+    for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
 
@@ -328,7 +328,7 @@ defmodule Website45sV3.Game.GameController do
     }
 
     # Broadcast the updated state to the players
-    for p <- state.player_ids do
+    for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
 
@@ -406,7 +406,7 @@ defmodule Website45sV3.Game.GameController do
         new_state
       end
 
-    for p_id <- state.player_ids do
+    for p_id <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p_id}", {:update_state, new_state})
     end
     new_state = schedule_idle_timer(new_state)
@@ -478,7 +478,7 @@ defmodule Website45sV3.Game.GameController do
         trump: trump
     }
 
-    for player <- state.player_ids do
+    for player <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", {:update_state, new_state})
     end
     new_state = schedule_idle_timer(new_state)
@@ -558,9 +558,9 @@ defmodule Website45sV3.Game.GameController do
           new_state
         end
 
-      for p <- state.player_ids do
-        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
-      end
+    for p <- state.active_players do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
+    end
 
       new_state = schedule_idle_timer(new_state)
       {:noreply, new_state}

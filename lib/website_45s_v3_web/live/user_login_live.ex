@@ -71,7 +71,7 @@ defmodule Website45sV3Web.UserLoginLive do
   end
 
   def mount(_params, _session, socket) do
-    email = live_flash(socket.assigns.flash, :email) || ""
+    email = Phoenix.Flash.get(socket.assigns.flash, :email) || ""
 
     form_data = %{
       "username_or_email" => email,

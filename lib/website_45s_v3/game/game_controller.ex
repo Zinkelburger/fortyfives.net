@@ -206,82 +206,6 @@ defmodule Website45sV3.Game.GameController do
 
   def handle_info({:play_card, _player_id, _card, :bot}, state), do: {:noreply, state}
 
-  defp handle_play_card(player_id, card, state, from_bot) do
-    state =
-      if MapSet.member?(state.bot_players, player_id) and not from_bot do
-        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
-        %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
-      else
-        state
-      end
-    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
-
-    card = if is_binary(card.suit), do: %{card | suit: String.to_atom(card.suit)}, else: card
-
-    current_hand = Map.get(state.hands, player_id, [])
-    new_hand = List.delete(current_hand, card)
-    updated_hands = Map.put(state.hands, player_id, new_hand)
-
-    played_cards_entry = %{player_id: player_id, card: card}
-    updated_played_cards = [played_cards_entry | state.played_cards || []]
-
-    legal_moves = if Enum.empty?(state.played_cards), do: calculate_legal_moves(state, card), else: state.legal_moves
-
-    suit_led = if Enum.empty?(state.played_cards), do: card.suit, else: state.suit_led
-
-    current_player_index = Enum.find_index(state.player_ids, fn id -> id == state.current_player_id end)
-    next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, length(state.player_ids)))
-
-    new_state = %{
-      state
-      | hands: updated_hands,
-        played_cards: updated_played_cards,
-        suit_led: suit_led,
-        current_player_id: next_player_id,
-        legal_moves: legal_moves
-    }
-
-    # if 4 cards have been played, the trick is over
-    new_state =
-      if length(updated_played_cards) >= 4 do
-        {winning_player_id, highest_card, updated_state_with_scores} =
-          evaluate_played_cards(new_state)
-
-        # will transition to scoring if `length(state.trick_winning_cards) == 5`
-        if length(state.trick_winning_cards) < 5 do
-          Process.send_after(self(), {:transition_to_end_bid, winning_player_id}, 2000)
-        end
-
-        # Reset for the next trick and merge updated scores
-        %{
-          updated_state_with_scores
-          | current_player_id: nil,
-            actions:
-              updated_state_with_scores.actions ++
-                ["#{state.player_map[winning_player_id]} won trick #{length(state.trick_winning_cards) + 1}"],
-            trick_winning_cards: [
-              %{player_id: winning_player_id, card: highest_card.card} | state.trick_winning_cards || []
-            ],
-            legal_moves: %{}
-        }
-      else
-        new_state
-      end
-
-    # if 5 tricks have been played, its now the scoring phase
-    new_state =
-      if length(new_state.trick_winning_cards) >= 5 do
-        handle_scoring_phase(new_state)
-      else
-        new_state
-      end
-
-    for p_id <- state.player_ids do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p_id}", {:update_state, new_state})
-    end
-    new_state = schedule_idle_timer(new_state)
-    {:noreply, new_state}
-  end
 
   def handle_info(:end_scoring, state) do
     new_state = Map.merge(state, setup_game(state.player_map, state.dealing_player_id))
@@ -313,92 +237,6 @@ defmodule Website45sV3.Game.GameController do
 
   def handle_info({:player_bid, _player_id, _bid, _suit, :bot}, state), do: {:noreply, state}
 
-  defp handle_player_bid(player_id, bid, suit, state, from_bot) do
-    state =
-      if MapSet.member?(state.bot_players, player_id) and not from_bot do
-        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
-        %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
-      else
-        state
-      end
-    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
-
-    bid = String.to_integer(bid)
-
-    bid_action =
-      if bid == 0 do
-        "#{state.player_map[player_id]} passed"
-      else
-        "#{state.player_map[player_id]} bid #{bid}"
-      end
-
-    actions = state.actions ++ [bid_action]
-
-    {highest_bid, _highest_bid_player, _highest_bid_suit} = state.winning_bid
-
-    # If the bid is higher, update stateActions, otherwise leave it unchanged.
-    winning_bid =
-      if bid > highest_bid do
-        {bid, player_id, suit}
-      else
-        state.winning_bid
-      end
-
-    # Check if 3 bids have been made and highest bid is still 0.
-    {winning_bid_value, winning_bid_player, winning_bid_suit} = winning_bid
-    bagged = length(actions) == 3 and winning_bid_value == 0
-
-    # Check if 4 bids have been made and set phase to "Discard".
-    phase = if length(actions) >= 4, do: "Discard", else: state.phase
-
-    # Move to the next player
-    current_player_index = Enum.find_index(state.player_ids, fn p -> p == state.current_player_id end)
-    next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, 4))
-
-    {updated_hands, updated_deck} =
-      if phase == "Discard" do
-        {new_cards, new_deck} = draw_cards(state.deck, 3)
-        existing_hand = state.hands[winning_bid_player] || []
-        updated_hand = existing_hand ++ new_cards
-        {Map.put(state.hands, winning_bid_player, updated_hand), new_deck}
-      else
-        {state.hands, state.deck}
-      end
-
-    winning_bid_action = "#{state.player_map[winning_bid_player]} won with #{winning_bid_value} #{winning_bid_suit}"
-    actions = if phase == "Discard", do: [winning_bid_action], else: actions
-    # Set trump if phase is Discard
-    trump = if phase == "Discard", do: String.to_atom(winning_bid_suit), else: state.trump
-
-    new_state = %{
-      state
-      | actions: actions,
-        winning_bid: winning_bid,
-        current_player_id: next_player_id,
-        bagged: bagged,
-        phase: phase,
-        hands: updated_hands,
-        deck: updated_deck,
-        trump: trump
-    }
-
-    for player <- state.player_ids do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", {:update_state, new_state})
-    end
-    new_state = schedule_idle_timer(new_state)
-    {:noreply, new_state}
-  end
-
-  defp valid_bid?(bid, suit) do
-    bid in ["0", "15", "20", "25", "30"] and
-      (bid == "0" and suit == "pass" or suit in ["hearts", "diamonds", "clubs", "spades"])
-  end
-
-  defp valid_discard?(player, selected_cards_invalid, state) do
-    hand = Map.get(state.hands, player, [])
-    cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
-    length(cards) == 5 and Enum.all?(cards, &(&1 in hand))
-  end
 
   def handle_info(
         %Phoenix.Socket.Broadcast{
@@ -443,6 +281,219 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info({:confirm_discard, _player, _cards, :bot}, state), do: {:noreply, state}
+
+
+  def handle_info({:transition_to_end_bid, winning_player_id}, state) do
+    new_state = %{
+      state
+      | current_player_id: winning_player_id,
+        played_cards: [],
+        suit_led: nil
+    }
+
+    # Broadcast the updated state to the players
+    for p <- state.player_ids do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
+    end
+    new_state = schedule_idle_timer(new_state)
+    {:noreply, new_state}
+  end
+
+  def handle_info(:transition_to_scoring, state) do
+    new_state = %{
+      state
+      | phase: "Scoring",
+        suit_led: nil,
+        trump: nil,
+        played_cards: [],
+        trick_winning_cards: [],
+        legal_moves: %{}
+    }
+
+    # Broadcast the updated state to the players
+    for p <- state.player_ids do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
+    end
+
+    Process.send_after(self(), :end_scoring, 6000)
+    new_state = schedule_idle_timer(new_state)
+    {:noreply, new_state}
+  end
+
+  def handle_info(:transition_to_final_scoring, state) do
+    new_state = %{
+      state
+      | phase: "Final Scoring",
+        legal_moves: %{}
+    }
+
+    # Broadcast the updated state to the players
+    for p <- state.player_ids do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
+    end
+
+    # terminate process after 1 minute
+    Process.send_after(self(), :terminate_game, 60_000)
+    new_state = schedule_idle_timer(new_state)
+    {:noreply, new_state}
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  defp handle_play_card(player_id, card, state, from_bot) do
+    state =
+      if MapSet.member?(state.bot_players, player_id) and not from_bot do
+        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
+        %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
+      else
+        state
+      end
+    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
+
+    card = if is_binary(card.suit), do: %{card | suit: String.to_atom(card.suit)}, else: card
+
+    current_hand = Map.get(state.hands, player_id, [])
+    new_hand = List.delete(current_hand, card)
+    updated_hands = Map.put(state.hands, player_id, new_hand)
+
+    played_cards_entry = %{player_id: player_id, card: card}
+    updated_played_cards = [played_cards_entry | state.played_cards || []]
+
+    legal_moves = if Enum.empty?(state.played_cards), do: calculate_legal_moves(state, card), else: state.legal_moves
+
+    suit_led = if Enum.empty?(state.played_cards), do: card.suit, else: state.suit_led
+
+    current_player_index = Enum.find_index(state.player_ids, fn id -> id == state.current_player_id end)
+    next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, length(state.player_ids)))
+
+    new_state = %{
+      state
+      | hands: updated_hands,
+        played_cards: updated_played_cards,
+        suit_led: suit_led,
+        current_player_id: next_player_id,
+        legal_moves: legal_moves
+    }
+
+    new_state =
+      if length(updated_played_cards) >= 4 do
+        {winning_player_id, highest_card, updated_state_with_scores} =
+          evaluate_played_cards(new_state)
+
+        if length(state.trick_winning_cards) < 5 do
+          Process.send_after(self(), {:transition_to_end_bid, winning_player_id}, 2000)
+        end
+
+        %{
+          updated_state_with_scores
+          | current_player_id: nil,
+            actions:
+              updated_state_with_scores.actions ++
+                ["#{state.player_map[winning_player_id]} won trick #{length(state.trick_winning_cards) + 1}"],
+            trick_winning_cards: [
+              %{player_id: winning_player_id, card: highest_card.card} | state.trick_winning_cards || []
+            ],
+            legal_moves: %{}
+        }
+      else
+        new_state
+      end
+
+    new_state =
+      if length(new_state.trick_winning_cards) >= 5 do
+        handle_scoring_phase(new_state)
+      else
+        new_state
+      end
+
+    for p_id <- state.player_ids do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p_id}", {:update_state, new_state})
+    end
+    new_state = schedule_idle_timer(new_state)
+    {:noreply, new_state}
+  end
+
+  defp handle_player_bid(player_id, bid, suit, state, from_bot) do
+    state =
+      if MapSet.member?(state.bot_players, player_id) and not from_bot do
+        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
+        %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
+      else
+        state
+      end
+    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
+
+    bid = String.to_integer(bid)
+
+    bid_action =
+      if bid == 0 do
+        "#{state.player_map[player_id]} passed"
+      else
+        "#{state.player_map[player_id]} bid #{bid}"
+      end
+
+    actions = state.actions ++ [bid_action]
+
+    {highest_bid, _highest_bid_player, _highest_bid_suit} = state.winning_bid
+
+    winning_bid =
+      if bid > highest_bid do
+        {bid, player_id, suit}
+      else
+        state.winning_bid
+      end
+
+    {winning_bid_value, winning_bid_player, winning_bid_suit} = winning_bid
+    bagged = length(actions) == 3 and winning_bid_value == 0
+
+    phase = if length(actions) >= 4, do: "Discard", else: state.phase
+
+    current_player_index = Enum.find_index(state.player_ids, fn p -> p == state.current_player_id end)
+    next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, 4))
+
+    {updated_hands, updated_deck} =
+      if phase == "Discard" do
+        {new_cards, new_deck} = draw_cards(state.deck, 3)
+        existing_hand = state.hands[winning_bid_player] || []
+        updated_hand = existing_hand ++ new_cards
+        {Map.put(state.hands, winning_bid_player, updated_hand), new_deck}
+      else
+        {state.hands, state.deck}
+      end
+
+    winning_bid_action = "#{state.player_map[winning_bid_player]} won with #{winning_bid_value} #{winning_bid_suit}"
+    actions = if phase == "Discard", do: [winning_bid_action], else: actions
+    trump = if phase == "Discard", do: String.to_atom(winning_bid_suit), else: state.trump
+
+    new_state = %{
+      state
+      | actions: actions,
+        winning_bid: winning_bid,
+        current_player_id: next_player_id,
+        bagged: bagged,
+        phase: phase,
+        hands: updated_hands,
+        deck: updated_deck,
+        trump: trump
+    }
+
+    for player <- state.player_ids do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", {:update_state, new_state})
+    end
+    new_state = schedule_idle_timer(new_state)
+    {:noreply, new_state}
+  end
+
+  defp valid_bid?(bid, suit) do
+    bid in ["0", "15", "20", "25", "30"] and
+      (bid == "0" and suit == "pass" or suit in ["hearts", "diamonds", "clubs", "spades"])
+  end
+
+  defp valid_discard?(player, selected_cards_invalid, state) do
+    hand = Map.get(state.hands, player, [])
+    cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
+    length(cards) == 5 and Enum.all?(cards, &(&1 in hand))
+  end
 
   defp do_confirm_discard(player, selected_cards_invalid, state, from_bot) do
     unless valid_discard?(player, selected_cards_invalid, state) do
@@ -501,63 +552,6 @@ defmodule Website45sV3.Game.GameController do
       {:noreply, new_state}
     end
   end
-
-  def handle_info({:transition_to_end_bid, winning_player_id}, state) do
-    new_state = %{
-      state
-      | current_player_id: winning_player_id,
-        played_cards: [],
-        suit_led: nil
-    }
-
-    # Broadcast the updated state to the players
-    for p <- state.player_ids do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
-    end
-    new_state = schedule_idle_timer(new_state)
-    {:noreply, new_state}
-  end
-
-  def handle_info(:transition_to_scoring, state) do
-    new_state = %{
-      state
-      | phase: "Scoring",
-        suit_led: nil,
-        trump: nil,
-        played_cards: [],
-        trick_winning_cards: [],
-        legal_moves: %{}
-    }
-
-    # Broadcast the updated state to the players
-    for p <- state.player_ids do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
-    end
-
-    Process.send_after(self(), :end_scoring, 6000)
-    new_state = schedule_idle_timer(new_state)
-    {:noreply, new_state}
-  end
-
-  def handle_info(:transition_to_final_scoring, state) do
-    new_state = %{
-      state
-      | phase: "Final Scoring",
-        legal_moves: %{}
-    }
-
-    # Broadcast the updated state to the players
-    for p <- state.player_ids do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
-    end
-
-    # terminate process after 1 minute
-    Process.send_after(self(), :terminate_game, 60_000)
-    new_state = schedule_idle_timer(new_state)
-    {:noreply, new_state}
-  end
-
-  def handle_info(_msg, state), do: {:noreply, state}
 
   defp convert_to_card_format(card_string) do
     [value, suit] = String.split(card_string, "_")

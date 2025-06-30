@@ -50,13 +50,13 @@ defmodule Website45sV3Web.GameLive do
         else
           # If the user is not in the game, redirect them back to the queue page
           IO.puts("User #{user_id} not in game, redirecting to /play")
-          {:ok, push_redirect(socket, to: "/play")}
+          {:ok, push_navigate(socket, to: "/play")}
         end
 
       _ ->
         # If the game does not exist, redirect them back to the queue page
         IO.puts("Game does not exist, redirecting to /play")
-        {:ok, push_redirect(socket, to: "/play")}
+        {:ok, push_navigate(socket, to: "/play")}
     end
   end
 
@@ -90,11 +90,11 @@ defmodule Website45sV3Web.GameLive do
 
   def handle_info(:game_crash, socket) do
     # when the GameController crashes
-    {:noreply, push_redirect(socket |> put_flash(:error, "Game ended unexpectedly"), to: "/play")}
+    {:noreply, push_navigate(socket |> put_flash(:error, "Game ended unexpectedly"), to: "/play")}
   end
 
   def handle_info(:game_end, socket) do
-    {:noreply, push_redirect(socket, to: "/play", replace: :replace)}
+    {:noreply, push_navigate(socket, to: "/play", replace: :replace)}
   end
 
   def handle_info(:auto_playing, socket) do
@@ -213,8 +213,8 @@ defmodule Website45sV3Web.GameLive do
     {:noreply, assign(socket, overlay_visible: !socket.assigns.overlay_visible)}
   end
 
-   def handle_event("exit_game", _params, socket) do
-    {:noreply, push_redirect(socket, to: "/play")}
+  def handle_event("exit_game", _params, socket) do
+    {:noreply, push_navigate(socket, to: "/play")}
   end
 
   def render(assigns) do
@@ -453,10 +453,6 @@ defmodule Website45sV3Web.GameLive do
         <% is_playing_phase = assigns.game_state.phase == "Playing" %>
         <% is_current_player_turn = assigns.game_state.current_player_id == assigns.user_id %>
         <% is_card_legal = is_legal_moves_empty || {value, suit} in legal_card_tuples %>
-        <% can_select_card =
-          !assigns.confirm_discard_clicked &&
-            (assigns.game_state.phase == "Discard" ||
-               (is_playing_phase && is_current_player_turn && is_card_legal)) %>
         <% card_class =
           "card" <>
             if is_playing_phase && (!is_card_legal || !is_current_player_turn),

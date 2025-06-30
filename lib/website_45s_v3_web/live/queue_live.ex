@@ -57,7 +57,7 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def terminate(_reason, %{assigns: %{live_action: :private_game}} = socket) do
-    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
+    {_display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
     private_id = socket.assigns.private_id
     PrivateQueueManager.remove_player(private_id, user_id)
     :ok
@@ -93,7 +93,7 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_event("leave", _, %{assigns: %{live_action: :private_game}} = socket) do
-    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
+    {_display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
     private_id = socket.assigns.private_id
     Presence.untrack(self(), "private_queue:#{private_id}", user_id)
     PrivateQueueManager.remove_player(private_id, user_id)
@@ -116,7 +116,7 @@ defmodule Website45sV3Web.QueueLive do
     private_id = UUID.uuid4()
     case PrivateQueueManager.create_queue(private_id, socket.assigns.user_id) do
       :ok ->
-        {:noreply, push_redirect(socket, to: ~p"/play/private/#{private_id}")}
+        {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
       {:error, :too_soon} ->
         {:noreply, put_flash(socket, :error, "Please wait before creating another link")}
     end
@@ -158,7 +158,7 @@ defmodule Website45sV3Web.QueueLive do
 
   def handle_info({:redirect, url}, socket) do
     IO.inspect("user id in assigns: #{socket.assigns.user_id}")
-    {:noreply, push_redirect(socket, to: url, replace: :replace)}
+    {:noreply, push_navigate(socket, to: url, replace: :replace)}
   end
 
   def handle_info(

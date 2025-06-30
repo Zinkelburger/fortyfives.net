@@ -369,9 +369,11 @@ class PhxWeb:
 
         print(f"Keeping cards: {keep}")
 
-        # if you didn't keep anything, take the first card
+        # if you didn't keep anything, keep the first five cards
         if not keep:
-            keep.append(self.game_state.player_hand[0])
+            keep = self.game_state.player_hand[:5]
+        # never keep more than five cards
+        keep = keep[:5]
 
         # Click the keep list cards
         for card in keep:

@@ -26,24 +26,43 @@ defmodule Website45sV3.Game.BotPlayer do
   end
 
   @doc """
-  Given the current `state` and the `player_id`, returns a list of card strings
-  representing the cards to keep during the discard phase. The cards are ordered
-  as they appear in the player's hand and the first five are kept.
+  Returns a list of card strings representing the cards a bot keeps during the
+  discard phase.
+
+  The bot keeps any trump cards or kings (value == 13). If none are present, it
+  keeps exactly the first card from its hand. In all cases no more than five
+  cards are returned. Each card is encoded as "value_suit".
   """
   def pick_discard(state, player_id) do
-    hand = Map.get(state.hands, player_id, [])
+    hand  = Map.get(state.hands, player_id, [])
     trump = state.trump
 
-    keep =
+    # 1) Filter for all trumps or kings
+    kept =
       Enum.filter(hand, fn %Card{suit: suit, value: value} ->
         suit == trump or value == 13
       end)
 
-    keep = if keep == [], do: [List.first(hand)], else: keep
+    # 2) If none, keep exactly the first card; otherwise keep the filtered ones
+    kept =
+      case kept do
+        []    -> [hd(hand)]    # keep just one
+        cards -> cards
+      end
 
-    keep
-    |> Enum.map(&format_card/1)
+    # 3) Never keep more than five
+    kept = Enum.take(kept, 5)
+
+    # 4) (Optional) Compute discards if you need them
+    discarded = hand -- kept
+
+    # 5) Return just the kept cards encoded as strings
+    Enum.map(kept, &format_card/1)
+
+    # — or, if you did want to return both:
+    # {Enum.map(kept, &format_card/1), Enum.map(discarded, &format_card/1)}
   end
+
 
   @doc """
   Chooses a card to play from the player's legal moves. If no legal moves are

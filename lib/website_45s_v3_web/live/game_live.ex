@@ -457,7 +457,7 @@ defmodule Website45sV3Web.GameLive do
     ~H"""
     <div>
       <p class="discard-message"><%= @discard_message %></p>
-      <button class="blue-button" phx-hook="ConfirmDiscardButton" {@attrs}>Confirm Keep</button>
+      <button id="confirm-discard-button" class="blue-button" phx-hook="ConfirmDiscardButton" {@attrs}>Confirm Keep</button>
     </div>
     """
   end

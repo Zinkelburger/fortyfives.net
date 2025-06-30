@@ -30,8 +30,21 @@ Hooks.CardSelection = {
   mounted() {
     this.selectedCards = []
     this.discardLimit = 5
+    this.locked = false
     this.updatePhase()
     this.bindClicks()
+
+    this.el.addEventListener('discard-confirmed', () => {
+      this.locked = true
+      this.selectedCards = []
+      this.render()
+      this.store()
+    })
+
+    this.observer = new MutationObserver(() => {
+      this.updatePhase()
+    })
+    this.observer.observe(this.el, { attributes: true })
   },
   updated() {
     this.updatePhase()
@@ -39,8 +52,21 @@ Hooks.CardSelection = {
     this.render()
     this.store()
   },
+  destroyed() {
+    if (this.observer) this.observer.disconnect()
+  },
   updatePhase() {
-    this.phase = this.el.dataset.phase
+    const newPhase = this.el.dataset.phase
+    if (newPhase && newPhase !== this.phase) {
+      this.phase = newPhase
+      if (this.phase === 'Discard' || this.phase === 'Playing') {
+        this.locked = false
+        this.selectedCards = []
+      }
+    } else {
+      this.phase = newPhase
+    }
+
     if (this.el.dataset.selectedCards) {
       this.selectedCards = JSON.parse(this.el.dataset.selectedCards)
     }
@@ -54,6 +80,10 @@ Hooks.CardSelection = {
     })
   },
   toggle(img) {
+    if (this.locked || (this.phase !== 'Discard' && this.phase !== 'Playing')) {
+      return
+    }
+
     const value = img.dataset.cardValue
     if (this.phase === 'Discard') {
       if (this.selectedCards.includes(value)) {
@@ -144,6 +174,7 @@ Hooks.ConfirmDiscardButton = {
       const cards = JSON.parse(hand.dataset.selectedCards || '[]')
       if (cards.length > 0 && cards.length <= 5) {
         this.pushEvent('confirm_discard', {cards: cards})
+        hand.dispatchEvent(new CustomEvent('discard-confirmed'))
       }
     })
   }

@@ -174,6 +174,10 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, assign(socket, left_game_info: message)}
   end
 
+  def handle_info(:game_end, socket) do
+    {:noreply, socket}
+  end
+
   def handle_info({:redirect, url}, socket) do
     IO.inspect("user id in assigns: #{socket.assigns.user_id}")
     {:noreply, push_navigate(socket, to: url, replace: :replace)}

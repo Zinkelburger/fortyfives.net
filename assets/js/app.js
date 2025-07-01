@@ -27,103 +27,148 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let Hooks = {};
 
 Hooks.CardSelection = {
-  // Called when the hook is first mounted. Initializes local state and
-  // binds click handlers on each card in the player's hand.
+  // --------------------------------------------------------------------------
+  // HOOK LIFECYCLE
+  // --------------------------------------------------------------------------
+
   mounted() {
-    this.discardLimit = 5
-    this.phase = null
-    this.locked = false
-    this.selectedCards = []
+    // Initialize component state from DOM attributes
+    this.phase = this.el.dataset.phase;
+    this.selectedCards = new Set();
+    this.discardLimit = 5;
+    this.locked = true; // Locked by default
 
-    this.handlePhaseChange()
-    this.bindClicks()
-    this.render()
-    this.sync()
+    // Set initial lock state based on the current phase
+    this.updateLockState();
+    console.log(`[CardSelection] mounted: phase=${this.phase}, locked=${this.locked}`);
 
+    // --- EVENT LISTENERS ---
+    // Use event delegation: one click listener on the container
+    this.el.addEventListener('click', (e) => this.handleCardClick(e));
+
+    // Lock the hand when the discard is confirmed by the parent LiveView
     this.el.addEventListener('discard-confirmed', () => {
-      this.locked = true
-      this.clear()
-    })
+      this.locked = true;
+      this.clearSelection();
+      console.log('[CardSelection] Discard confirmed, hand locked.');
+    });
   },
 
-  // Called whenever the DOM element is patched by LiveView. We simply
-  // rebind any new card elements and react to possible phase changes.
   updated() {
-    this.handlePhaseChange()
-    this.bindClicks()
-    this.render()
-    this.sync()
-  },
+    const newPhase = this.el.dataset.phase;
 
-  // Check for a phase transition. When entering the Discard or Playing phase
-  // we reset the local selection and unlock the hand.
-  handlePhaseChange() {
-    const newPhase = this.el.dataset.phase
+    // React only when the game phase has actually changed
     if (newPhase !== this.phase) {
-      this.phase = newPhase
-      if (['Discard', 'Playing'].includes(this.phase)) {
-        this.locked = false
-        this.clear()
-      } else {
-        this.locked = true
-      }
+      console.log(`[CardSelection] phase changed: ${this.phase} -> ${newPhase}`);
+      this.phase = newPhase;
+
+      // Update lock status and clear any previous selections
+      this.updateLockState();
+      this.clearSelection();
     }
   },
 
-  bindClicks() {
-    this.el.querySelectorAll('img[data-card-value]').forEach(img => {
-      if (img.dataset.bound !== 'true') {
-        img.dataset.bound = 'true'
-        img.addEventListener('click', () => this.toggle(img))
-      }
-    })
-  },
+  // --------------------------------------------------------------------------
+  // EVENT HANDLING
+  // --------------------------------------------------------------------------
 
-  // Toggle the provided card depending on the current phase.
-  toggle(img) {
-    if (this.locked || !['Discard', 'Playing'].includes(this.phase)) return
+  /**
+   * Handles all clicks within the hook's element (`this.el`).
+   */
+  handleCardClick(event) {
+    // Ignore clicks if the hand is locked
+    if (this.locked) return;
 
-    const value = img.dataset.cardValue
+    const card = event.target.closest('img[data-card-value]');
+
+    // Ignore clicks that are not on a playable card
+    if (!card || card.classList.contains('grayed-out')) return;
+
+    const cardValue = card.dataset.cardValue;
+
+    // Delegate to the correct selection logic based on the current phase
     if (this.phase === 'Discard') {
-      if (this.selectedCards.includes(value)) {
-        this.selectedCards = this.selectedCards.filter(v => v !== value)
-      } else {
-        if (this.selectedCards.length >= this.discardLimit) {
-          const removed = this.selectedCards.shift()
-          const old = this.el.querySelector(`img[data-card-value="${removed}"]`)
-          if (old) old.classList.remove('selected-card')
-        }
-        this.selectedCards.push(value)
-      }
-    } else {
-      this.selectedCards = this.selectedCards.includes(value) ? [] : [value]
+      this.toggleDiscardSelection(cardValue);
+    } else if (this.phase === 'Playing') {
+      this.togglePlaySelection(cardValue);
     }
 
-    this.render()
-    this.sync()
+    // After any change, update the DOM and sync state with the server
+    this.render();
+    this.sync();
   },
 
-  // Update card CSS classes based on the current selection.
+  // --------------------------------------------------------------------------
+  // SELECTION LOGIC
+  // --------------------------------------------------------------------------
+
+  /**
+   * Manages multi-card selection during the 'Discard' phase.
+   */
+  toggleDiscardSelection(cardValue) {
+    if (this.selectedCards.has(cardValue)) {
+      this.selectedCards.delete(cardValue);
+    } else {
+      // Add card to selection only if the limit has not been reached
+      if (this.selectedCards.size < this.discardLimit) {
+        this.selectedCards.add(cardValue);
+      }
+    }
+  },
+
+  /**
+   * Manages single-card selection during the 'Playing' phase.
+   */
+  togglePlaySelection(cardValue) {
+    // If the clicked card is already selected, clear the selection.
+    // Otherwise, clear the old selection and select the new card.
+    if (this.selectedCards.has(cardValue)) {
+      this.selectedCards.clear();
+    } else {
+      this.selectedCards.clear();
+      this.selectedCards.add(cardValue);
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // STATE & DOM MANAGEMENT
+  // --------------------------------------------------------------------------
+
+  /**
+   * Updates the lock state based on the current game phase.
+   * The hand is interactive only during 'Discard' and 'Playing' phases.
+   */
+  updateLockState() {
+    this.locked = !['Discard', 'Playing'].includes(this.phase);
+  },
+
+  /**
+   * Clears the current selection and updates the view.
+   */
+  clearSelection() {
+    this.selectedCards.clear();
+    this.render();
+    this.sync();
+  },
+
+  /**
+   * Visually updates cards by adding/removing the 'selected-card' class.
+   */
   render() {
     this.el.querySelectorAll('img[data-card-value]').forEach(img => {
-      if (this.selectedCards.includes(img.dataset.cardValue)) {
-        img.classList.add('selected-card')
-      } else {
-        img.classList.remove('selected-card')
-      }
-    })
+      const isSelected = this.selectedCards.has(img.dataset.cardValue);
+      img.classList.toggle('selected-card', isSelected);
+    });
   },
 
-  clear() {
-    this.selectedCards = []
-    this.render()
-    this.sync()
-  },
-
+  /**
+   * Pushes the current selection state to the DOM for LiveView to access.
+   */
   sync() {
-    this.el.dataset.selectedCards = JSON.stringify(this.selectedCards)
+    // A Set must be converted to an array before JSON serialization
+    this.el.dataset.selectedCards = JSON.stringify(Array.from(this.selectedCards));
   }
-}
+};
 
 Hooks.AutoDismissFlash = {
     mounted() {

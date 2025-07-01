@@ -628,6 +628,9 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div style="height: 100vh; align-items: center; justify-content: center;">
+      <%= if @auto_playing do %>
+        <button class="blue-button" phx-click="resume_control" style="margin-bottom: 1rem;">Resume Game!</button>
+      <% end %>
       <table style="color: #d2e8f9; max-width: 40%; margin: auto;">
         <thead>
           <tr>

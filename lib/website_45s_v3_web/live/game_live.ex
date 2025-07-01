@@ -135,7 +135,7 @@ defmodule Website45sV3Web.GameLive do
   def handle_event("play-card", %{"cards" => [card_value]}, socket) do
     with [value, suit] <- String.split(card_value, "_"),
          {int_val, suit_atom} <- parse_card_string([value, suit]) do
-      card = %Website45sV3.Game.Card{value: int_val, suit: Atom.to_string(suit_atom)}
+      card = %Website45sV3.Game.Card{value: int_val, suit: suit_atom}
 
       Phoenix.PubSub.broadcast(
         Website45sV3.PubSub,

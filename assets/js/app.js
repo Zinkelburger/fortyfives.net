@@ -109,10 +109,12 @@ Hooks.CardSelection = {
     if (this.selectedCards.has(cardValue)) {
       this.selectedCards.delete(cardValue);
     } else {
-      // Add card to selection only if the limit has not been reached
-      if (this.selectedCards.size < this.discardLimit) {
-        this.selectedCards.add(cardValue);
+      // When the limit is reached, remove the oldest selected card
+      if (this.selectedCards.size >= this.discardLimit) {
+        const first = this.selectedCards.values().next().value;
+        this.selectedCards.delete(first);
       }
+      this.selectedCards.add(cardValue);
     }
   },
 

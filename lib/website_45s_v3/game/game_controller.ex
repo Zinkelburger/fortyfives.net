@@ -82,6 +82,7 @@ defmodule Website45sV3.Game.GameController do
       trick_winning_cards: [],
       round_scores: %{team1: 0, team2: 0},
       idle_timer_ref: nil,
+      discard_timer_refs: %{},
       bot_players: MapSet.new()
     }
   end
@@ -105,53 +106,45 @@ defmodule Website45sV3.Game.GameController do
     end)
   end
 
+
   defp schedule_idle_timer(state) do
     if state.idle_timer_ref do
       Process.cancel_timer(state.idle_timer_ref)
     end
 
-    if state.phase == "Discard" do
-      Enum.each(state.player_ids, fn player_id ->
-        if player_id not in state.received_discards_from and
-             MapSet.member?(state.bot_players, player_id) do
-          Process.send_after(self(), {:bot_execute, player_id, "Discard"}, 1_000)
-        end
+    if Map.has_key?(state, :discard_timer_refs) do
+      Enum.each(state.discard_timer_refs, fn {_player, ref} ->
+        Process.cancel_timer(ref)
       end)
+    end
 
-      cond do
-        state.current_player_id &&
-            not MapSet.member?(state.bot_players, state.current_player_id) ->
-          ref =
-            Process.send_after(
-              self(),
-              {:idle_timeout, state.current_player_id, state.phase},
-              30_000
-            )
-          %{state | idle_timer_ref: ref}
-        true ->
-          %{state | idle_timer_ref: nil}
-      end
+    state = %{state | discard_timer_refs: %{}, idle_timer_ref: nil}
+
+    if state.phase == "Discard" do
+      refs =
+        Enum.reduce(state.player_ids, %{}, fn player_id, acc ->
+          ref = Process.send_after(self(), {:discard_idle_timeout, player_id}, 30_000)
+          Map.put(acc, player_id, ref)
+        end)
+
+      %{state | discard_timer_refs: refs}
     else
-      cond do
-        state.current_player_id && MapSet.member?(state.bot_players, state.current_player_id) ->
-          Process.send_after(self(), {:bot_execute, state.current_player_id, state.phase}, 1_000)
+      case state.current_player_id do
+        nil ->
           %{state | idle_timer_ref: nil}
 
-        state.current_player_id ->
+        player_id ->
           ref =
             Process.send_after(
               self(),
-              {:idle_timeout, state.current_player_id, state.phase},
+              {:idle_timeout, player_id, state.phase},
               30_000
             )
-          %{state | idle_timer_ref: ref}
 
-        true ->
-          %{state | idle_timer_ref: nil}
+          %{state | idle_timer_ref: ref}
       end
     end
   end
-
   def handle_call(:get_game_state, _from, state), do: {:reply, state, state}
 
   def get_game_state(pid), do: GenServer.call(pid, :get_game_state)
@@ -208,6 +201,19 @@ defmodule Website45sV3.Game.GameController do
     Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
     Process.send_after(self(), {:bot_execute, player_id, phase}, 5_000)
     {:noreply, new_state}
+  end
+
+  def handle_info({:discard_idle_timeout, player_id}, state) do
+    if player_id in state.received_discards_from do
+      new_refs = Map.delete(state.discard_timer_refs, player_id)
+      {:noreply, %{state | discard_timer_refs: new_refs}}
+    else
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
+      Process.send_after(self(), {:bot_execute, player_id, "Discard"}, 5_000)
+      new_refs = Map.delete(state.discard_timer_refs, player_id)
+      new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), discard_timer_refs: new_refs}
+      {:noreply, new_state}
+    end
   end
 
   def handle_info({:bot_execute, player_id, "Bidding"}, state) do
@@ -422,7 +428,6 @@ defmodule Website45sV3.Game.GameController do
       else
         state
       end
-    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
 
     card = if is_binary(card.suit), do: %{card | suit: String.to_atom(card.suit)}, else: card
 
@@ -495,7 +500,6 @@ defmodule Website45sV3.Game.GameController do
       else
         state
       end
-    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
 
     bid = String.to_integer(bid)
 
@@ -595,7 +599,11 @@ defmodule Website45sV3.Game.GameController do
           state
         end
 
-      if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
+      # cancel any pending discard timer for this player
+      {ref, refs} = Map.pop(state.discard_timer_refs, player)
+      if ref, do: Process.cancel_timer(ref)
+      state = %{state | discard_timer_refs: refs}
+
 
       selected_cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
       current_hand = Map.get(state.hands, player, [])
@@ -636,8 +644,14 @@ defmodule Website45sV3.Game.GameController do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
 
-      new_state = schedule_idle_timer(new_state)
-      {:noreply, new_state}
+    new_state =
+      if new_state.phase == "Discard" do
+        new_state
+      else
+        schedule_idle_timer(new_state)
+      end
+
+    {:noreply, new_state}
     end
   end
 

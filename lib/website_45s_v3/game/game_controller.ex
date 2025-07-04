@@ -107,42 +107,61 @@ defmodule Website45sV3.Game.GameController do
   end
 
 
-  defp schedule_idle_timer(state) do
-    if state.idle_timer_ref do
-      Process.cancel_timer(state.idle_timer_ref)
-    end
+  defp cancel_timers(state) do
+    if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
 
-    if Map.has_key?(state, :discard_timer_refs) do
-      Enum.each(state.discard_timer_refs, fn {_player, ref} ->
-        Process.cancel_timer(ref)
+    Enum.each(Map.get(state, :discard_timer_refs, %{}), fn {_player, ref} ->
+      Process.cancel_timer(ref)
+    end)
+
+    %{state | idle_timer_ref: nil, discard_timer_refs: %{}}
+  end
+
+  defp schedule_discard_timers(state) do
+    refs =
+      Enum.reduce(state.player_ids, %{}, fn player_id, acc ->
+        ref = Process.send_after(self(), {:discard_idle_timeout, player_id}, 30_000)
+        Map.put(acc, player_id, ref)
       end)
-    end
 
-    state = %{state | discard_timer_refs: %{}, idle_timer_ref: nil}
-
-    if state.phase == "Discard" do
-      refs =
-        Enum.reduce(state.player_ids, %{}, fn player_id, acc ->
-          ref = Process.send_after(self(), {:discard_idle_timeout, player_id}, 30_000)
-          Map.put(acc, player_id, ref)
-        end)
-
-      %{state | discard_timer_refs: refs}
-    else
-      case state.current_player_id do
-        nil ->
-          %{state | idle_timer_ref: nil}
-
-        player_id ->
-          ref =
-            Process.send_after(
-              self(),
-              {:idle_timeout, player_id, state.phase},
-              30_000
-            )
-
-          %{state | idle_timer_ref: ref}
+    Enum.each(state.player_ids, fn player_id ->
+      if player_id not in state.received_discards_from and
+           MapSet.member?(state.bot_players, player_id) do
+        Process.send_after(self(), {:bot_execute, player_id, "Discard"}, 1_000)
       end
+    end)
+
+    %{state | discard_timer_refs: refs}
+  end
+
+  defp schedule_player_timer(state, player_id) do
+    if MapSet.member?(state.bot_players, player_id) do
+      Process.send_after(self(), {:bot_execute, player_id, state.phase}, 1_000)
+      %{state | idle_timer_ref: nil}
+    else
+      ref =
+        Process.send_after(
+          self(),
+          {:idle_timeout, player_id, state.phase},
+          30_000
+        )
+
+      %{state | idle_timer_ref: ref}
+    end
+  end
+
+  defp schedule_idle_timer(state) do
+    state = cancel_timers(state)
+
+    cond do
+      state.phase == "Discard" ->
+        schedule_discard_timers(state)
+
+      state.current_player_id ->
+        schedule_player_timer(state, state.current_player_id)
+
+      true ->
+        state
     end
   end
   def handle_call(:get_game_state, _from, state), do: {:reply, state, state}

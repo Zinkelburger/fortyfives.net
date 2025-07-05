@@ -234,7 +234,7 @@ defmodule Website45sV3.Game.GameController do
   def handle_info({:idle_timeout, player_id, phase}, %{current_player_id: player_id, phase: phase} = state) do
     new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), idle_timer_ref: nil}
     Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
-    Process.send_after(self(), {:bot_execute, player_id, phase}, 5_000)
+    send(self(), {:bot_execute, player_id, phase})
     {:noreply, new_state}
   end
 
@@ -246,7 +246,7 @@ defmodule Website45sV3.Game.GameController do
       {:noreply, %{state | discard_timer_refs: new_refs}}
     else
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
-      Process.send_after(self(), {:bot_execute, player_id, "Discard"}, 5_000)
+      send(self(), {:bot_execute, player_id, "Discard"})
       new_refs = Map.delete(state.discard_timer_refs, player_id)
       new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), discard_timer_refs: new_refs}
       {:noreply, new_state}

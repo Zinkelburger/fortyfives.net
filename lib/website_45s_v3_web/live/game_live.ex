@@ -278,7 +278,7 @@ defmodule Website45sV3Web.GameLive do
 
   def render(assigns) do
     ~H"""
-    <div class="game">
+    <div id="game-container" class="game" data-auto-playing={to_string(@auto_playing)} phx-hook="ResumeControl">
       <%= if assigns.game_state.phase != "Playing" do %>
         <h1 class="game-state-style">
           <%= assigns.game_state.phase %>

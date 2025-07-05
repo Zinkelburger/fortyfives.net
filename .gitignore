@@ -41,3 +41,5 @@ venv
 ios
 node_modules
 __pycache__
+
+priv/static/images/cards-uncompressed

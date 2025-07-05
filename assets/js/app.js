@@ -232,6 +232,23 @@ Hooks.ConfirmDiscardButton = {
   }
 }
 
+Hooks.ResumeControl = {
+  mounted() {
+    this.handle = () => {
+      if (this.el.dataset.autoPlaying === 'true') {
+        // Optimistically disable auto-playing on the client so that
+        // the next click isn't eaten by the resume handler.
+        this.el.dataset.autoPlaying = 'false'
+        this.pushEvent('resume_control', {})
+      }
+    }
+    window.addEventListener('click', this.handle)
+  },
+  destroyed() {
+    window.removeEventListener('click', this.handle)
+  }
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: Hooks})
 
 // Show progress bar on live navigation and form submits

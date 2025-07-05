@@ -33,8 +33,7 @@ defmodule Website45sV3.Game.GameController do
           {:stop, :normal, state}
         else
           state = schedule_idle_timer(state)
-          # Schedule termination after 2 hours
-          Process.send_after(self(), :terminate_game, 7200000)
+          state = schedule_termination_timer(state, 7_200_000)
           {:ok, state}
         end
 
@@ -83,6 +82,7 @@ defmodule Website45sV3.Game.GameController do
       round_scores: %{team1: 0, team2: 0},
       idle_timer_ref: nil,
       discard_timer_refs: %{},
+      termination_timer_ref: nil,
       bot_players: MapSet.new()
     }
   end
@@ -115,6 +115,17 @@ defmodule Website45sV3.Game.GameController do
     end)
 
     %{state | idle_timer_ref: nil, discard_timer_refs: %{}}
+  end
+
+  defp cancel_termination_timer(state) do
+    if state.termination_timer_ref, do: Process.cancel_timer(state.termination_timer_ref)
+    %{state | termination_timer_ref: nil}
+  end
+
+  defp schedule_termination_timer(state, timeout_ms) do
+    state = cancel_termination_timer(state)
+    ref = Process.send_after(self(), :terminate_game, timeout_ms)
+    %{state | termination_timer_ref: ref}
   end
 
   defp schedule_discard_timers(state) do
@@ -169,6 +180,11 @@ defmodule Website45sV3.Game.GameController do
   def get_game_state(pid), do: GenServer.call(pid, :get_game_state)
 
   defp handle_game_end(state, termination_reason) do
+    state =
+      state
+      |> cancel_timers()
+      |> cancel_termination_timer()
+
     message =
       case termination_reason do
         :normal -> :game_end
@@ -240,20 +256,29 @@ defmodule Website45sV3.Game.GameController do
   def handle_info({:discard_idle_timeout, _player_id}, state), do: {:noreply, state}
 
   def handle_info({:bot_execute, player_id, "Bidding"}, state) do
-    {bid, suit} = Website45sV3.Game.BotPlayer.pick_bid(state, player_id)
-    send(self(), {:player_bid, player_id, Integer.to_string(bid), suit, :bot})
+    if MapSet.member?(state.bot_players, player_id) do
+      {bid, suit} = Website45sV3.Game.BotPlayer.pick_bid(state, player_id)
+      send(self(), {:player_bid, player_id, Integer.to_string(bid), suit, :bot})
+    end
+
     {:noreply, state}
   end
 
   def handle_info({:bot_execute, player_id, "Discard"}, state) do
-    cards = Website45sV3.Game.BotPlayer.pick_discard(state, player_id)
-    send(self(), {:confirm_discard, player_id, cards, :bot})
+    if MapSet.member?(state.bot_players, player_id) do
+      cards = Website45sV3.Game.BotPlayer.pick_discard(state, player_id)
+      send(self(), {:confirm_discard, player_id, cards, :bot})
+    end
+
     {:noreply, state}
   end
 
   def handle_info({:bot_execute, player_id, "Playing"}, state) do
-    card = Website45sV3.Game.BotPlayer.pick_card(state, player_id)
-    send(self(), {:play_card, player_id, card, :bot})
+    if MapSet.member?(state.bot_players, player_id) do
+      card = Website45sV3.Game.BotPlayer.pick_card(state, player_id)
+      send(self(), {:play_card, player_id, card, :bot})
+    end
+
     {:noreply, state}
   end
 
@@ -294,6 +319,7 @@ defmodule Website45sV3.Game.GameController do
     for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
+    new_state = schedule_termination_timer(new_state, 7_200_000)
     new_state = schedule_idle_timer(new_state)
     {:noreply, new_state}
   end
@@ -436,7 +462,7 @@ defmodule Website45sV3.Game.GameController do
     end
 
     # terminate process after 1 minute
-    Process.send_after(self(), :terminate_game, 60_000)
+    new_state = schedule_termination_timer(new_state, 60_000)
     new_state = schedule_idle_timer(new_state)
     {:noreply, new_state}
   end

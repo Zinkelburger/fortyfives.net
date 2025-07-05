@@ -305,14 +305,10 @@ defmodule Website45sV3Web.GameLive do
 
         <%= render_player_hand(assigns) %>
 
-        <%= if assigns.game_state.phase not in ["Playing", "Scoring", "Final Scoring"] do %>
-          <%= if @auto_playing do %>
-            <button class="blue-button" phx-click="resume_control" style="margin-top: 1rem;">Resume Game!</button>
-          <% else %>
-            <button class="blue-button" phx-click="toggle_score_overlay" style="margin-top: 1rem;">
-              View Scores
-            </button>
-          <% end %>
+        <%= if assigns.game_state.phase not in ["Playing", "Scoring", "Final Scoring"] and not @auto_playing do %>
+          <button class="blue-button" phx-click="toggle_score_overlay" style="margin-top: 1rem;">
+            View Scores
+          </button>
         <% end %>
       </div>
     </div>
@@ -335,6 +331,7 @@ defmodule Website45sV3Web.GameLive do
     </div>
     """
   end
+
 
   defp render_phase_content(assigns) do
     case assigns.game_state.phase do
@@ -587,13 +584,9 @@ defmodule Website45sV3Web.GameLive do
           </div>
         <% end %>
       </div>
-      <%= if @auto_playing do %>
-        <button class="blue-button" phx-click="resume_control">Resume Game!</button>
-      <% else %>
-        <button class="blue-button" phx-hook="PlayCardButton" {@attrs}>
-          Play Card
-        </button>
-      <% end %>
+      <button class="blue-button" phx-hook="PlayCardButton" {@attrs}>
+        Play Card
+      </button>
       <div id="card-led-suit" style="display: none;"><%= @card_led_suit %></div>
     </div>
     """
@@ -628,9 +621,6 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div style="height: 100vh; align-items: center; justify-content: center;">
-      <%= if @auto_playing do %>
-        <button class="blue-button" phx-click="resume_control" style="margin-bottom: 1rem;">Resume Game!</button>
-      <% end %>
       <table style="color: #d2e8f9; max-width: 40%; margin: auto;">
         <thead>
           <tr>
@@ -681,7 +671,6 @@ defmodule Website45sV3Web.GameLive do
 
   defp play_card_button_attrs(assigns) do
     cond do
-      assigns.auto_playing -> []
       not assigns.is_current_player -> [disabled: true]
       true -> []
     end

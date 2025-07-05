@@ -20,7 +20,7 @@ defmodule Website45sV3Web.Endpoint do
   plug Plug.Static,
     at: "/",
     from: :website_45s_v3,
-    gzip: false,
+    gzip: true,
     only: Website45sV3Web.static_paths()
 
   # Code reloading can be explicitly enabled under the

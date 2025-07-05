@@ -215,14 +215,16 @@ defmodule Website45sV3.Game.GameController do
     {:stop, {:error, reason}, state}
   end
 
-  def handle_info({:idle_timeout, player_id, phase}, state) do
+  def handle_info({:idle_timeout, player_id, phase}, %{current_player_id: player_id, phase: phase} = state) do
     new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), idle_timer_ref: nil}
     Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
     Process.send_after(self(), {:bot_execute, player_id, phase}, 5_000)
     {:noreply, new_state}
   end
 
-  def handle_info({:discard_idle_timeout, player_id}, state) do
+  def handle_info({:idle_timeout, _player_id, _phase}, state), do: {:noreply, state}
+
+  def handle_info({:discard_idle_timeout, player_id}, %{phase: "Discard"} = state) do
     if player_id in state.received_discards_from do
       new_refs = Map.delete(state.discard_timer_refs, player_id)
       {:noreply, %{state | discard_timer_refs: new_refs}}
@@ -234,6 +236,8 @@ defmodule Website45sV3.Game.GameController do
       {:noreply, new_state}
     end
   end
+
+  def handle_info({:discard_idle_timeout, _player_id}, state), do: {:noreply, state}
 
   def handle_info({:bot_execute, player_id, "Bidding"}, state) do
     {bid, suit} = Website45sV3.Game.BotPlayer.pick_bid(state, player_id)

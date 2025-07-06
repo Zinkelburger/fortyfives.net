@@ -382,12 +382,12 @@ class PhxWeb:
                     EC.element_to_be_clickable(
                         (
                             By.CSS_SELECTOR,
-                            f"img[phx-value-card='{card.value}_{card.suit.long_name()}']",
+                            f"img[data-card-value='{card.value}_{card.suit.long_name()}']",
                         )
                     )
                 )
                 print(
-                    f"clicking img[phx-value-card='{card.value}_{card.suit.long_name()}']"
+                    f"clicking img[data-card-value='{card.value}_{card.suit.long_name()}']"
                 )
                 card_element.click()
                 time.sleep(0.2)  # Adding a small delay between clicks
@@ -399,7 +399,7 @@ class PhxWeb:
         try:
             confirm_button = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable(
-                    (By.CSS_SELECTOR, "button[phx-click='confirm_discard']")
+                    (By.CSS_SELECTOR, "button[phx-hook='ConfirmDiscardButton']")
                 )
             )
             confirm_button.click()
@@ -470,14 +470,14 @@ class PhxWeb:
                 )
                 card_element = self.driver.find_element(
                     By.CSS_SELECTOR,
-                    f"img[phx-value-card='{card_to_play.value}_{card_to_play.suit.long_name()}']",
+                    f"img[data-card-value='{card_to_play.value}_{card_to_play.suit.long_name()}']",
                 )
                 card_element.click()
                 time.sleep(0.1)
 
                 confirm_button = WebDriverWait(self.driver, 10).until(
                     EC.element_to_be_clickable(
-                        (By.CSS_SELECTOR, "button[phx-click='play-card']")
+                        (By.CSS_SELECTOR, "button[phx-hook='PlayCardButton']")
                     )
                 )
                 confirm_button.click()

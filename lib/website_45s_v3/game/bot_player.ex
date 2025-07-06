@@ -13,12 +13,16 @@ defmodule Website45sV3.Game.BotPlayer do
     hand = Map.get(state.hands, player_id, [])
 
     {bid, suit} = evaluate_hand_bid(hand)
+    highest_bid = elem(state.winning_bid, 0)
 
     {bid, suit} =
-      if state.bagged && player_id == state.current_player_id do
-        {15, suit}
-      else
-        {bid, suit}
+      cond do
+        state.bagged && player_id == state.current_player_id ->
+          {15, suit}
+        bid > highest_bid ->
+          {bid, suit}
+        true ->
+          {0, :pass}
       end
 
     bid_suit = if bid == 0, do: :pass, else: suit

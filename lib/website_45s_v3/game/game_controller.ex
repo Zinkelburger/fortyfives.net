@@ -25,17 +25,11 @@ defmodule Website45sV3.Game.GameController do
 
         Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
 
-        players_are_all_bots? =
-          Enum.all?(Map.keys(player_map), fn id -> String.starts_with?(id, "bot_") end)
-
-        if players_are_all_bots? do
-          handle_game_end(state, :normal)
-          {:stop, :normal, state}
-        else
-          state = schedule_idle_timer(state)
-          state = schedule_termination_timer(state, 7_200_000)
-          {:ok, state}
-        end
+        state
+        |> schedule_termination_timer(7_200_000)
+        |> schedule_idle_timer()
+        |> update_bots_only_timer()
+        |> then(&{:ok, &1})
 
       {:error, {:already_registered, _pid}} ->
         {:stop, {:already_registered, game_name}}
@@ -60,6 +54,8 @@ defmodule Website45sV3.Game.GameController do
     current_dealer_index = Enum.find_index(player_ids, fn id -> id == new_dealer_id end)
     starting_player_id = Enum.at(player_ids, rem(current_dealer_index + 1, length(player_ids)))
 
+    bot_ids = Enum.filter(player_ids, &String.starts_with?(&1, "bot_"))
+
     %{
       phase: "Bidding",
       current_player_id: starting_player_id,
@@ -83,7 +79,8 @@ defmodule Website45sV3.Game.GameController do
       idle_timer_ref: nil,
       discard_timer_refs: %{},
       termination_timer_ref: nil,
-      bot_players: MapSet.new()
+      bot_players: MapSet.new(bot_ids),
+      bots_only_timer: nil
     }
   end
 
@@ -106,15 +103,16 @@ defmodule Website45sV3.Game.GameController do
     end)
   end
 
-
   defp cancel_timers(state) do
     if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
 
-    Enum.each(Map.get(state, :discard_timer_refs, %{}), fn {_player, ref} ->
+    Enum.each(state.discard_timer_refs || %{}, fn {_player, ref} ->
       Process.cancel_timer(ref)
     end)
 
-    %{state | idle_timer_ref: nil, discard_timer_refs: %{}}
+    if state.bots_only_timer, do: Process.cancel_timer(state.bots_only_timer)
+
+    %{state | idle_timer_ref: nil, discard_timer_refs: %{}, bots_only_timer: nil}
   end
 
   defp cancel_termination_timer(state) do
@@ -164,12 +162,36 @@ defmodule Website45sV3.Game.GameController do
   defp schedule_idle_timer(state) do
     state = cancel_timers(state)
 
-    cond do
-      state.phase == "Discard" ->
-        schedule_discard_timers(state)
+    state =
+      cond do
+        state.phase == "Discard" ->
+          schedule_discard_timers(state)
 
-      state.current_player_id ->
-        schedule_player_timer(state, state.current_player_id)
+        state.current_player_id ->
+          schedule_player_timer(state, state.current_player_id)
+
+        true ->
+          state
+      end
+
+    update_bots_only_timer(state)
+  end
+
+  defp bots_only?(state) do
+    Enum.all?(state.player_ids, fn id -> MapSet.member?(state.bot_players, id) end)
+  end
+
+  defp update_bots_only_timer(state) do
+    bots_only? = bots_only?(state)
+
+    cond do
+      bots_only? and is_nil(state.bots_only_timer) ->
+        ref = Process.send_after(self(), :bots_only_game_timeout, 300_000)
+        %{state | bots_only_timer: ref}
+
+      not bots_only? and state.bots_only_timer != nil ->
+        Process.cancel_timer(state.bots_only_timer)
+        %{state | bots_only_timer: nil}
 
       true ->
         state
@@ -226,6 +248,14 @@ defmodule Website45sV3.Game.GameController do
     {:stop, :normal, state}
   end
 
+  def handle_info(:bots_only_game_timeout, state) do
+    if bots_only?(state) do
+      {:stop, :normal, state}
+    else
+      {:noreply, %{state | bots_only_timer: nil}}
+    end
+  end
+
   def handle_info({:terminate_error, reason}, state) do
     IO.puts("Terminating GameController with reason: #{inspect(reason)} and state: #{inspect(state)}")
     {:stop, {:error, reason}, state}
@@ -235,6 +265,9 @@ defmodule Website45sV3.Game.GameController do
     new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), idle_timer_ref: nil}
     Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
     send(self(), {:bot_execute, player_id, phase})
+
+    new_state = update_bots_only_timer(new_state)
+
     {:noreply, new_state}
   end
 
@@ -243,12 +276,15 @@ defmodule Website45sV3.Game.GameController do
   def handle_info({:discard_idle_timeout, player_id}, %{phase: "Discard"} = state) do
     if player_id in state.received_discards_from do
       new_refs = Map.delete(state.discard_timer_refs, player_id)
-      {:noreply, %{state | discard_timer_refs: new_refs}}
+      new_state = %{state | discard_timer_refs: new_refs}
+      new_state = update_bots_only_timer(new_state)
+      {:noreply, new_state}
     else
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
       send(self(), {:bot_execute, player_id, "Discard"})
       new_refs = Map.delete(state.discard_timer_refs, player_id)
       new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), discard_timer_refs: new_refs}
+      new_state = update_bots_only_timer(new_state)
       {:noreply, new_state}
     end
   end

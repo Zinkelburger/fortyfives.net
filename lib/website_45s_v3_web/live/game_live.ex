@@ -83,20 +83,9 @@ defmodule Website45sV3Web.GameLive do
       |> assign(:game_state, new_state)
       |> assign(:current_player_id, current_player_id)
       |> assign(:confirm_discard_clicked, confirm_discard_clicked)
+      |> stream(:played_cards, played_cards_with_id, reset: true)
 
-    if new_state.phase == "Playing" do
-      if played_cards_with_id == [] do
-        {:noreply, stream(socket, :played_cards, [], reset: true)}
-      else
-        socket = Enum.reduce(played_cards_with_id, socket, fn card, acc ->
-          stream_insert(acc, :played_cards, card, at: -1)
-        end)
-
-        {:noreply, socket}
-      end
-    else
-      {:noreply, stream(socket, :played_cards, played_cards_with_id, reset: true)}
-    end
+    {:noreply, socket}
   end
 
   def handle_info(:game_crash, socket) do

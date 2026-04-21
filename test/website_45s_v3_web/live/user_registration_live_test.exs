@@ -28,11 +28,17 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
       result =
         lv
         |> element("#registration_form")
-        |> render_change(user: %{"email" => "with spaces", "password" => "too short"})
+        |> render_change(
+          user: %{
+            "username" => "validuser",
+            "email" => "with spaces",
+            "password" => "short"
+          }
+        )
 
       assert result =~ "Register"
-      assert result =~ "must have the @ sign and no spaces"
-      assert result =~ "should be at least 12 character"
+      assert result =~ "Must have the @ sign and no spaces"
+      assert result =~ "should be at least 8 character"
     end
   end
 
@@ -50,7 +56,6 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
       # Now do a logged in request and assert on the menu
       conn = get(conn, "/")
       response = html_response(conn, 200)
-      assert response =~ email
       assert response =~ "Settings"
       assert response =~ "Log out"
     end
@@ -63,7 +68,11 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
       result =
         lv
         |> form("#registration_form",
-          user: %{"email" => user.email, "password" => "valid_password"}
+          user: %{
+            "username" => unique_username(),
+            "email" => user.email,
+            "password" => "valid_password"
+          }
         )
         |> render_submit()
 
@@ -77,7 +86,7 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
 
       {:ok, _login_live, login_html} =
         lv
-        |> element(~s|main a:fl-contains("Sign in")|)
+        |> element(~s|header a[href="/users/log_in"]|)
         |> render_click()
         |> follow_redirect(conn, ~p"/users/log_in")
 

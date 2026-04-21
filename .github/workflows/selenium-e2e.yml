@@ -71,6 +71,8 @@ jobs:
 
       - name: Run tbot instances   
         run: |
+          set -euo pipefail
+          mkdir -p artifacts
           docker rm -f postgres-db my-elixir-app-container 2>/dev/null || true
 
           docker run -d --name postgres-db --network host \
@@ -87,26 +89,40 @@ jobs:
             -p 4000:4000 \
             my-elixir-app:latest
 
-          timeout=300 start_time=$(date +%s)
+          timeout=300
+          start_time=$(date +%s)
           until curl -s http://localhost:4000; do
             if (( $(date +%s) - start_time >= timeout )); then
               echo "Timeout waiting for the elixir app"
               docker logs my-elixir-app-container
               exit 1
             fi
-            echo "Waiting…"
+            echo "Waiting..."
             sleep 5
           done
 
           source venv/bin/activate
           echo 'Running wait_play'
-          python python/wait_play.py
+          python -u python/wait_play.py
 
-          echo 'Running 4 tbot instances…'
+          echo 'Running 4 tbot instances...'
+          pids=()
           for i in {1..4}; do
-            python python/tbot.py 2>&1 | tee tbot_$i.log &
+            TBOT_INSTANCE="$i" TBOT_ARTIFACT_DIR=artifacts python -u python/tbot.py > "tbot_$i.log" 2>&1 &
+            pids+=("$!")
           done
-          wait
+
+          failed=0
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "At least one tbot instance failed"
+            exit 1
+          fi
 
       - name: Upload tbot logs to Actions
         if: always()
@@ -117,11 +133,21 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Upload Selenium artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selenium-e2e-artifacts
+          path: |
+            tbot_*.log
+            artifacts/**
+          if-no-files-found: ignore
+
       - name: Check tbot logs for success
         run: |
           for i in {1..4}; do
-            tail -n3 tbot_$i.log | grep -q "Final Scoring detected" \
+            rg -q "Final Scoring detected" "tbot_$i.log" \
               || { echo "Missing scoring in tbot_$i.log"; exit 1; }
-            tail -n3 tbot_$i.log | grep -q "WebDriver closed" \
+            rg -q "WebDriver closed" "tbot_$i.log" \
               || { echo "Missing WebDriver closed in tbot_$i.log"; exit 1; }
           done

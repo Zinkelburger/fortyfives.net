@@ -75,7 +75,9 @@ defmodule Website45sV3Web.QueueLive do
     if socket.assigns.user_id do
       {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
       private_id = socket.assigns.private_id
+
       Presence.track(self(), "private_queue:#{private_id}", user_id, %{display_name: display_name})
+
       PrivateQueueManager.add_player(private_id, {display_name, user_id})
       {:noreply, assign(socket, in_queue: true)}
     else
@@ -116,9 +118,11 @@ defmodule Website45sV3Web.QueueLive do
   def handle_event("create_private", _payload, socket) do
     # generate a random UUID for the private game
     private_id = UUID.uuid4()
+
     case PrivateQueueManager.create_queue(private_id, socket.assigns.user_id) do
       :ok ->
         {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
+
       {:error, :too_soon} ->
         {:noreply, put_flash(socket, :error, "Please wait before creating another link")}
     end
@@ -137,7 +141,7 @@ defmodule Website45sV3Web.QueueLive do
       |> Enum.map(fn "Bot" <> num ->
         case Integer.parse(num) do
           {int, ""} -> int
-          _         -> 0
+          _ -> 0
         end
       end)
 
@@ -153,9 +157,15 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, socket}
   end
 
+  def handle_info(
+        :update_queue,
+        %{assigns: %{live_action: :private_game, private_id: private_id}} = socket
+      ) do
+    {:noreply, assign(socket, queue: Presence.list("private_queue:#{private_id}"))}
+  end
+
   def handle_info(:update_queue, socket) do
-    queue = Presence.list("queue") |> Map.keys()
-    {:noreply, assign(socket, queue: queue)}
+    {:noreply, assign(socket, queue: Presence.list("queue"))}
   end
 
   # Ignore game updates that might still be broadcast to the user after they
@@ -178,8 +188,15 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, socket}
   end
 
+  def handle_info(:game_crash, socket), do: {:noreply, socket}
+
+  def handle_info({:game_crash, _reason}, socket), do: {:noreply, socket}
+
+  def handle_info(:auto_playing, socket), do: {:noreply, socket}
+
+  def handle_info(:auto_play_disabled, socket), do: {:noreply, socket}
+
   def handle_info({:redirect, url}, socket) do
-    IO.inspect("user id in assigns: #{socket.assigns.user_id}")
     {:noreply, push_navigate(socket, to: url, replace: :replace)}
   end
 
@@ -205,7 +222,7 @@ defmodule Website45sV3Web.QueueLive do
     <div style="text-align: center; margin-top:10px;">
       <%= if @left_game_info do %>
         <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem;">
-          <%= raw @left_game_info %>
+          <%= raw(@left_game_info) %>
         </div>
       <% end %>
       <p style="color: #d2e8f9; margin-bottom: 1rem;">
@@ -259,14 +276,20 @@ defmodule Website45sV3Web.QueueLive do
 
       <%= if !@in_queue do %>
         <form phx-submit="join">
-          <button type="submit" class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button">
+          <button
+            type="submit"
+            class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+          >
             Join Private Game
           </button>
         </form>
       <% else %>
         <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the game lobby</p>
         <form phx-submit="leave">
-          <button type="submit" class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button">
+          <button
+            type="submit"
+            class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+          >
             Leave
           </button>
         </form>
@@ -280,7 +303,7 @@ defmodule Website45sV3Web.QueueLive do
     <div class="tabs-container">
       <%= if @left_game_info do %>
         <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem; text-align:center;">
-          <%= raw @left_game_info %>
+          <%= raw(@left_game_info) %>
         </div>
       <% end %>
       <!-- Tab nav -->
@@ -300,11 +323,10 @@ defmodule Website45sV3Web.QueueLive do
           Play a Friend
         </button>
       </div>
-
       <!-- Tab content -->
       <%= if @tab == "public" do %>
         <!-- your existing queue UI -->
-        <div style="text-align: center; margin-top:10px;">
+        <div id="queue-root" style="text-align: center; margin-top:10px;">
           <h1 style="color: #d2e8f9; margin-bottom: 0px;">Queue</h1>
           <p style="color: #d2e8f9; margin-bottom: 20px;">4-players, teams</p>
           <div class="queue-cards">
@@ -321,19 +343,15 @@ defmodule Website45sV3Web.QueueLive do
             <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
               <form phx-submit="join">
                 <button
+                  id="join-queue-button"
                   type="submit"
                   class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
                 >
                   Join Queue
                 </button>
               </form>
-
               <!-- our new circular button -->
-              <button
-                phx-click="request_bot"
-                class="request-bot-button"
-              title="Request Bot"
-              >
+              <button phx-click="request_bot" class="request-bot-button" title="Request Bot">
                 🤖
               </button>
             </div>
@@ -342,23 +360,19 @@ defmodule Website45sV3Web.QueueLive do
             <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
               <form phx-submit="leave">
                 <button
+                  id="leave-queue-button"
                   type="submit"
                   class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
                 >
                   Leave Queue
                 </button>
               </form>
-              <button
-                phx-click="request_bot"
-                class="request-bot-button"
-                title="Request Bot"
-              >
+              <button phx-click="request_bot" class="request-bot-button" title="Request Bot">
                 🤖
               </button>
             </div>
           <% end %>
         </div>
-
       <% else %>
         <!-- Play a Friend tab -->
         <div style="text-align: center; margin-top: 2rem;">

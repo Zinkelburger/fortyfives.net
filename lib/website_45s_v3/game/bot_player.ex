@@ -19,8 +19,10 @@ defmodule Website45sV3.Game.BotPlayer do
       cond do
         state.bagged && player_id == state.current_player_id ->
           {15, suit}
+
         bid > highest_bid ->
           {bid, suit}
+
         true ->
           {0, :pass}
       end
@@ -38,7 +40,7 @@ defmodule Website45sV3.Game.BotPlayer do
   cards are returned. Each card is encoded as "value_suit".
   """
   def pick_discard(state, player_id) do
-    hand  = Map.get(state.hands, player_id, [])
+    hand = Map.get(state.hands, player_id, [])
     trump = state.trump
 
     # 1) Filter for all trumps or kings
@@ -50,23 +52,20 @@ defmodule Website45sV3.Game.BotPlayer do
     # 2) If none, keep exactly the first card; otherwise keep the filtered ones
     kept =
       case kept do
-        []    -> [hd(hand)]    # keep just one
+        # keep just one
+        [] -> [hd(hand)]
         cards -> cards
       end
 
     # 3) Never keep more than five
     kept = Enum.take(kept, 5)
 
-    # 4) (Optional) Compute discards if you need them
-    discarded = hand -- kept
-
-    # 5) Return just the kept cards encoded as strings
+    # 4) Return just the kept cards encoded as strings
     Enum.map(kept, &format_card/1)
 
     # — or, if you did want to return both:
-    # {Enum.map(kept, &format_card/1), Enum.map(discarded, &format_card/1)}
+    # {Enum.map(kept, &format_card/1), Enum.map(hand -- kept, &format_card/1)}
   end
-
 
   @doc """
   Chooses a card to play from the player's legal moves. If no legal moves are
@@ -77,7 +76,13 @@ defmodule Website45sV3.Game.BotPlayer do
     legal = Map.get(state.legal_moves, player_id, hand)
     current_cards = Enum.map(state.played_cards, & &1.card)
 
-    evaluate_hand_play(state.suit_led, legal, current_cards, elem(state.winning_bid, 0), state.trump) ||
+    evaluate_hand_play(
+      state.suit_led,
+      legal,
+      current_cards,
+      elem(state.winning_bid, 0),
+      state.trump
+    ) ||
       List.first(legal) || List.first(hand)
   end
 
@@ -99,8 +104,7 @@ defmodule Website45sV3.Game.BotPlayer do
       Enum.reduce(player_hand, {small_cards, sure_points}, fn card, {sm, sp} ->
         cond do
           Card.is_ace_of_hearts?(card) ->
-            {sm,
-             Enum.reduce(suits, sp, fn suit, acc -> Map.update!(acc, suit, &(&1 + 5)) end)}
+            {sm, Enum.reduce(suits, sp, fn suit, acc -> Map.update!(acc, suit, &(&1 + 5)) end)}
 
           Map.has_key?(face_card_points, card.value) ->
             {sm, Map.update!(sp, card.suit, &(&1 + face_card_points[card.value]))}
@@ -118,6 +122,7 @@ defmodule Website45sV3.Game.BotPlayer do
   end
 
   defp get_max_card([], _suit_led, _trump), do: nil
+
   defp get_max_card([card | rest], suit_led, trump) do
     Enum.reduce(rest, card, fn c, acc ->
       if Card.less_than(acc, c, suit_led, trump), do: c, else: acc
@@ -125,6 +130,7 @@ defmodule Website45sV3.Game.BotPlayer do
   end
 
   defp get_min_card([], _suit_led, _trump), do: nil
+
   defp get_min_card([card | rest], suit_led, trump) do
     Enum.reduce(rest, card, fn c, acc ->
       if Card.less_than(c, acc, suit_led, trump), do: c, else: acc
@@ -132,6 +138,7 @@ defmodule Website45sV3.Game.BotPlayer do
   end
 
   defp evaluate_hand_play(_suit_led, [], _current_cards, _bid_amount, _trump), do: nil
+
   defp evaluate_hand_play(suit_led, player_hand, current_cards, _bid_amount, trump) do
     max_card = get_max_card(current_cards, suit_led, trump)
     players_max_card = get_max_card(player_hand, suit_led, trump)

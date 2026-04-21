@@ -1,14 +1,35 @@
-import time
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from bs4 import BeautifulSoup
-from card import Suit, Card, less_than, is_ace_of_hearts
-from typing import Optional
+import json
 import os
+import time
+from pathlib import Path
+from typing import Callable, Optional
+
+from card import Suit, Card, less_than, is_ace_of_hearts
+from selenium import webdriver
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException,
+    WebDriverException,
+)
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+ACTION_TIMEOUT_SECONDS = 20
+JOIN_TIMEOUT_SECONDS = 120
+MATCH_TIMEOUT_SECONDS = 180
+PHASE_TIMEOUT_SECONDS = {
+    "Bidding": 180,
+    "Discard": 180,
+    "Playing": 300,
+    "Scoring": 90,
+}
+POLL_INTERVAL_SECONDS = 0.5
+TOTAL_RUNTIME_TIMEOUT_SECONDS = 900
 
 
 def get_driver() -> webdriver.Chrome:
@@ -18,6 +39,7 @@ def get_driver() -> webdriver.Chrome:
     falls back to Selenium Manager-managed driver if not found.
     """
     chrome_options = Options()
+    chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
@@ -28,9 +50,9 @@ def get_driver() -> webdriver.Chrome:
     if os.path.exists(chromedriver_path):
         service = Service(executable_path=chromedriver_path)
         return webdriver.Chrome(service=service, options=chrome_options)
-    else:
-        # Selenium Manager will handle downloading the correct driver
-        return webdriver.Chrome(options=chrome_options)
+
+    # Selenium Manager will handle downloading the correct driver
+    return webdriver.Chrome(options=chrome_options)
 
 def evaluate_hand_bid(player_hand: list[Card]) -> tuple[int, Suit]:
     # eventually have it reference a lookup table
@@ -145,34 +167,32 @@ class GameState:
     def __init__(self) -> None:
         self.player_hand: list[Card] = []
         self.max_bid = 0
-        self.cum_cards_played = []
         self.current_played_cards = []
         self.is_current_turn = False
-        self.my_turn = False
         self.is_bagged = False
-        self.current_score = 0
-        self.bids = []
-        self.trump: Suit
-        self.suit_led: Suit
+        self.auto_playing = False
+        self.confirm_discard_clicked = False
+        self.phase = ""
+        self.trump: Optional[Suit] = None
+        self.suit_led: Optional[Suit] = None
 
     def reset(self) -> None:
         self.player_hand: list[Card] = []
         self.max_bid = 0
-        self.cum_cards_played = []
         self.current_played_cards = []
         self.is_current_turn = False
-        self.my_turn = False
         self.is_bagged = False
-        self.current_score = 0
-        self.bids = []
-        self.trump: Suit = None
-        self.suit_led: Suit = None
+        self.auto_playing = False
+        self.confirm_discard_clicked = False
+        self.phase = ""
+        self.trump = None
+        self.suit_led = None
 
     def __repr__(self) -> str:
         return (
             f"GameState(player_hand={self.player_hand}, max_bid={self.max_bid}, "
-            f"cards_played={self.cum_cards_played}, is_current_turn={self.is_current_turn}, "
-            f"current_score={self.current_score}, bids={self.bids})"
+            f"current_played_cards={self.current_played_cards}, phase={self.phase}, "
+            f"is_current_turn={self.is_current_turn}, auto_playing={self.auto_playing})"
         )
 
 
@@ -181,346 +201,408 @@ class PhxWeb:
         self.url = url
         self.game_state = GameState()
         self.driver = get_driver()
+        self.instance = os.getenv("TBOT_INSTANCE", str(os.getpid()))
+
+    def log(self, message: str) -> None:
+        print(f"[tbot {self.instance}] {message}", flush=True)
+
+    def wait_for(self, predicate: Callable[[], bool], timeout: int, description: str) -> None:
+        deadline = time.time() + timeout
+        last_error: Optional[Exception] = None
+
+        while time.time() < deadline:
+            try:
+                if predicate():
+                    return
+            except (
+                NoSuchElementException,
+                StaleElementReferenceException,
+                TimeoutException,
+                WebDriverException,
+                json.JSONDecodeError,
+            ) as error:
+                last_error = error
+
+            time.sleep(POLL_INTERVAL_SECONDS)
+
+        raise TimeoutException(
+            f"Timed out waiting for {description}. Last error: {last_error!r}"
+        )
+
+    def root(self) -> WebElement:
+        return WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.presence_of_element_located((By.ID, "game-container"))
+        )
+
+    def read_game_state(self) -> GameState:
+        root = self.root()
+        self.game_state.phase = root.get_attribute("data-phase") or ""
+        self.game_state.is_current_turn = (
+            root.get_attribute("data-current-turn") == "true"
+        )
+        self.game_state.is_bagged = root.get_attribute("data-bagged") == "true"
+        self.game_state.auto_playing = (
+            root.get_attribute("data-auto-playing") == "true"
+        )
+        self.game_state.confirm_discard_clicked = (
+            root.get_attribute("data-confirm-discard-clicked") == "true"
+        )
+        self.game_state.max_bid = int(root.get_attribute("data-current-bid") or "0")
+
+        trump = root.get_attribute("data-trump")
+        suit_led = root.get_attribute("data-suit-led")
+        self.game_state.trump = Suit[trump.upper()] if trump else None
+        self.game_state.suit_led = Suit[suit_led.upper()] if suit_led else None
+        return self.game_state
+
+    def current_phase(self) -> str:
+        return self.read_game_state().phase
+
+    def selected_cards(self) -> list[str]:
+        hand = self.driver.find_element(By.ID, "player-hand")
+        raw_cards = hand.get_attribute("data-selected-cards") or "[]"
+        return json.loads(raw_cards)
+
+    def parse_card_dom_value(self, card_dom_value: str) -> Card:
+        value, suit = card_dom_value.split("_")
+        return Card(value, Suit[suit.upper()])
+
+    def card_selector(self, card: Card) -> str:
+        return f"img[data-card-value='{card.value}_{card.suit.long_name()}']"
 
     def click_join_queue(self) -> None:
         self.driver.get(self.url)
-        WebDriverWait(self.driver, 60).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".green-button"))
+        WebDriverWait(self.driver, JOIN_TIMEOUT_SECONDS).until(
+            EC.presence_of_element_located((By.ID, "queue-root"))
+        )
+        WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.element_to_be_clickable((By.ID, "join-queue-button"))
         ).click()
-        # Wait for redirect
-        WebDriverWait(self.driver, 30).until(EC.url_changes(self.url))
-        redirected_url = self.driver.current_url
-        print(f"Redirected to: {redirected_url}")
-        self.url = redirected_url
 
-    def extract_player_hand(self, soup: BeautifulSoup) -> None:
+        self.wait_for(
+            lambda: "/game/" in self.driver.current_url
+            or len(self.driver.find_elements(By.ID, "leave-queue-button")) == 1,
+            ACTION_TIMEOUT_SECONDS,
+            "queue join acknowledgement",
+        )
+
+        self.wait_for(
+            lambda: "/game/" in self.driver.current_url,
+            MATCH_TIMEOUT_SECONDS,
+            "matchmaking redirect",
+        )
+
+        self.wait_for(
+            lambda: len(self.driver.find_elements(By.ID, "game-container")) == 1,
+            ACTION_TIMEOUT_SECONDS,
+            "game page to load",
+        )
+
+        self.url = self.driver.current_url
+        self.log(f"Redirected to {self.url}")
+
+    def extract_player_hand(self, playable_only: bool = False) -> None:
         self.game_state.player_hand = []
-        player_hand_div = soup.find("div", class_="player-hand")
-        if player_hand_div:
-            card_images = player_hand_div.find_all("img", class_="card")
-            for img in card_images:
-                card_name = img["src"].split("/")[-1].replace(".png", "")
-                value = card_name[:-1]
-                suit = Suit(card_name[-1])
-                self.game_state.player_hand.append(Card(value, suit))
-        print(f"Extracted player hand from game state: {self.game_state.player_hand}")
+        card_images = self.driver.find_elements(By.CSS_SELECTOR, "#player-hand img.card")
+        for image in card_images:
+            classes = image.get_attribute("class") or ""
+            if playable_only and "grayed-out" in classes:
+                continue
+            card_value = image.get_attribute("data-card-value")
+            if card_value:
+                self.game_state.player_hand.append(self.parse_card_dom_value(card_value))
 
-    def extract_player_hand_valid(self, soup: BeautifulSoup) -> None:
-        self.game_state.player_hand = []
-        player_hand_div = soup.find("div", class_="player-hand")
-        if player_hand_div:
-            # Cards that can be clicked have the class "card" and not "grayed-out"
-            card_images = player_hand_div.find_all("img", class_="card")
-            for img in card_images:
-                card_name = img["src"].split("/")[-1].replace(".png", "")
-                value = card_name[:-1]
-                suit = Suit(card_name[-1])
-                # Check if the card can be selected
-                if "grayed-out" not in img.get("class", []):
-                    self.game_state.player_hand.append(Card(value, suit))
-        print(
-            f"Extracted valid player hand from game state: {self.game_state.player_hand}"
-        )
-
-    def extract_bids(self, soup: BeautifulSoup) -> None:
-        bids_div = soup.find("div", class_="actions-list")
-        if bids_div:
-            # Get the text directly from the div and split by commas
-            bids_text = bids_div.get_text(strip=True)
-            bids_parts = bids_text.split(",")
-
-            for part in bids_parts:
-                part = part.strip()
-                if "bid" in part:
-                    username, bid_value = part.split(" bid ")
-                    bid_value = int(bid_value)
-                    self.game_state.bids.append(
-                        {"username": username.strip(), "bid": bid_value}
-                    )
-                    if bid_value > self.game_state.max_bid:
-                        self.game_state.max_bid = bid_value
-                elif " passed" in part:
-                    username = part.split(" passed")[0]
-                    self.game_state.bids.append(
-                        {"username": username.strip(), "bid": 0}
-                    )
-            else:
-                split_part = part.split()
-                if len(split_part) > 0:
-                    self.game_state.bids.append(
-                        {"username": split_part[0].strip(), "bid": 0}
-                    )
-                else:
-                    print(f"Unexpected format in bids: {part}")
-
-        print(f"Extracted bids from game state: {self.game_state.bids}")
-
-    def extract_current_turn(self, soup: BeautifulSoup) -> None:
-        bagged_message = soup.find(
-            "p", string=lambda text: text and "You are bagged" in text
-        )
-        current_turn_p = soup.find(
-            "p", string=lambda text: text and "It is your turn" in text
-        )
-        turn_message_2 = soup.find(
-            "p", string=lambda text: text and "Your turn" in text
-        )
-
-        if bagged_message:
-            self.game_state.is_bagged = True
-            self.game_state.is_current_turn = True
-        elif current_turn_p or turn_message_2:
-            self.game_state.is_bagged = False
-            self.game_state.is_current_turn = True
-        else:
-            self.game_state.is_current_turn = False
-            self.game_state.is_bagged = False
-        print(
-            f"Current turn status: {self.game_state.is_current_turn}, is bagged: {self.game_state.is_bagged}"
-        )
+        hand_type = "playable hand" if playable_only else "hand"
+        self.log(f"Extracted {hand_type}: {self.game_state.player_hand}")
 
     def place_bid(self, bid_value: int, bid_suit: Suit) -> None:
         if bid_value == 0 or bid_suit == Suit.PASS:
-            pass_button = self.driver.find_element(By.CSS_SELECTOR, ".pass-button")
-            pass_button.click()
-        else:
-            # Select the bid value
-            bid_value_button = self.driver.find_element(
-                By.CSS_SELECTOR, f"button[phx-value-bid-number='{bid_value}']"
-            )
-            print(f"clicked button[phx-value-bid-number='{bid_value}']")
-            bid_value_button.click()
+            WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+                EC.element_to_be_clickable((By.ID, "pass-bid-button"))
+            ).click()
+            self.log("Passed the bid.")
+            return
 
-            # Select the bid suit
-            bid_suit_button = self.driver.find_element(
-                By.CSS_SELECTOR, f"button[phx-value-bid-suit='{bid_suit.long_name()}']"
-            )
-            print(f"clicked button[phx-value-bid-suit='{bid_suit.long_name()}']")
-            bid_suit_button.click()
-            time.sleep(1)  # Give some time for the confirm button to be enabled
-
-            # Confirm the bid
-            confirm_button = self.driver.find_element(
-                By.CSS_SELECTOR, "button[phx-click='confirm_bid']"
-            )
-            confirm_button.click()
-
-    def is_bidding_phase(self, soup: BeautifulSoup) -> bool:
-        h1_tag = soup.find("h1")
-        if h1_tag and "Bidding" in h1_tag.get_text():
-            return True
-        else:
-            return False
-
-    def bidding_phase(self) -> None:
-        time.sleep(1)
-        while True:
-            soup = BeautifulSoup(self.driver.page_source, "html.parser")
-            if not self.is_bidding_phase(soup):
-                break
-            self.extract_player_hand(soup)
-            self.extract_bids(soup)
-            self.extract_current_turn(soup)
-
-            if self.game_state.is_current_turn:
-                print(f"It's my turn to bid. Max bid: {self.game_state.max_bid}")
-                value, suit = evaluate_hand_bid(self.game_state.player_hand)
-                if self.game_state.is_bagged:
-                    self.place_bid(15, suit)
-                elif value > self.game_state.max_bid:
-                    self.place_bid(value, suit)
-                else:
-                    self.place_bid(0, "pass")
-            else:
-                print("Waiting for my turn...")
-            time.sleep(2)
-
-    def extract_trump_soup(self, soup: BeautifulSoup) -> None:
-        actions_div = soup.find("div", class_="actions-list")
-        if actions_div:
-            text = actions_div.get_text(strip=True)
-            if "won with" in text:
-                parts = text.split(" won with ")
-                if len(parts) == 2:
-                    bid_parts = parts[1].split()
-                    if len(bid_parts) == 2:
-                        self.game_state.max_bid = int(bid_parts[0])
-                        self.game_state.trump = Suit(bid_parts[1][0].upper())
-        print(
-            f"Extracted trump suit and max bid: {self.game_state.trump}, {self.game_state.max_bid}"
+        bid_value_selector = (
+            By.CSS_SELECTOR,
+            f"button[phx-value-bid-number='{bid_value}']:not([disabled])",
+        )
+        bid_suit_selector = (
+            By.CSS_SELECTOR,
+            f"button[phx-value-bid-suit='{bid_suit.long_name()}']:not([disabled])",
         )
 
-    def discard_phase(self) -> None:
-        # get the trump & bid value
-        soup = BeautifulSoup(self.driver.page_source, "html.parser")
-        self.extract_trump_soup(soup)
-        self.extract_player_hand(soup)
+        WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.element_to_be_clickable(bid_value_selector)
+        ).click()
+        WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.element_to_be_clickable(bid_suit_selector)
+        ).click()
+        WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "#confirm-bid-button:not([disabled])"))
+        ).click()
+        self.log(f"Placed bid {bid_value} {bid_suit.long_name()}.")
 
-        # Print the player's hand before discarding
-        print(f"Player hand before discarding: {self.game_state.player_hand}")
+    def bidding_phase(self) -> None:
+        phase_started_at = time.time()
 
-        # keep trump & kings
-        keep = []
-        for card in self.game_state.player_hand:
-            if card.suit == self.game_state.trump:
-                keep.append(card)
-            elif card.value == 13:  # Keep kings
-                keep.append(card)
-
-        print(f"Keeping cards: {keep}")
-
-        # if you didn't keep anything, keep the first five cards
-        if not keep:
-            keep = self.game_state.player_hand[:5]
-        # never keep more than five cards
-        keep = keep[:5]
-
-        # Click the keep list cards
-        for card in keep:
-            try:
-                card_element = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable(
-                        (
-                            By.CSS_SELECTOR,
-                            f"img[data-card-value='{card.value}_{card.suit.long_name()}']",
-                        )
-                    )
-                )
-                print(
-                    f"clicking img[data-card-value='{card.value}_{card.suit.long_name()}']"
-                )
-                card_element.click()
-                time.sleep(0.2)  # Adding a small delay between clicks
-            except Exception as e:
-                print(f"Failed to click card {card}: {e}")
-                breakpoint()
-
-        # Click confirm discard
-        try:
-            confirm_button = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable(
-                    (By.CSS_SELECTOR, "button[phx-hook='ConfirmDiscardButton']")
-                )
-            )
-            confirm_button.click()
-        except Exception as e:
-            print(f"Failed to click confirm discard button: {e}")
-
-        # wait for other players to finish
         while True:
-            soup = BeautifulSoup(self.driver.page_source, "html.parser")
-            waiting = soup.find("p", string="Waiting for other players…")
-
-            playing = soup.find("div", class_="played-cards")
-
-            if not waiting and playing:
-                print("👉 Transitioned to the Playing phase.")
+            state = self.read_game_state()
+            if state.phase != "Bidding":
                 break
 
-            print("Waiting for other players to finish…")
-            time.sleep(2)
+            if time.time() - phase_started_at > PHASE_TIMEOUT_SECONDS["Bidding"]:
+                raise TimeoutException("Bidding phase never completed.")
 
-    def extract_current_cards(self, soup: BeautifulSoup) -> None:
+            if state.auto_playing:
+                self.resume_control_if_needed()
+                continue
+
+            if state.is_current_turn:
+                self.extract_player_hand()
+                self.log(f"It's my turn to bid. Current max bid: {state.max_bid}")
+                value, suit = evaluate_hand_bid(self.game_state.player_hand)
+                if state.is_bagged:
+                    self.place_bid(15, suit)
+                elif value > state.max_bid:
+                    self.place_bid(value, suit)
+                else:
+                    self.place_bid(0, Suit.PASS)
+
+                self.wait_for(
+                    lambda: self.read_game_state().phase != "Bidding"
+                    or not self.read_game_state().is_current_turn,
+                    ACTION_TIMEOUT_SECONDS,
+                    "bid to be accepted",
+                )
+
+            time.sleep(POLL_INTERVAL_SECONDS)
+
+    def discard_phase(self) -> None:
+        phase_started_at = time.time()
+
+        while True:
+            state = self.read_game_state()
+            if state.phase != "Discard":
+                break
+
+            if time.time() - phase_started_at > PHASE_TIMEOUT_SECONDS["Discard"]:
+                raise TimeoutException("Discard phase never completed.")
+
+            if state.auto_playing:
+                self.resume_control_if_needed()
+                continue
+
+            if state.confirm_discard_clicked:
+                time.sleep(POLL_INTERVAL_SECONDS)
+                continue
+
+            self.extract_player_hand()
+            self.log(f"Player hand before discarding: {self.game_state.player_hand}")
+
+            keep = []
+            for card in self.game_state.player_hand:
+                if card.suit == state.trump or card.value == 13:
+                    keep.append(card)
+
+            if not keep:
+                keep = self.game_state.player_hand[:5]
+            keep = keep[:5]
+
+            self.log(f"Keeping cards: {keep}")
+            for card in keep:
+                self.select_card(card)
+
+            WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+                EC.element_to_be_clickable((By.ID, "confirm-discard-button"))
+            ).click()
+            self.log("Confirmed discard.")
+
+            self.wait_for(
+                lambda: self.read_game_state().phase != "Discard"
+                or self.read_game_state().confirm_discard_clicked,
+                ACTION_TIMEOUT_SECONDS,
+                "discard confirmation",
+            )
+
+            time.sleep(POLL_INTERVAL_SECONDS)
+
+    def extract_current_cards(self) -> None:
         self.game_state.current_played_cards = []
-        played_cards_div = soup.find("div", class_="table")
-        if played_cards_div:
-            card_images = played_cards_div.find_all("img")
-            for img in card_images:
-                card_name = img["phx-value-card"]
-                value, suit = card_name.split("_")
-                suit = Suit[suit.upper()]
-                self.game_state.current_played_cards.append(Card(value, suit))
-        print(f"Current played cards extracted: {self.game_state.current_played_cards}")
+        card_images = self.driver.find_elements(By.CSS_SELECTOR, "#table img[phx-value-card]")
+        for image in card_images:
+            card_value = image.get_attribute("phx-value-card")
+            if card_value:
+                self.game_state.current_played_cards.append(
+                    self.parse_card_dom_value(card_value)
+                )
+        self.log(f"Current played cards: {self.game_state.current_played_cards}")
 
-    def extract_card_led_suit(self, soup: BeautifulSoup) -> None:
-        card_led_div = soup.find("div", id="card-led-suit")
-        if card_led_div:
-            suit = card_led_div.get_text(strip=True)
-            print(f"suit led: {suit}")
-            suit = suit.upper() if suit else "PASS"
-            self.game_state.suit_led = Suit[suit]
+    def select_card(self, card: Card) -> None:
+        card_value = f"{card.value}_{card.suit.long_name()}"
+        if card_value in self.selected_cards():
+            return
+
+        WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, self.card_selector(card)))
+        ).click()
+
+        self.wait_for(
+            lambda: card_value in self.selected_cards(),
+            ACTION_TIMEOUT_SECONDS,
+            f"{card_value} to be selected",
+        )
+        self.log(f"Selected card {card_value}.")
+
+    def play_selected_card(self) -> None:
+        WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "#play-card-button:not([disabled])"))
+        ).click()
+        self.log("Played selected card.")
+
+    def resume_control_if_needed(self) -> None:
+        if not self.read_game_state().auto_playing:
+            return
+
+        buttons = self.driver.find_elements(By.ID, "resume-control-button")
+        if not buttons:
+            raise RuntimeError("Auto-play is enabled, but the resume button is missing.")
+
+        WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
+            EC.element_to_be_clickable((By.ID, "resume-control-button"))
+        ).click()
+        self.wait_for(
+            lambda: not self.read_game_state().auto_playing,
+            ACTION_TIMEOUT_SECONDS,
+            "manual control to resume",
+        )
+        self.log("Resumed manual control.")
 
     def playing_phase(self) -> None:
+        phase_started_at = time.time()
         while True:
-            soup = BeautifulSoup(self.driver.page_source, "html.parser")
-            if self.is_scoring_phase(soup):
-                print("Transitioned to the Scoring phase.")
+            state = self.read_game_state()
+            if state.phase != "Playing":
                 break
-            self.extract_player_hand_valid(soup)
-            self.extract_current_turn(soup)
-            self.extract_current_cards(soup)
 
-            # Append the current hand cards to the global list of cards played
-            self.game_state.cum_cards_played += self.game_state.current_played_cards
+            if time.time() - phase_started_at > PHASE_TIMEOUT_SECONDS["Playing"]:
+                raise TimeoutException("Playing phase never completed.")
 
-            # Extract the card led suit
-            self.extract_card_led_suit(soup)
+            if state.auto_playing:
+                self.resume_control_if_needed()
+                continue
 
-            if self.game_state.is_current_turn:
-                time.sleep(0.3)
-                print(f"It's my turn to play. Max bid: {self.game_state.max_bid}")
-                print(f"Player hand: {self.game_state.player_hand}")
-                print(f"Current cards: {self.game_state.current_played_cards}")
+            if state.is_current_turn:
+                self.extract_player_hand(playable_only=True)
+                self.extract_current_cards()
+
+                if not self.game_state.player_hand:
+                    raise RuntimeError("No legal cards available on the active turn.")
+                if state.trump is None:
+                    raise RuntimeError("Trump suit is missing during the playing phase.")
+
+                self.log(
+                    f"It's my turn to play. Trump: {state.trump}, suit led: {state.suit_led}"
+                )
                 card_to_play = evaluate_hand_play(
-                    suit_led=self.game_state.suit_led,
+                    suit_led=state.suit_led,
                     player_hand=self.game_state.player_hand,
                     current_cards=self.game_state.current_played_cards,
-                    bid_amount=self.game_state.max_bid,
-                    trump=self.game_state.trump,
+                    bid_amount=state.max_bid,
+                    trump=state.trump,
                 )
-                card_element = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    f"img[data-card-value='{card_to_play.value}_{card_to_play.suit.long_name()}']",
+                self.select_card(card_to_play)
+                self.play_selected_card()
+                self.wait_for(
+                    lambda: self.read_game_state().phase != "Playing"
+                    or not self.read_game_state().is_current_turn,
+                    ACTION_TIMEOUT_SECONDS,
+                    "played card to be accepted",
                 )
-                card_element.click()
-                time.sleep(0.1)
-
-                confirm_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable(
-                        (By.CSS_SELECTOR, "button[phx-hook='PlayCardButton']")
-                    )
-                )
-                confirm_button.click()
-            else:
-                print("Waiting for my turn...")
-            time.sleep(2)
-
-    # responsible for exiting the game on final scoring
-    def is_scoring_phase(self, soup: BeautifulSoup) -> bool:
-        h1_tag = soup.find("h1")
-        if h1_tag and "Scoring" in h1_tag.get_text():
-            if "Final Scoring" in h1_tag.get_text():
-                print("Final Scoring detected. Exiting the game.")
-                self.close_driver()
-                exit(0)
-            return True
-        else:
-            return False
+            time.sleep(POLL_INTERVAL_SECONDS)
 
     def scoring_phase(self) -> None:
+        phase_started_at = time.time()
+
         while True:
-            soup = BeautifulSoup(self.driver.page_source, "html.parser")
-            if not self.is_scoring_phase(soup):
+            phase = self.current_phase()
+
+            if phase == "Final Scoring":
+                self.log("Final Scoring detected. Exiting the game.")
+                return
+
+            if phase != "Scoring":
                 break
-            print("Waiting for scoring to complete...")
-            time.sleep(2)
-        print("Scoring phase complete. Resetting game state.")
+
+            if time.time() - phase_started_at > PHASE_TIMEOUT_SECONDS["Scoring"]:
+                raise TimeoutException("Scoring phase never completed.")
+
+            time.sleep(POLL_INTERVAL_SECONDS)
+
+        self.log("Scoring phase complete. Resetting game state.")
         self.game_state.reset()
 
+    def capture_failure_artifacts(self) -> None:
+        if self.driver is None:
+            return
+
+        artifact_dir = Path(os.getenv("TBOT_ARTIFACT_DIR", "artifacts"))
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+
+        screenshot_path = artifact_dir / f"tbot_{self.instance}_failure.png"
+        html_path = artifact_dir / f"tbot_{self.instance}_failure.html"
+
+        try:
+            self.driver.save_screenshot(str(screenshot_path))
+            html_path.write_text(self.driver.page_source, encoding="utf-8")
+            self.log(
+                f"Saved failure artifacts to {screenshot_path} and {html_path}."
+            )
+        except WebDriverException as error:
+            self.log(f"Failed to save debug artifacts: {error!r}")
+
     def close_driver(self) -> None:
+        if self.driver is None:
+            return
+
         self.driver.quit()
-        print("\nWebDriver closed")
+        self.driver = None
+        print("\nWebDriver closed", flush=True)
+
+    def run(self) -> None:
+        self.click_join_queue()
+        start_time = time.time()
+
+        while time.time() - start_time < TOTAL_RUNTIME_TIMEOUT_SECONDS:
+            phase = self.current_phase()
+
+            if phase == "Bidding":
+                self.bidding_phase()
+            elif phase == "Discard":
+                self.discard_phase()
+            elif phase == "Playing":
+                self.playing_phase()
+            elif phase == "Scoring":
+                self.scoring_phase()
+            elif phase == "Final Scoring":
+                self.log("Final Scoring detected. Exiting the game.")
+                return
+            else:
+                raise RuntimeError(f"Unexpected game phase: {phase!r}")
+
+        raise TimeoutException("Timed out waiting for the game to complete.")
 
 
 def main() -> None:
-    phx_web = PhxWeb("http://localhost:4000/play")
-    phx_web.click_join_queue()
-
-    while True:
-        phx_web.bidding_phase()
-        phx_web.discard_phase()
-        phx_web.playing_phase()
-        phx_web.scoring_phase()
+    phx_web = PhxWeb(os.getenv("APP_BASE_URL", "http://localhost:4000/play"))
+    try:
+        phx_web.run()
+    except Exception as error:
+        phx_web.log(f"Run failed: {error!r}")
+        phx_web.capture_failure_artifacts()
+        raise
+    finally:
+        phx_web.close_driver()
 
 
 if __name__ == "__main__":

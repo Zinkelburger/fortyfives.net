@@ -27,89 +27,67 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 let Hooks = {};
 
 Hooks.CardSelection = {
-  // --------------------------------------------------------------------------
-  // HOOK LIFECYCLE
-  // --------------------------------------------------------------------------
-
   mounted() {
-    // Initialize component state from DOM attributes
-    this.phase = this.el.dataset.phase;
     this.selectedCards = new Set();
     this.discardLimit = 5;
-    this.locked = true; // Locked by default
-
-    // Set initial lock state based on the current phase
-    this.updateLockState();
-    console.log(`[CardSelection] mounted: phase=${this.phase}, locked=${this.locked}`);
-
-    // --- EVENT LISTENERS ---
-    // Use event delegation: one click listener on the container
-    this.el.addEventListener('click', (e) => this.handleCardClick(e));
-
-    // Lock the hand when the discard is confirmed by the parent LiveView
-    this.el.addEventListener('discard-confirmed', () => {
+    this.handleCardClickRef = (event) => this.handleCardClick(event);
+    this.handleDiscardConfirmedRef = () => {
       this.locked = true;
       this.clearSelection();
-      console.log('[CardSelection] Discard confirmed, hand locked.');
-    });
+    };
+
+    this.syncStateFromDataset();
+    this.el.addEventListener('click', this.handleCardClickRef);
+    this.el.addEventListener('discard-confirmed', this.handleDiscardConfirmedRef);
+    this.sync();
+    this.render();
   },
 
   updated() {
-    const newPhase = this.el.dataset.phase;
+    const previousPhase = this.phase;
+    const previousSelectionVersion = this.selectionVersion;
+    const previousAutoPlaying = this.autoPlaying;
 
-    // React only when the game phase has actually changed
-    if (newPhase !== this.phase) {
-      console.log(`[CardSelection] phase changed: ${this.phase} -> ${newPhase}`);
-      this.phase = newPhase;
+    this.syncStateFromDataset();
 
-      // Update lock status and clear any previous selections
-      this.updateLockState();
+    if (
+      previousPhase !== this.phase ||
+      previousSelectionVersion !== this.selectionVersion ||
+      previousAutoPlaying !== this.autoPlaying
+    ) {
       this.clearSelection();
+    } else {
+      this.render();
+      this.sync();
     }
   },
 
-  // --------------------------------------------------------------------------
-  // EVENT HANDLING
-  // --------------------------------------------------------------------------
+  destroyed() {
+    this.el.removeEventListener('click', this.handleCardClickRef);
+    this.el.removeEventListener('discard-confirmed', this.handleDiscardConfirmedRef);
+  },
 
-  /**
-   * Handles all clicks within the hook's element (`this.el`).
-   */
   handleCardClick(event) {
-    // Ignore clicks if the hand is locked
     if (this.locked) return;
 
     const card = event.target.closest('img[data-card-value]');
-
-    // Ignore clicks that are not on a playable card
     if (!card || card.classList.contains('grayed-out')) return;
 
     const cardValue = card.dataset.cardValue;
-
-    // Delegate to the correct selection logic based on the current phase
     if (this.phase === 'Discard') {
       this.toggleDiscardSelection(cardValue);
     } else if (this.phase === 'Playing') {
       this.togglePlaySelection(cardValue);
     }
 
-    // After any change, update the DOM and sync state with the server
     this.render();
     this.sync();
   },
 
-  // --------------------------------------------------------------------------
-  // SELECTION LOGIC
-  // --------------------------------------------------------------------------
-
-  /**
-   * Manages multi-card selection during the 'Discard' phase.
-   */
   toggleDiscardSelection(cardValue) {
     if (this.selectedCards.has(cardValue)) {
       this.selectedCards.delete(cardValue);
     } else {
-      // When the limit is reached, remove the oldest selected card
       if (this.selectedCards.size >= this.discardLimit) {
         const first = this.selectedCards.values().next().value;
         this.selectedCards.delete(first);
@@ -118,12 +96,7 @@ Hooks.CardSelection = {
     }
   },
 
-  /**
-   * Manages single-card selection during the 'Playing' phase.
-   */
   togglePlaySelection(cardValue) {
-    // If the clicked card is already selected, clear the selection.
-    // Otherwise, clear the old selection and select the new card.
     if (this.selectedCards.has(cardValue)) {
       this.selectedCards.clear();
     } else {
@@ -132,30 +105,23 @@ Hooks.CardSelection = {
     }
   },
 
-  // --------------------------------------------------------------------------
-  // STATE & DOM MANAGEMENT
-  // --------------------------------------------------------------------------
-
-  /**
-   * Updates the lock state based on the current game phase.
-   * The hand is interactive only during 'Discard' and 'Playing' phases.
-   */
-  updateLockState() {
-    this.locked = !['Discard', 'Playing'].includes(this.phase);
+  syncStateFromDataset() {
+    this.phase = this.el.dataset.phase;
+    this.selectionVersion = this.el.dataset.selectionVersion || '';
+    this.autoPlaying = this.el.dataset.autoPlaying === 'true';
+    this.updateLockState();
   },
 
-  /**
-   * Clears the current selection and updates the view.
-   */
+  updateLockState() {
+    this.locked = this.autoPlaying || !['Discard', 'Playing'].includes(this.phase);
+  },
+
   clearSelection() {
     this.selectedCards.clear();
     this.render();
     this.sync();
   },
 
-  /**
-   * Visually updates cards by adding/removing the 'selected-card' class.
-   */
   render() {
     this.el.querySelectorAll('img[data-card-value]').forEach(img => {
       const isSelected = this.selectedCards.has(img.dataset.cardValue);
@@ -163,11 +129,7 @@ Hooks.CardSelection = {
     });
   },
 
-  /**
-   * Pushes the current selection state to the DOM for LiveView to access.
-   */
   sync() {
-    // A Set must be converted to an array before JSON serialization
     this.el.dataset.selectedCards = JSON.stringify(Array.from(this.selectedCards));
   }
 };
@@ -207,20 +169,25 @@ Hooks.ScoringCountdown = {
 
 Hooks.PlayCardButton = {
   mounted() {
-    this.el.addEventListener('click', () => {
+    this.handleClick = () => {
       const hand = document.getElementById('player-hand')
       if (!hand) { return }
       const cards = JSON.parse(hand.dataset.selectedCards || '[]')
       if (cards.length === 1) {
         this.pushEvent('play-card', {cards: cards})
       }
-    })
+    }
+
+    this.el.addEventListener('click', this.handleClick)
+  },
+  destroyed() {
+    this.el.removeEventListener('click', this.handleClick)
   }
 }
 
 Hooks.ConfirmDiscardButton = {
   mounted() {
-    this.el.addEventListener('click', () => {
+    this.handleClick = () => {
       const hand = document.getElementById('player-hand')
       if (!hand) { return }
       const cards = JSON.parse(hand.dataset.selectedCards || '[]')
@@ -228,24 +195,12 @@ Hooks.ConfirmDiscardButton = {
         this.pushEvent('confirm_discard', {cards: cards})
         hand.dispatchEvent(new CustomEvent('discard-confirmed'))
       }
-    })
-  }
-}
-
-Hooks.ResumeControl = {
-  mounted() {
-    this.handle = () => {
-      if (this.el.dataset.autoPlaying === 'true') {
-        // Optimistically disable auto-playing on the client so that
-        // the next click isn't eaten by the resume handler.
-        this.el.dataset.autoPlaying = 'false'
-        this.pushEvent('resume_control', {})
-      }
     }
-    window.addEventListener('click', this.handle)
+
+    this.el.addEventListener('click', this.handleClick)
   },
   destroyed() {
-    window.removeEventListener('click', this.handle)
+    this.el.removeEventListener('click', this.handleClick)
   }
 }
 

@@ -3,7 +3,76 @@ defmodule Website45sV3.Game.GameControllerTest do
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.Card
 
-  # Define some test setup or helpers if required. For example, if you need some typical card setups.
+  setup_all do
+    Application.ensure_all_started(:phoenix_pubsub)
+
+    maybe_start_supervised(
+      {Registry, keys: :unique, name: Website45sV3.Registry},
+      Website45sV3.Registry
+    )
+
+    maybe_start_supervised({Phoenix.PubSub, name: Website45sV3.PubSub}, Website45sV3.PubSub)
+    :ok
+  end
+
+  defp maybe_start_supervised(spec, name) do
+    if Process.whereis(name) do
+      :ok
+    else
+      start_supervised!(spec)
+    end
+  end
+
+  defp unique_game_name do
+    "test_game_" <> Integer.to_string(System.unique_integer([:positive]))
+  end
+
+  defp stop_game(pid) do
+    if Process.alive?(pid) do
+      Process.unlink(pid)
+      Process.exit(pid, :kill)
+    end
+  end
+
+  test "start_game tracks permanent bots separately from autoplay players" do
+    game_name = unique_game_name()
+
+    {:ok, pid} =
+      GameController.start_game(game_name, [
+        {"Bot1", "bot_1"},
+        {"Alice", "human_1"},
+        {"Bob", "human_2"},
+        {"Carol", "human_3"}
+      ])
+
+    on_exit(fn -> stop_game(pid) end)
+
+    state = GameController.get_game_state(pid)
+
+    assert state.seat_bots == MapSet.new(["bot_1"])
+    assert state.auto_play_players == MapSet.new()
+    assert state.all_bot_controlled_timer_ref == nil
+  end
+
+  test "all-bot games arm the all-bot-controlled timeout immediately" do
+    game_name = unique_game_name()
+
+    {:ok, pid} =
+      GameController.start_game(game_name, [
+        {"Bot1", "bot_1"},
+        {"Bot2", "bot_2"},
+        {"Bot3", "bot_3"},
+        {"Bot4", "bot_4"}
+      ])
+
+    on_exit(fn -> stop_game(pid) end)
+
+    state = GameController.get_game_state(pid)
+
+    assert state.seat_bots == MapSet.new(["bot_1", "bot_2", "bot_3", "bot_4"])
+    assert state.auto_play_players == MapSet.new()
+    assert state.all_bot_controlled_timer_ref != nil
+  end
 
   describe "get_legal_moves/3" do
     test "follow suit" do

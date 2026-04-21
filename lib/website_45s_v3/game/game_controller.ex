@@ -10,8 +10,20 @@ defmodule Website45sV3.Game.GameController do
     GenServer.start_link(__MODULE__, {game_name, player_tuples})
   end
 
+  def dispatch(game_name, message) do
+    case Registry.lookup(Website45sV3.Registry, game_name) do
+      [{game_pid, _}] ->
+        send(game_pid, message)
+        :ok
+
+      [] ->
+        {:error, :game_not_found}
+    end
+  end
+
   def init({game_name, player_tuples}) do
-    player_map = Map.new(player_tuples, fn {player_name, player_id} -> {player_id, player_name} end)
+    player_map =
+      Map.new(player_tuples, fn {player_name, player_id} -> {player_id, player_name} end)
 
     case Registry.register(Website45sV3.Registry, game_name, []) do
       {:ok, _pid} ->
@@ -28,7 +40,7 @@ defmodule Website45sV3.Game.GameController do
         state
         |> schedule_termination_timer(7_200_000)
         |> schedule_idle_timer()
-        |> update_bots_only_timer()
+        |> reconcile_all_bot_controlled_timer()
         |> then(&{:ok, &1})
 
       {:error, {:already_registered, _pid}} ->
@@ -54,7 +66,7 @@ defmodule Website45sV3.Game.GameController do
     current_dealer_index = Enum.find_index(player_ids, fn id -> id == new_dealer_id end)
     starting_player_id = Enum.at(player_ids, rem(current_dealer_index + 1, length(player_ids)))
 
-    bot_ids = Enum.filter(player_ids, &String.starts_with?(&1, "bot_"))
+    seat_bot_ids = Enum.filter(player_ids, &String.starts_with?(&1, "bot_"))
 
     %{
       phase: "Bidding",
@@ -79,8 +91,9 @@ defmodule Website45sV3.Game.GameController do
       idle_timer_ref: nil,
       discard_timer_refs: %{},
       termination_timer_ref: nil,
-      bot_players: MapSet.new(bot_ids),
-      bots_only_timer: nil
+      seat_bots: MapSet.new(seat_bot_ids),
+      auto_play_players: MapSet.new(),
+      all_bot_controlled_timer_ref: nil
     }
   end
 
@@ -103,16 +116,21 @@ defmodule Website45sV3.Game.GameController do
     end)
   end
 
-  defp cancel_timers(state) do
+  defp cancel_idle_timers(state) do
     if state.idle_timer_ref, do: Process.cancel_timer(state.idle_timer_ref)
 
     Enum.each(state.discard_timer_refs || %{}, fn {_player, ref} ->
       Process.cancel_timer(ref)
     end)
 
-    if state.bots_only_timer, do: Process.cancel_timer(state.bots_only_timer)
+    %{state | idle_timer_ref: nil, discard_timer_refs: %{}}
+  end
 
-    %{state | idle_timer_ref: nil, discard_timer_refs: %{}, bots_only_timer: nil}
+  defp cancel_all_bot_controlled_timer(state) do
+    if state.all_bot_controlled_timer_ref,
+      do: Process.cancel_timer(state.all_bot_controlled_timer_ref)
+
+    %{state | all_bot_controlled_timer_ref: nil}
   end
 
   defp cancel_termination_timer(state) do
@@ -126,6 +144,67 @@ defmodule Website45sV3.Game.GameController do
     %{state | termination_timer_ref: ref}
   end
 
+  defp seat_bot?(state, player_id), do: MapSet.member?(state.seat_bots, player_id)
+
+  defp auto_playing?(state, player_id), do: MapSet.member?(state.auto_play_players, player_id)
+
+  defp bot_controlled?(state, player_id),
+    do: seat_bot?(state, player_id) or auto_playing?(state, player_id)
+
+  defp all_bot_controlled?(state) do
+    Enum.all?(state.player_ids, &bot_controlled?(state, &1))
+  end
+
+  defp reconcile_all_bot_controlled_timer(state) do
+    cond do
+      all_bot_controlled?(state) and is_nil(state.all_bot_controlled_timer_ref) ->
+        ref = Process.send_after(self(), :all_bot_controlled_timeout, 300_000)
+        %{state | all_bot_controlled_timer_ref: ref}
+
+      not all_bot_controlled?(state) and state.all_bot_controlled_timer_ref != nil ->
+        Process.cancel_timer(state.all_bot_controlled_timer_ref)
+        %{state | all_bot_controlled_timer_ref: nil}
+
+      true ->
+        state
+    end
+  end
+
+  defp enable_auto_play(state, player_id) do
+    cond do
+      seat_bot?(state, player_id) ->
+        state
+
+      auto_playing?(state, player_id) ->
+        state
+
+      true ->
+        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
+
+        state
+        |> Map.update!(:auto_play_players, &MapSet.put(&1, player_id))
+        |> reconcile_all_bot_controlled_timer()
+    end
+  end
+
+  defp disable_auto_play(state, player_id) do
+    if auto_playing?(state, player_id) do
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
+
+      state
+      |> Map.update!(:auto_play_players, &MapSet.delete(&1, player_id))
+      |> reconcile_all_bot_controlled_timer()
+    else
+      state
+    end
+  end
+
+  defp resume_manual_control(state, _player_id, true), do: state
+
+  defp resume_manual_control(state, player_id, false) do
+    disable_auto_play(state, player_id)
+  end
+
   defp schedule_discard_timers(state) do
     refs =
       Enum.reduce(state.player_ids, %{}, fn player_id, acc ->
@@ -135,7 +214,7 @@ defmodule Website45sV3.Game.GameController do
 
     Enum.each(state.player_ids, fn player_id ->
       if player_id not in state.received_discards_from and
-           MapSet.member?(state.bot_players, player_id) do
+           bot_controlled?(state, player_id) do
         Process.send_after(self(), {:bot_execute, player_id, "Discard"}, 1_000)
       end
     end)
@@ -144,7 +223,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   defp schedule_player_timer(state, player_id) do
-    if MapSet.member?(state.bot_players, player_id) do
+    if bot_controlled?(state, player_id) do
       Process.send_after(self(), {:bot_execute, player_id, state.phase}, 1_000)
       %{state | idle_timer_ref: nil}
     else
@@ -160,43 +239,20 @@ defmodule Website45sV3.Game.GameController do
   end
 
   defp schedule_idle_timer(state) do
-    state = cancel_timers(state)
-
-    state =
-      cond do
-        state.phase == "Discard" ->
-          schedule_discard_timers(state)
-
-        state.current_player_id ->
-          schedule_player_timer(state, state.current_player_id)
-
-        true ->
-          state
-      end
-
-    update_bots_only_timer(state)
-  end
-
-  defp bots_only?(state) do
-    Enum.all?(state.player_ids, fn id -> MapSet.member?(state.bot_players, id) end)
-  end
-
-  defp update_bots_only_timer(state) do
-    bots_only? = bots_only?(state)
+    state = cancel_idle_timers(state)
 
     cond do
-      bots_only? and is_nil(state.bots_only_timer) ->
-        ref = Process.send_after(self(), :bots_only_game_timeout, 300_000)
-        %{state | bots_only_timer: ref}
+      state.phase == "Discard" ->
+        schedule_discard_timers(state)
 
-      not bots_only? and state.bots_only_timer != nil ->
-        Process.cancel_timer(state.bots_only_timer)
-        %{state | bots_only_timer: nil}
+      state.current_player_id ->
+        schedule_player_timer(state, state.current_player_id)
 
       true ->
         state
     end
   end
+
   def handle_call(:get_game_state, _from, state), do: {:reply, state, state}
 
   def get_game_state(pid), do: GenServer.call(pid, :get_game_state)
@@ -204,7 +260,8 @@ defmodule Website45sV3.Game.GameController do
   defp handle_game_end(state, termination_reason) do
     state =
       state
-      |> cancel_timers()
+      |> cancel_idle_timers()
+      |> cancel_all_bot_controlled_timer()
       |> cancel_termination_timer()
 
     message =
@@ -218,8 +275,7 @@ defmodule Website45sV3.Game.GameController do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", message)
     end
 
-    players_are_all_bots? =
-      Enum.all?(state.player_ids, fn id -> String.starts_with?(id, "bot_") end)
+    players_are_all_bots? = MapSet.size(state.seat_bots) == length(state.player_ids)
 
     unless players_are_all_bots? do
       player_usernames =
@@ -248,25 +304,32 @@ defmodule Website45sV3.Game.GameController do
     {:stop, :normal, state}
   end
 
-  def handle_info(:bots_only_game_timeout, state) do
-    if bots_only?(state) do
+  def handle_info(:all_bot_controlled_timeout, state) do
+    if all_bot_controlled?(state) do
       {:stop, :normal, state}
     else
-      {:noreply, %{state | bots_only_timer: nil}}
+      {:noreply, %{state | all_bot_controlled_timer_ref: nil}}
     end
   end
 
   def handle_info({:terminate_error, reason}, state) do
-    IO.puts("Terminating GameController with reason: #{inspect(reason)} and state: #{inspect(state)}")
+    IO.puts(
+      "Terminating GameController with reason: #{inspect(reason)} and state: #{inspect(state)}"
+    )
+
     {:stop, {:error, reason}, state}
   end
 
-  def handle_info({:idle_timeout, player_id, phase}, %{current_player_id: player_id, phase: phase} = state) do
-    new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), idle_timer_ref: nil}
-    Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
-    send(self(), {:bot_execute, player_id, phase})
+  def handle_info(
+        {:idle_timeout, player_id, phase},
+        %{current_player_id: player_id, phase: phase} = state
+      ) do
+    new_state =
+      state
+      |> enable_auto_play(player_id)
+      |> Map.put(:idle_timer_ref, nil)
 
-    new_state = update_bots_only_timer(new_state)
+    send(self(), {:bot_execute, player_id, phase})
 
     {:noreply, new_state}
   end
@@ -276,15 +339,20 @@ defmodule Website45sV3.Game.GameController do
   def handle_info({:discard_idle_timeout, player_id}, %{phase: "Discard"} = state) do
     if player_id in state.received_discards_from do
       new_refs = Map.delete(state.discard_timer_refs, player_id)
-      new_state = %{state | discard_timer_refs: new_refs}
-      new_state = update_bots_only_timer(new_state)
-      {:noreply, new_state}
+      {:noreply, %{state | discard_timer_refs: new_refs}}
     else
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_playing)
       send(self(), {:bot_execute, player_id, "Discard"})
-      new_refs = Map.delete(state.discard_timer_refs, player_id)
-      new_state = %{state | bot_players: MapSet.put(state.bot_players, player_id), discard_timer_refs: new_refs}
-      new_state = update_bots_only_timer(new_state)
+
+      new_state =
+        state
+        |> enable_auto_play(player_id)
+        |> then(fn updated_state ->
+          %{
+            updated_state
+            | discard_timer_refs: Map.delete(updated_state.discard_timer_refs, player_id)
+          }
+        end)
+
       {:noreply, new_state}
     end
   end
@@ -292,7 +360,7 @@ defmodule Website45sV3.Game.GameController do
   def handle_info({:discard_idle_timeout, _player_id}, state), do: {:noreply, state}
 
   def handle_info({:bot_execute, player_id, "Bidding"}, state) do
-    if MapSet.member?(state.bot_players, player_id) do
+    if bot_controlled?(state, player_id) do
       {bid, suit} = Website45sV3.Game.BotPlayer.pick_bid(state, player_id)
       send(self(), {:player_bid, player_id, Integer.to_string(bid), suit, :bot})
     end
@@ -301,7 +369,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info({:bot_execute, player_id, "Discard"}, state) do
-    if MapSet.member?(state.bot_players, player_id) do
+    if bot_controlled?(state, player_id) do
       cards = Website45sV3.Game.BotPlayer.pick_discard(state, player_id)
       send(self(), {:confirm_discard, player_id, cards, :bot})
     end
@@ -310,7 +378,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info({:bot_execute, player_id, "Playing"}, state) do
-    if MapSet.member?(state.bot_players, player_id) do
+    if bot_controlled?(state, player_id) do
       card = Website45sV3.Game.BotPlayer.pick_card(state, player_id)
       send(self(), {:play_card, player_id, card, :bot})
     end
@@ -318,7 +386,10 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, state}
   end
 
-  def handle_info({:play_card, player_id, card}, %{phase: "Playing", current_player_id: player_id} = state) do
+  def handle_info(
+        {:play_card, player_id, card},
+        %{phase: "Playing", current_player_id: player_id} = state
+      ) do
     current_hand = Map.get(state.hands, player_id, [])
     legal = Map.get(state.legal_moves, player_id, current_hand)
 
@@ -331,7 +402,10 @@ defmodule Website45sV3.Game.GameController do
 
   def handle_info({:play_card, _player_id, _card}, state), do: {:noreply, state}
 
-  def handle_info({:play_card, player_id, card, :bot}, %{phase: "Playing", current_player_id: player_id} = state) do
+  def handle_info(
+        {:play_card, player_id, card, :bot},
+        %{phase: "Playing", current_player_id: player_id} = state
+      ) do
     current_hand = Map.get(state.hands, player_id, [])
     legal = Map.get(state.legal_moves, player_id, current_hand)
 
@@ -344,23 +418,29 @@ defmodule Website45sV3.Game.GameController do
 
   def handle_info({:play_card, _player_id, _card, :bot}, state), do: {:noreply, state}
 
-
   def handle_info(:end_scoring, state) do
     new_state =
       state
       |> Map.merge(setup_game(state.player_map, state.dealing_player_id))
       |> Map.put(:active_players, state.active_players)
-      |> Map.put(:bot_players, state.bot_players)
+      |> Map.put(:seat_bots, state.seat_bots)
+      |> Map.put(:auto_play_players, state.auto_play_players)
+      |> Map.put(:all_bot_controlled_timer_ref, state.all_bot_controlled_timer_ref)
+
     # Broadcasting the updated state to the players
     for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
+
     new_state = schedule_termination_timer(new_state, 7_200_000)
     new_state = schedule_idle_timer(new_state)
     {:noreply, new_state}
   end
 
-  def handle_info({:player_bid, player_id, bid, suit}, %{phase: "Bidding", current_player_id: player_id} = state) do
+  def handle_info(
+        {:player_bid, player_id, bid, suit},
+        %{phase: "Bidding", current_player_id: player_id} = state
+      ) do
     if valid_bid?(bid, suit, state) do
       handle_player_bid(player_id, bid, suit, state, false)
     else
@@ -370,7 +450,10 @@ defmodule Website45sV3.Game.GameController do
 
   def handle_info({:player_bid, _player_id, _bid, _suit}, state), do: {:noreply, state}
 
-  def handle_info({:player_bid, player_id, bid, suit, :bot}, %{phase: "Bidding", current_player_id: player_id} = state) do
+  def handle_info(
+        {:player_bid, player_id, bid, suit, :bot},
+        %{phase: "Bidding", current_player_id: player_id} = state
+      ) do
     if valid_bid?(bid, suit, state) do
       handle_player_bid(player_id, bid, suit, state, true)
     else
@@ -379,7 +462,6 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info({:player_bid, _player_id, _bid, _suit, :bot}, state), do: {:noreply, state}
-
 
   def handle_info(
         %Phoenix.Socket.Broadcast{
@@ -396,31 +478,27 @@ defmodule Website45sV3.Game.GameController do
     updated_active_players =
       state.active_players
       |> Enum.concat(joined_players)
+      |> Enum.uniq()
       |> Enum.filter(fn player -> player not in left_players end)
 
-    updated_bot_players =
-      Enum.reduce(joined_players, state.bot_players, fn player, bot_set ->
-        if MapSet.member?(bot_set, player) do
-          Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", :auto_play_disabled)
-          MapSet.delete(bot_set, player)
-        else
-          bot_set
-        end
+    new_state =
+      joined_players
+      |> Enum.reduce(%{state | active_players: updated_active_players}, fn player, acc ->
+        disable_auto_play(acc, player)
       end)
 
-    new_state = %{state | active_players: updated_active_players, bot_players: updated_bot_players}
     new_state = schedule_idle_timer(new_state)
-
-    IO.puts("Updated active players: #{inspect(new_state.active_players)}")
 
     {:noreply, new_state}
   end
 
   def handle_info({:resume_control, player_id}, state) do
-    if MapSet.member?(state.bot_players, player_id) do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
-      new_state = %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
-      new_state = schedule_idle_timer(new_state)
+    if auto_playing?(state, player_id) do
+      new_state =
+        state
+        |> disable_auto_play(player_id)
+        |> schedule_idle_timer()
+
       {:noreply, new_state}
     else
       {:noreply, state}
@@ -435,9 +513,13 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  def handle_info({:confirm_discard, _player, _selected_cards_invalid}, state), do: {:noreply, state}
+  def handle_info({:confirm_discard, _player, _selected_cards_invalid}, state),
+    do: {:noreply, state}
 
-  def handle_info({:confirm_discard, player, selected_cards_invalid, :bot}, %{phase: "Discard"} = state) do
+  def handle_info(
+        {:confirm_discard, player, selected_cards_invalid, :bot},
+        %{phase: "Discard"} = state
+      ) do
     if valid_discard?(player, selected_cards_invalid, state) do
       do_confirm_discard(player, selected_cards_invalid, state, true)
     else
@@ -446,7 +528,6 @@ defmodule Website45sV3.Game.GameController do
   end
 
   def handle_info({:confirm_discard, _player, _cards, :bot}, state), do: {:noreply, state}
-
 
   def handle_info({:transition_to_end_bid, winning_player_id}, state) do
     new_state = %{
@@ -460,6 +541,7 @@ defmodule Website45sV3.Game.GameController do
     for p <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
     end
+
     new_state = schedule_idle_timer(new_state)
     {:noreply, new_state}
   end
@@ -506,15 +588,10 @@ defmodule Website45sV3.Game.GameController do
   def handle_info(_msg, state), do: {:noreply, state}
 
   defp handle_play_card(player_id, card, state, from_bot) do
-    state =
-      if MapSet.member?(state.bot_players, player_id) and not from_bot do
-        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
-        %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
-      else
-        state
-      end
+    state = resume_manual_control(state, player_id, from_bot)
 
-    card = if is_binary(card.suit), do: %{card | suit: String.to_atom(card.suit)}, else: card
+    card =
+      if is_binary(card.suit), do: %{card | suit: String.to_existing_atom(card.suit)}, else: card
 
     current_hand = Map.get(state.hands, player_id, [])
     new_hand = List.delete(current_hand, card)
@@ -523,12 +600,18 @@ defmodule Website45sV3.Game.GameController do
     played_cards_entry = %{player_id: player_id, card: card}
     updated_played_cards = [played_cards_entry | state.played_cards || []]
 
-    legal_moves = if Enum.empty?(state.played_cards), do: calculate_legal_moves(state, card), else: state.legal_moves
+    legal_moves =
+      if Enum.empty?(state.played_cards),
+        do: calculate_legal_moves(state, card),
+        else: state.legal_moves
 
     suit_led = if Enum.empty?(state.played_cards), do: card.suit, else: state.suit_led
 
-    current_player_index = Enum.find_index(state.player_ids, fn id -> id == state.current_player_id end)
-    next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, length(state.player_ids)))
+    current_player_index =
+      Enum.find_index(state.player_ids, fn id -> id == state.current_player_id end)
+
+    next_player_id =
+      Enum.at(state.player_ids, rem(current_player_index + 1, length(state.player_ids)))
 
     new_state = %{
       state
@@ -553,9 +636,12 @@ defmodule Website45sV3.Game.GameController do
           | current_player_id: nil,
             actions:
               updated_state_with_scores.actions ++
-                ["#{state.player_map[winning_player_id]} won trick #{length(state.trick_winning_cards) + 1}"],
+                [
+                  "#{state.player_map[winning_player_id]} won trick #{length(state.trick_winning_cards) + 1}"
+                ],
             trick_winning_cards: [
-              %{player_id: winning_player_id, card: highest_card.card} | state.trick_winning_cards || []
+              %{player_id: winning_player_id, card: highest_card.card}
+              | state.trick_winning_cards || []
             ],
             legal_moves: %{}
         }
@@ -573,18 +659,13 @@ defmodule Website45sV3.Game.GameController do
     for p_id <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p_id}", {:update_state, new_state})
     end
+
     new_state = schedule_idle_timer(new_state)
     {:noreply, new_state}
   end
 
   defp handle_player_bid(player_id, bid, suit, state, from_bot) do
-    state =
-      if MapSet.member?(state.bot_players, player_id) and not from_bot do
-        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player_id}", :auto_play_disabled)
-        %{state | bot_players: MapSet.delete(state.bot_players, player_id)}
-      else
-        state
-      end
+    state = resume_manual_control(state, player_id, from_bot)
 
     bid = String.to_integer(bid)
 
@@ -611,7 +692,9 @@ defmodule Website45sV3.Game.GameController do
 
     phase = if length(actions) >= 4, do: "Discard", else: state.phase
 
-    current_player_index = Enum.find_index(state.player_ids, fn p -> p == state.current_player_id end)
+    current_player_index =
+      Enum.find_index(state.player_ids, fn p -> p == state.current_player_id end)
+
     next_player_id = Enum.at(state.player_ids, rem(current_player_index + 1, 4))
 
     {updated_hands, updated_deck} =
@@ -624,7 +707,9 @@ defmodule Website45sV3.Game.GameController do
         {state.hands, state.deck}
       end
 
-    winning_bid_action = "#{state.player_map[winning_bid_player]} won with #{winning_bid_value} #{winning_bid_suit}"
+    winning_bid_action =
+      "#{state.player_map[winning_bid_player]} won with #{winning_bid_value} #{winning_bid_suit}"
+
     actions = if phase == "Discard", do: [winning_bid_action], else: actions
     # Set trump if phase is Discard
     trump = if phase == "Discard", do: winning_bid_suit, else: state.trump
@@ -644,6 +729,7 @@ defmodule Website45sV3.Game.GameController do
     for player <- state.active_players do
       Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", {:update_state, new_state})
     end
+
     new_state = schedule_idle_timer(new_state)
     {:noreply, new_state}
   end
@@ -676,19 +762,12 @@ defmodule Website45sV3.Game.GameController do
     unless valid_discard?(player, selected_cards_invalid, state) do
       {:noreply, state}
     else
-      state =
-        if MapSet.member?(state.bot_players, player) and not from_bot do
-          Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{player}", :auto_play_disabled)
-          %{state | bot_players: MapSet.delete(state.bot_players, player)}
-        else
-          state
-        end
+      state = resume_manual_control(state, player, from_bot)
 
       # cancel any pending discard timer for this player
       {ref, refs} = Map.pop(state.discard_timer_refs, player)
       if ref, do: Process.cancel_timer(ref)
       state = %{state | discard_timer_refs: refs}
-
 
       selected_cards = Enum.map(selected_cards_invalid, &convert_to_card_format/1)
       current_hand = Map.get(state.hands, player, [])
@@ -725,18 +804,18 @@ defmodule Website45sV3.Game.GameController do
           new_state
         end
 
-    for p <- state.active_players do
-      Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
-    end
-
-    new_state =
-      if new_state.phase == "Discard" do
-        new_state
-      else
-        schedule_idle_timer(new_state)
+      for p <- state.active_players do
+        Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{p}", {:update_state, new_state})
       end
 
-    {:noreply, new_state}
+      new_state =
+        if new_state.phase == "Discard" do
+          new_state
+        else
+          schedule_idle_timer(new_state)
+        end
+
+      {:noreply, new_state}
     end
   end
 

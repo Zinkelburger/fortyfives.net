@@ -6,15 +6,12 @@ defmodule Website45sV3Web.UserLoginLive do
     <div class="mx-auto max-w-sm mt-3">
       <.header class="text-center">
         Sign in
-          <:subtitle>
-            Don't have an account?
-            <.link
-              navigate={~p"/users/register"}
-              class="font-semibold link"
-            >
+        <:subtitle>
+          Don't have an account?
+          <.link navigate={~p"/users/register"} class="font-semibold link">
             <span style="text-decoration: underline;">Sign up</span>
-            </.link>
-          </:subtitle>
+          </.link>
+        </:subtitle>
       </.header>
 
       <div
@@ -42,27 +39,32 @@ defmodule Website45sV3Web.UserLoginLive do
             required
             phx-debounce="400"
           />
-            <:actions>
-              <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
-              <li style="margin-top: 0.25rem; margin-bottom: 0; list-style-type: none;">
-                <.link href={~p"/users/reset_password"} class="text-sm font-semibold" style="text-decoration: underline;">
-                  Forgot your password?
-                </.link>
-              </li>
-            </:actions>
-            <:actions>
-            <.button phx-disable-with="Signing in..." class="green-button w-full" style="margin-bottom: 0; margin-top: 0;">
+          <:actions>
+            <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
+            <li style="margin-top: 0.25rem; margin-bottom: 0; list-style-type: none;">
+              <.link
+                href={~p"/users/reset_password"}
+                class="text-sm font-semibold"
+                style="text-decoration: underline;"
+              >
+                Forgot your password?
+              </.link>
+            </li>
+          </:actions>
+          <:actions>
+            <.button
+              phx-disable-with="Signing in..."
+              class="green-button w-full"
+              style="margin-bottom: 0; margin-top: 0;"
+            >
               Sign in <span aria-hidden="true">→</span>
             </.button>
           </:actions>
           <:actions>
-              <.link
-                href={~p"/auth/google"}
-                class="google-button w-full"
-              >
-                <img src="/images/google_logo.svg" alt="Google logo" />
-                <span>Sign in with Google</span>
-              </.link>
+            <.link href={~p"/auth/google"} class="google-button w-full">
+              <img src="/images/google_logo.svg" alt="Google logo" />
+              <span>Sign in with Google</span>
+            </.link>
           </:actions>
         </.simple_form>
       </div>
@@ -71,10 +73,10 @@ defmodule Website45sV3Web.UserLoginLive do
   end
 
   def mount(_params, _session, socket) do
-    email = Phoenix.Flash.get(socket.assigns.flash, :email) || ""
+    username_or_email = Phoenix.Flash.get(socket.assigns.flash, :username_or_email) || ""
 
     form_data = %{
-      "username_or_email" => email,
+      "username_or_email" => username_or_email,
       "password" => ""
     }
 

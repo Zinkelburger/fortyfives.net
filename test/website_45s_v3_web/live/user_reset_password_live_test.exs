@@ -39,12 +39,10 @@ defmodule Website45sV3Web.UserResetPasswordLiveTest do
       result =
         lv
         |> element("#reset_password_form")
-        |> render_change(
-          user: %{"password" => "secret12", "confirmation_password" => "secret123456"}
-        )
+        |> render_change(user: %{"password" => "short", "password_confirmation" => "different"})
 
-      assert result =~ "should be at least 12 character"
-      assert result =~ "does not match password"
+      assert result =~ "should be at least 8 character"
+      assert result =~ "Does not match password"
     end
   end
 
@@ -75,15 +73,15 @@ defmodule Website45sV3Web.UserResetPasswordLiveTest do
         lv
         |> form("#reset_password_form",
           user: %{
-            "password" => "too short",
+            "password" => "short",
             "password_confirmation" => "does not match"
           }
         )
         |> render_submit()
 
       assert result =~ "Reset Password"
-      assert result =~ "should be at least 12 character(s)"
-      assert result =~ "does not match password"
+      assert result =~ "should be at least 8 character(s)"
+      assert result =~ "Does not match password"
     end
   end
 

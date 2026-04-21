@@ -62,7 +62,7 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
         })
 
       assert result =~ "Change Email"
-      assert result =~ "must have the @ sign and no spaces"
+      assert result =~ "Must have the @ sign and no spaces"
     end
 
     test "renders errors with invalid data (phx-submit)", %{conn: conn, user: user} do
@@ -77,8 +77,8 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
         |> render_submit()
 
       assert result =~ "Change Email"
-      assert result =~ "did not change"
-      assert result =~ "is not valid"
+      assert result =~ "Did not change"
+      assert result =~ "Is not valid"
     end
   end
 
@@ -127,14 +127,14 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
         |> render_change(%{
           "current_password" => "invalid",
           "user" => %{
-            "password" => "too short",
+            "password" => "short",
             "password_confirmation" => "does not match"
           }
         })
 
       assert result =~ "Change Password"
-      assert result =~ "should be at least 12 character(s)"
-      assert result =~ "does not match password"
+      assert result =~ "should be at least 8 character(s)"
+      assert result =~ "Does not match password"
     end
 
     test "renders errors with invalid data (phx-submit)", %{conn: conn} do
@@ -145,16 +145,16 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
         |> form("#password_form", %{
           "current_password" => "invalid",
           "user" => %{
-            "password" => "too short",
+            "password" => "short",
             "password_confirmation" => "does not match"
           }
         })
         |> render_submit()
 
       assert result =~ "Change Password"
-      assert result =~ "should be at least 12 character(s)"
-      assert result =~ "does not match password"
-      assert result =~ "is not valid"
+      assert result =~ "should be at least 8 character(s)"
+      assert result =~ "Does not match password"
+      assert result =~ "Is not valid"
     end
   end
 

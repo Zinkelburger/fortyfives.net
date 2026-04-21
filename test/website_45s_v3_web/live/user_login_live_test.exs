@@ -32,7 +32,9 @@ defmodule Website45sV3Web.UserLoginLiveTest do
       {:ok, lv, _html} = live(conn, ~p"/users/log_in")
 
       form =
-        form(lv, "#login_form", user: %{email: user.email, password: password, remember_me: true})
+        form(lv, "#login_form",
+          user: %{username_or_email: user.email, password: password, remember_me: true}
+        )
 
       conn = submit_form(form, conn)
 
@@ -46,7 +48,7 @@ defmodule Website45sV3Web.UserLoginLiveTest do
 
       form =
         form(lv, "#login_form",
-          user: %{email: "test@email.com", password: "123456", remember_me: true}
+          user: %{username_or_email: "test@email.com", password: "123456", remember_me: true}
         )
 
       conn = submit_form(form, conn)
@@ -63,7 +65,7 @@ defmodule Website45sV3Web.UserLoginLiveTest do
 
       {:ok, _login_live, login_html} =
         lv
-        |> element(~s|main a:fl-contains("Sign up")|)
+        |> element(~s|header a[href="/users/register"]|)
         |> render_click()
         |> follow_redirect(conn, ~p"/users/register")
 

@@ -3,6 +3,7 @@ defmodule Website45sV3.Game.BotPlayerServer do
   alias Website45sV3Web.Presence
   alias Website45sV3.Game.QueueStarter
   alias Website45sV3.Game.BotPlayer
+  alias Website45sV3.Game.GameController
   alias UUID
 
   def start_link(display_name) do
@@ -26,7 +27,6 @@ defmodule Website45sV3.Game.BotPlayerServer do
   @impl true
   def handle_info({:redirect, "/game/" <> game_name}, state) do
     Presence.untrack(self(), "queue", state.user_id)
-    Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
     Presence.track(self(), game_name, state.user_id, %{})
 
     # Just like a real player, fetch the current game state so the bot
@@ -37,6 +37,7 @@ defmodule Website45sV3.Game.BotPlayerServer do
       [{game_pid, _}] ->
         game_state = Website45sV3.Game.GameController.get_game_state(game_pid)
         send(self(), {:update_state, game_state})
+
       _ ->
         :ok
     end
@@ -66,7 +67,7 @@ defmodule Website45sV3.Game.BotPlayerServer do
   end
 
   def handle_info({:delayed_move, game_name, message}, state) do
-    Phoenix.PubSub.broadcast(Website45sV3.PubSub, game_name, message)
+    GameController.dispatch(game_name, message)
     {:noreply, state}
   end
 
@@ -81,9 +82,11 @@ defmodule Website45sV3.Game.BotPlayerServer do
   @impl true
   def terminate(_reason, state) do
     Presence.untrack(self(), "queue", state.user_id)
+
     if state.game do
       Presence.untrack(self(), state.game, state.user_id)
     end
+
     :ok
   end
 end

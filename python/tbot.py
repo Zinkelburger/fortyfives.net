@@ -258,6 +258,19 @@ class PhxWeb:
     def current_phase(self) -> str:
         return self.read_game_state().phase
 
+    def live_socket_connected(self) -> bool:
+        return bool(
+            self.driver.execute_script(
+                """
+                return Boolean(
+                    window.liveSocket &&
+                    typeof window.liveSocket.isConnected === "function" &&
+                    window.liveSocket.isConnected()
+                )
+                """
+            )
+        )
+
     def selected_cards(self) -> list[str]:
         hand = self.driver.find_element(By.ID, "player-hand")
         raw_cards = hand.get_attribute("data-selected-cards") or "[]"
@@ -285,6 +298,12 @@ class PhxWeb:
         WebDriverWait(self.driver, JOIN_TIMEOUT_SECONDS).until(
             EC.presence_of_element_located((By.ID, "queue-root"))
         )
+        self.wait_for(
+            self.live_socket_connected,
+            ACTION_TIMEOUT_SECONDS,
+            "queue LiveView connection",
+        )
+        self.log("Queue LiveView is connected.")
         WebDriverWait(self.driver, ACTION_TIMEOUT_SECONDS).until(
             EC.element_to_be_clickable((By.ID, "join-queue-button"))
         ).click()

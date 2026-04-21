@@ -19,14 +19,6 @@ defmodule Website45sV3Web.Router do
     plug :fetch_session
   end
 
-
-  scope "/", Website45sV3Web do
-    pipe_through :browser
-
-    get "/", PageController, :home
-    get "/learn", PageController, :learn
-  end
-
   # Other scopes may use custom stacks.
   # scope "/api", Website45sV3Web do
   #   pipe_through :api
@@ -90,15 +82,17 @@ defmodule Website45sV3Web.Router do
     live_session :default,
       on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}],
       root_layout: {Website45sV3Web.Layouts, :root} do
-        live "/play", QueueLive, :new
-        live "/play/private/:id", QueueLive, :private_game
+      live "/", HomeLive, :index
+      live "/learn", LearnLive, :index
+      live "/play", QueueLive, :new
+      live "/play/private/:id", QueueLive, :private_game
     end
 
     # separate session for “game” with its own root layout
     live_session :game,
       on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}],
       root_layout: {Website45sV3Web.Layouts, :game_root} do
-        live "/game/:id", GameLive, :new
+      live "/game/:id", GameLive, :new
     end
   end
 

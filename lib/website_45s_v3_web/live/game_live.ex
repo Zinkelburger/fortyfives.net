@@ -687,7 +687,7 @@ defmodule Website45sV3Web.GameLive do
     <%= if @auto_playing do %>
       <div style="margin: 1rem auto; max-width: 24rem;">
         <p style="color: #d2e8f9; margin-bottom: 0.75rem;">
-          A bot is currently controlling your seat.
+          A bot is currently controlling<br/>your seat.
         </p>
         <button id="resume-control-button" class="blue-button" phx-click="resume_control">
           Resume Game

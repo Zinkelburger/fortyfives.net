@@ -146,8 +146,8 @@ jobs:
       - name: Check tbot logs for success
         run: |
           for i in {1..4}; do
-            rg -q "Final Scoring detected" "tbot_$i.log" \
+            grep -q "Final Scoring detected" "tbot_$i.log" \
               || { echo "Missing scoring in tbot_$i.log"; exit 1; }
-            rg -q "WebDriver closed" "tbot_$i.log" \
+            grep -q "WebDriver closed" "tbot_$i.log" \
               || { echo "Missing WebDriver closed in tbot_$i.log"; exit 1; }
           done

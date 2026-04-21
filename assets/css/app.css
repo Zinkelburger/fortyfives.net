@@ -94,7 +94,7 @@ li a:hover {
         color: #d2e8f9;
         font-size: 1.5rem;
         line-height: 3rem;
-        transition: all 0.3s ease;
+        transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .red-button {
@@ -106,7 +106,7 @@ li a:hover {
         text-shadow: #000000;
         font-size: 1.5rem;
         line-height: 3rem;
-        transition: all 0.3s ease;
+        transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .red-button:hover {
@@ -479,8 +479,7 @@ b, strong {
 	font-weight: bold
 }
 p {
-	margin-top: 0
-    d2e8f9
+	margin-top: 0;
 }
 h1, h2, h3, h4, h5, h6 {
 	font-weight: 300;
@@ -778,7 +777,7 @@ header nav a {
     line-height: 1.75rem;
     text-align: center;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: background-color 0.3s, transform 0.3s, box-shadow 0.3s;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
     outline: none;
     border-radius: 10px;
@@ -863,7 +862,7 @@ header nav a {
   line-height: 3rem;
   font-weight: 500;
   border-radius: 10px;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
   padding: 0 15px;
   box-shadow: 0 5px 10px rgba(0, 0, 0, 0.15);
 

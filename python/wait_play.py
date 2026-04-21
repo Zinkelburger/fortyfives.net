@@ -31,6 +31,20 @@ def get_driver() -> webdriver.Chrome:
     return webdriver.Chrome(options=chrome_options)
 
 
+def live_socket_connected(driver: webdriver.Chrome) -> bool:
+    return bool(
+        driver.execute_script(
+            """
+            return Boolean(
+                window.liveSocket &&
+                typeof window.liveSocket.isConnected === "function" &&
+                window.liveSocket.isConnected()
+            )
+            """
+        )
+    )
+
+
 def verify_queue_ready(url: str) -> None:
     driver = get_driver()
 
@@ -38,6 +52,8 @@ def verify_queue_ready(url: str) -> None:
         driver.get(url)
         wait = WebDriverWait(driver, QUEUE_READY_TIMEOUT_SECONDS)
         wait.until(EC.presence_of_element_located((By.ID, "queue-root")))
+        wait.until(live_socket_connected)
+        print("Queue LiveView is connected.")
 
         WebDriverWait(driver, ACTION_TIMEOUT_SECONDS).until(
             EC.element_to_be_clickable((By.ID, "join-queue-button"))

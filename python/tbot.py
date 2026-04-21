@@ -251,8 +251,8 @@ class PhxWeb:
 
         trump = root.get_attribute("data-trump")
         suit_led = root.get_attribute("data-suit-led")
-        self.game_state.trump = Suit[trump.upper()] if trump else None
-        self.game_state.suit_led = Suit[suit_led.upper()] if suit_led else None
+        self.game_state.trump = self.parse_optional_suit(trump)
+        self.game_state.suit_led = self.parse_optional_suit(suit_led)
         return self.game_state
 
     def current_phase(self) -> str:
@@ -266,6 +266,16 @@ class PhxWeb:
     def parse_card_dom_value(self, card_dom_value: str) -> Card:
         value, suit = card_dom_value.split("_")
         return Card(value, Suit[suit.upper()])
+
+    def parse_optional_suit(self, raw_value: Optional[str]) -> Optional[Suit]:
+        if not raw_value:
+            return None
+
+        normalized = raw_value.strip().lower()
+        if normalized in {"", "nil", "none"}:
+            return None
+
+        return Suit[normalized.upper()]
 
     def card_selector(self, card: Card) -> str:
         return f"img[data-card-value='{card.value}_{card.suit.long_name()}']"

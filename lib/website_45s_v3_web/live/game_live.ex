@@ -241,10 +241,8 @@ defmodule Website45sV3Web.GameLive do
       data-current-turn={to_string(@user_id == @game_state.current_player_id)}
       data-bagged={to_string(@game_state.bagged)}
       data-current-bid={Integer.to_string(elem(@game_state.winning_bid, 0))}
-      data-trump={if @game_state.trump, do: Atom.to_string(@game_state.trump), else: ""}
-      data-suit-led={
-        if is_atom(@game_state.suit_led), do: Atom.to_string(@game_state.suit_led), else: ""
-      }
+      data-trump={optional_atom_to_string(@game_state.trump)}
+      data-suit-led={optional_atom_to_string(@game_state.suit_led)}
       data-auto-playing={to_string(@auto_playing)}
       data-confirm-discard-clicked={to_string(@confirm_discard_clicked)}
     >
@@ -544,10 +542,7 @@ defmodule Website45sV3Web.GameLive do
         {_, false} -> "#{player_names[assigns.current_player_id]}'s turn"
       end
 
-    card_led_suit =
-      if is_atom(assigns.game_state.suit_led),
-        do: Atom.to_string(assigns.game_state.suit_led),
-        else: ""
+    card_led_suit = optional_atom_to_string(assigns.game_state.suit_led)
 
     assigns =
       assigns
@@ -738,6 +733,12 @@ defmodule Website45sV3Web.GameLive do
   defp card_dom_value(%Card{value: value, suit: suit}) do
     "#{value}_#{Atom.to_string(suit)}"
   end
+
+  defp optional_atom_to_string(value) when is_atom(value) and not is_nil(value) do
+    Atom.to_string(value)
+  end
+
+  defp optional_atom_to_string(_), do: ""
 
   def get_image_location({value, suit}) do
     "/images/cards/#{Card.card_to_filename({value, suit})}.png"

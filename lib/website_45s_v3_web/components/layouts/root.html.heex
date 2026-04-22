@@ -21,50 +21,6 @@
     </script>
   </head>
   <body style="background: #041624;">
-    <div style="background: #071f31; border-bottom: 2px solid #d2e8f9; display: flex;">
-      <.link navigate={~p"/"}>
-        <img
-          src={~p"/images/phoenix.png"}
-          alt="Forty Fives Logo"
-          style="margin-right: auto; width: 60%; margin-bottom: 0; margin-top: 0px"
-        />
-      </.link>
-      <ul class="navbar-list">
-        <li class="navbar-list-element">
-          <.link navigate={~p"/"} style="font-size: 1.25rem;">
-            Home
-          </.link>
-        </li>
-        <li class="navbar-list-element">
-          <.link navigate={~p"/play"} style="font-size: 1.25rem;">
-            Play
-          </.link>
-        </li>
-        <%= if @current_user do %>
-          <li class="navbar-list-element">
-            <.link href={~p"/users/settings"} style="font-size: 1.25rem;">
-              Settings
-            </.link>
-          </li>
-          <li class="navbar-list-element">
-            <.link href={~p"/users/log_out"} method="delete" style="font-size: 1.25rem;">
-              Log out
-            </.link>
-          </li>
-        <% else %>
-          <li class="navbar-list-element">
-            <.link href={~p"/users/register"} style="font-size: 1.25rem;">
-              Register
-            </.link>
-          </li>
-          <li class="navbar-list-element">
-            <.link href={~p"/users/log_in"} style="font-size: 1.25rem;">
-              Log in
-            </.link>
-          </li>
-        <% end %>
-      </ul>
-    </div>
     <div class="content">
       <%= @inner_content %>
     </div>

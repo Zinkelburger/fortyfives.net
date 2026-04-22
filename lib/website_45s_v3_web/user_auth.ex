@@ -153,13 +153,27 @@ defmodule Website45sV3Web.UserAuth do
       end
   """
   def on_mount(:mount_current_user, _params, session, socket) do
-    {:cont, mount_current_user(socket, session)}
+    socket =
+      socket
+      |> mount_current_user(session)
+      |> Phoenix.LiveView.attach_hook(:save_request_path, :handle_params, fn
+        _params, uri, socket ->
+          {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
+      end)
+
+    {:cont, socket}
   end
 
   def on_mount(:ensure_authenticated, _params, session, socket) do
     socket = mount_current_user(socket, session)
 
     if socket.assigns.current_user do
+      socket =
+        Phoenix.LiveView.attach_hook(socket, :save_request_path, :handle_params, fn
+          _params, uri, socket ->
+            {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
+        end)
+
       {:cont, socket}
     else
       socket =
@@ -172,7 +186,15 @@ defmodule Website45sV3Web.UserAuth do
   end
 
   def on_mount(:potentially_anonymous_user, _params, session, socket) do
-    {:cont, mount_current_user(socket, session)}
+    socket =
+      socket
+      |> mount_current_user(session)
+      |> Phoenix.LiveView.attach_hook(:save_request_path, :handle_params, fn
+        _params, uri, socket ->
+          {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
+      end)
+
+    {:cont, socket}
   end
 
   def on_mount(:redirect_if_user_is_authenticated, _params, session, socket) do
@@ -181,6 +203,12 @@ defmodule Website45sV3Web.UserAuth do
     if socket.assigns.current_user do
       {:halt, Phoenix.LiveView.redirect(socket, to: signed_in_path(socket))}
     else
+      socket =
+        Phoenix.LiveView.attach_hook(socket, :save_request_path, :handle_params, fn
+          _params, uri, socket ->
+            {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
+        end)
+
       {:cont, socket}
     end
   end

@@ -1,3 +1,61 @@
+<%= unless assigns[:current_uri] && String.starts_with?(@current_uri, "/game/") do %>
+  <div style="background: #071f31; border-bottom: 2px solid #d2e8f9; display: flex;">
+    <.link navigate={~p"/"}>
+      <img
+        src={~p"/images/phoenix.png"}
+        alt="Forty Fives Logo"
+        style="margin-right: auto; width: 60%; margin-bottom: 0; margin-top: 0px"
+      />
+    </.link>
+    <ul class="navbar-list">
+      <%= if assigns[:current_uri] in ["/play"] or
+              (assigns[:current_uri] && String.starts_with?(@current_uri, "/play/")) do %>
+        <li class="navbar-list-element">
+          <.link navigate={~p"/"} style="font-size: 1.25rem;">
+            Home
+          </.link>
+        </li>
+      <% else %>
+        <li class="navbar-list-element">
+          <.link navigate={~p"/play"} style="font-size: 1.25rem;">
+            Play
+          </.link>
+        </li>
+      <% end %>
+      <%= if @current_user do %>
+        <%= if assigns[:current_uri] != "/users/settings" do %>
+          <li class="navbar-list-element">
+            <.link href={~p"/users/settings"} style="font-size: 1.25rem;">
+              Settings
+            </.link>
+          </li>
+        <% else %>
+          <li class="navbar-list-element">
+            <.link navigate={~p"/"} style="font-size: 1.25rem;">
+              Home
+            </.link>
+          </li>
+        <% end %>
+        <li class="navbar-list-element">
+          <.link href={~p"/users/log_out"} method="delete" style="font-size: 1.25rem;">
+            Log out
+          </.link>
+        </li>
+      <% else %>
+        <li class="navbar-list-element">
+          <.link href={~p"/users/register"} style="font-size: 1.25rem;">
+            Register
+          </.link>
+        </li>
+        <li class="navbar-list-element">
+          <.link href={~p"/users/log_in"} style="font-size: 1.25rem;">
+            Log in
+          </.link>
+        </li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
 <main>
   <div>
     <.flash_group flash={@flash} />

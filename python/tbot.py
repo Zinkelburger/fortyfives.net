@@ -199,14 +199,18 @@ class PhxWeb:
 
     def wait_until(self, predicate, timeout: int, description: str) -> None:
         deadline = time.time() + timeout
+        last_exc = None
         while time.time() < deadline:
             try:
                 if predicate():
                     return
-            except Exception:
-                pass
+            except Exception as exc:
+                last_exc = exc
             time.sleep(POLL_INTERVAL)
-        raise TimeoutException(f"Timed out: {description}")
+        msg = f"Timed out: {description}"
+        if last_exc is not None:
+            msg += f" (last error: {type(last_exc).__name__}: {last_exc})"
+        raise TimeoutException(msg)
 
     # ── Join queue and wait for game ────────────────────────────────
 

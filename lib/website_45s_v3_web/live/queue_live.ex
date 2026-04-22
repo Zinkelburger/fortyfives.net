@@ -157,17 +157,6 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, socket}
   end
 
-  def handle_info(
-        :update_queue,
-        %{assigns: %{live_action: :private_game, private_id: private_id}} = socket
-      ) do
-    {:noreply, assign(socket, queue: Presence.list("private_queue:#{private_id}"))}
-  end
-
-  def handle_info(:update_queue, socket) do
-    {:noreply, assign(socket, queue: Presence.list("queue"))}
-  end
-
   # Ignore game updates that might still be broadcast to the user after they
   # navigate away from the game page. Without this clause the LiveView would
   # crash when it receives a `{:update_state, _}` message while the user is in

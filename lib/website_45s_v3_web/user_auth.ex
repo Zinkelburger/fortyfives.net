@@ -254,7 +254,7 @@ defmodule Website45sV3Web.UserAuth do
 
   def potentially_anonymous_user(conn, _opts) do
     {user_token, conn} = ensure_user_token(conn)
-    user = user_token && Accounts.get_user_by_session_token(user_token)\
+    user = user_token && Accounts.get_user_by_session_token(user_token)
 
     user_id = get_session(conn, :user_id) || UUID.uuid4()
     conn

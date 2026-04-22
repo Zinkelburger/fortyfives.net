@@ -76,7 +76,7 @@ defmodule Website45sV3Web.Router do
   end
 
   scope "/", Website45sV3Web do
-    pipe_through [:browser, :potentially_anonymous_user]
+    pipe_through [:browser]
 
     # default session for “play”
     live_session :default,

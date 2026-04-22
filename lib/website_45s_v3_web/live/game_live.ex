@@ -4,6 +4,7 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.Card
 
+  require Logger
   import Phoenix.LiveView
 
   @impl true
@@ -49,13 +50,13 @@ defmodule Website45sV3Web.GameLive do
            |> stream(:played_cards, played_cards_with_id)}
         else
           # If the user is not in the game, redirect them back to the queue page
-          IO.puts("User #{user_id} not in game, redirecting to /play")
+          Logger.info("User #{user_id} not in game #{game_id}, redirecting to /play")
           {:ok, push_navigate(socket, to: "/play")}
         end
 
       _ ->
         # If the game does not exist, redirect them back to the queue page
-        IO.puts("Game does not exist, redirecting to /play")
+        Logger.info("Game #{game_id} does not exist, redirecting to /play")
         {:ok, push_navigate(socket, to: "/play")}
     end
   end
@@ -126,11 +127,14 @@ defmodule Website45sV3Web.GameLive do
   """
   @impl true
   def handle_event("play-card", %{"cards" => [card_value]}, socket) do
-    with [value, suit] <- String.split(card_value, "_"),
-         {int_val, suit_atom} <- parse_card_string([value, suit]) do
-      card = %Website45sV3.Game.Card{value: int_val, suit: suit_atom}
-      dispatch_game(socket, {:play_card, socket.assigns.user_id, card})
-    end
+    socket =
+      with [value, suit] <- String.split(card_value, "_"),
+           {:ok, suit_atom} <- parse_suit(suit) do
+        card = %Card{value: String.to_integer(value), suit: suit_atom}
+        dispatch_game(socket, {:play_card, socket.assigns.user_id, card})
+      else
+        _ -> socket
+      end
 
     {:noreply, socket}
   end
@@ -138,7 +142,7 @@ defmodule Website45sV3Web.GameLive do
   def handle_event("play-card", _params, socket), do: {:noreply, socket}
 
   def handle_event("confirm_discard", %{"cards" => cards_to_keep}, socket) do
-    dispatch_game(socket, {:confirm_discard, socket.assigns.user_id, cards_to_keep})
+    socket = dispatch_game(socket, {:confirm_discard, socket.assigns.user_id, cards_to_keep})
 
     {:noreply, assign(socket, confirm_discard_clicked: true)}
   end
@@ -180,22 +184,19 @@ defmodule Website45sV3Web.GameLive do
         {:noreply, socket |> put_flash(:error, "Your bid must be higher than the current bid.")}
 
       true ->
-        # Dispatch the bid information to the game process
         suit_atom =
           case current_suit do
             "pass" -> :pass
-            _ -> String.to_existing_atom(current_suit)
+            suit -> parse_suit!(suit)
           end
 
-        dispatch_game(socket, {:player_bid, current_player_id, current_bid, suit_atom})
-
-        # Clear the assigns for selected_suit and selected_bid
-        updated_socket =
+        socket =
           socket
+          |> dispatch_game({:player_bid, current_player_id, current_bid, suit_atom})
           |> assign(:selected_suit, nil)
           |> assign(:selected_bid, nil)
 
-        {:noreply, updated_socket}
+        {:noreply, socket}
     end
   end
 
@@ -208,10 +209,13 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_event("set_bid_pass", %{"bid-suit" => "pass"}, socket) do
-    new_assigns = %{selected_bid: "0", selected_suit: "pass"}
-    dispatch_game(socket, {:player_bid, socket.assigns.user_id, "0", :pass})
+    socket =
+      socket
+      |> dispatch_game({:player_bid, socket.assigns.user_id, "0", :pass})
+      |> assign(:selected_bid, "0")
+      |> assign(:selected_suit, "pass")
 
-    {:noreply, assign(socket, new_assigns)}
+    {:noreply, socket}
   end
 
   def handle_event("toggle_score_overlay", _params, socket) do
@@ -223,13 +227,23 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_event("resume_control", _params, socket) do
-    dispatch_game(socket, {:resume_control, socket.assigns.user_id})
+    socket = dispatch_game(socket, {:resume_control, socket.assigns.user_id})
 
     {:noreply, socket}
   end
 
   @impl true
-  def terminate(_reason, _socket), do: :ok
+  def terminate(_reason, socket) do
+    unless socket.assigns[:game_over] do
+      Phoenix.PubSub.broadcast(
+        Website45sV3.PubSub,
+        "user:#{socket.assigns.user_id}",
+        {:left_game, socket.assigns.game_id}
+      )
+    end
+
+    :ok
+  end
 
   @impl true
   def render(assigns) do
@@ -255,7 +269,7 @@ defmodule Website45sV3Web.GameLive do
         <%= if assigns.game_state.phase == "Playing" do %>
           <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: -2rem;">
             <p style="color: #d2e8f9; line-height: 1; font-size: 0.9rem; margin: 0;">
-              Trump: <%= capitalize_first(Atom.to_string(assigns.game_state.trump)) %>
+              Trump: <%= capitalize_first(optional_atom_to_string(assigns.game_state.trump)) %>
             </p>
             <button class="score-button" phx-click="toggle_score_overlay">
               View Scores
@@ -727,7 +741,13 @@ defmodule Website45sV3Web.GameLive do
   end
 
   defp dispatch_game(socket, message) do
-    GameController.dispatch(socket.assigns.game_id, message)
+    case GameController.dispatch(socket.assigns.game_id, message) do
+      :ok -> socket
+      {:error, :game_not_found} ->
+        socket
+        |> put_flash(:error, "Game no longer exists.")
+        |> push_navigate(to: "/play")
+    end
   end
 
   defp card_dom_value(%Card{value: value, suit: suit}) do
@@ -744,8 +764,25 @@ defmodule Website45sV3Web.GameLive do
     "/images/cards/#{Card.card_to_filename({value, suit})}.png"
   end
 
-  defp parse_card_string([value, suit]) do
-    {String.to_integer(value), String.to_existing_atom(suit)}
+  @valid_suits %{
+    "hearts" => :hearts,
+    "diamonds" => :diamonds,
+    "clubs" => :clubs,
+    "spades" => :spades
+  }
+
+  defp parse_suit(suit) when is_binary(suit) do
+    case Map.fetch(@valid_suits, suit) do
+      {:ok, atom} -> {:ok, atom}
+      :error -> :error
+    end
+  end
+
+  defp parse_suit!(suit) when is_binary(suit) do
+    case Map.fetch(@valid_suits, suit) do
+      {:ok, atom} -> atom
+      :error -> raise ArgumentError, "invalid suit: #{inspect(suit)}"
+    end
   end
 
   def capitalize_first(str) when is_binary(str) and byte_size(str) > 0 do
@@ -753,4 +790,6 @@ defmodule Website45sV3Web.GameLive do
     rest_of_string = String.slice(str, 1..-1//1)
     String.upcase(first_char) <> rest_of_string
   end
+
+  def capitalize_first(_), do: ""
 end

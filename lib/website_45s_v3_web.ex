@@ -17,7 +17,7 @@ defmodule Website45sV3Web do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
+  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt sitemap.xml)
 
   def router do
     quote do

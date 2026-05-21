@@ -17,7 +17,7 @@ defmodule Website45sV3Web.CoreComponents do
   use Phoenix.Component
 
   alias Phoenix.LiveView.JS
-  import Website45sV3Web.Gettext
+  use Gettext, backend: Website45sV3Web.Gettext
 
   @doc """
   Renders a password input with a visibility toggle.
@@ -36,25 +36,24 @@ defmodule Website45sV3Web.CoreComponents do
   attr :phx_debounce, :string, default: nil
 
   def password_input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
-    errors = Enum.map(field.errors, &translate_error(&1))
-
     assigns =
       assigns
-      |> assign(:errors, errors)
+      |> assign(:errors, Enum.map(field.errors, &translate_error(&1)))
       |> assign(:name, field.name)
+      |> assign(:id, field.id)
       |> assign(
         :value,
         Phoenix.HTML.Form.normalize_value(assigns.type, assigns.value || field.value)
       )
 
     ~H"""
-    <div class="relative" phx-feedback-for={@name}>
-      <.label for={field.id}><%= assigns.label %></.label>
+    <div class="relative">
+      <.label for={@id}><%= @label %></.label>
 
       <input
-        type={assigns.type}
+        type={@type}
         name={@name}
-        id={field.id}
+        id={@id}
         value={@value}
         class={[
           "pr-6 w-full rounded-m text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
@@ -62,8 +61,8 @@ defmodule Website45sV3Web.CoreComponents do
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
         style="background-color: #041624; color: #d2e8f9;"
-        phx-change={assigns.phx_change}
-        phx-debounce={assigns.phx_debounce}
+        phx-change={@phx_change}
+        phx-debounce={@phx_debounce}
       />
 
       <button
@@ -71,7 +70,7 @@ defmodule Website45sV3Web.CoreComponents do
         type="button"
         class="absolute top-1/2 right-0 pr-4 transform"
       >
-        <%= if assigns.type == "password" do %>
+        <%= if @type == "password" do %>
           <img
             src="/images/fa-eye.svg"
             alt="Show password"
@@ -180,12 +179,12 @@ defmodule Website45sV3Web.CoreComponents do
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
   def flash(assigns) do
-    msg = Phoenix.Flash.get(assigns.flash, assigns.kind)
+    flash_msg = Phoenix.Flash.get(assigns.flash, assigns.kind)
     persistent_messages = [
       "You took too long. A bot is playing for you.",
       "Welcome back! A bot was playing for you when you left. Auto-play has been disabled."
     ]
-    assigns = assign(assigns, persistent_flash: msg in persistent_messages)
+    assigns = assign(assigns, :persistent_flash, flash_msg in persistent_messages)
 
     ~H"""
     <div
@@ -212,7 +211,7 @@ defmodule Website45sV3Web.CoreComponents do
       <p class="mt-2 text-sm leading-5"
          style={if @kind == :info, do: "color: rgb(6, 95, 70);", else: "color: rgb(190, 18, 60);"}
       >
-        <%= msg %>
+        {msg}
       </p>
       <button
         type="button"
@@ -409,7 +408,7 @@ defmodule Website45sV3Web.CoreComponents do
       assign_new(assigns, :checked, fn -> Phoenix.HTML.Form.normalize_value("checkbox", value) end)
 
     ~H"""
-    <div phx-feedback-for={@name} class="mt-4">
+    <div class="mt-4">
       <label
         class="flex items-center text-sm gap-1.5"
         style={"color: ##{@text_color}; margin-bottom: 0;"}
@@ -439,7 +438,7 @@ defmodule Website45sV3Web.CoreComponents do
 
   def input(%{type: "select"} = assigns) do
     ~H"""
-    <div phx-feedback-for={@name}>
+    <div>
       <.label for={@id}><%= @label %></.label>
       <select
         id={@id}
@@ -458,14 +457,13 @@ defmodule Website45sV3Web.CoreComponents do
 
   def input(%{type: "textarea"} = assigns) do
     ~H"""
-    <div phx-feedback-for={@name}>
+    <div>
       <.label for={@id}><%= @label %></.label>
       <textarea
         id={@id}
         name={@name}
         class={[
-          "mt-2 block w-full rounded-lg text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
-          "min-h-[6rem] phx-no-feedback:border-zinc-300 phx-no-feedback:focus:border-zinc-400",
+          "mt-2 block w-full rounded-lg text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6 min-h-[6rem]",
           @errors == [] && "border-zinc-300 focus:border-zinc-400",
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
@@ -476,19 +474,18 @@ defmodule Website45sV3Web.CoreComponents do
     """
   end
 
-  def input(%{type: "password", show_password: show} = assigns) do
+  def input(%{type: "password"} = assigns) do
     ~H"""
-    <div phx-feedback-for={@name} style="background-color: #071f31; color: #d2e8f9;">
+    <div style="background-color: #071f31; color: #d2e8f9;">
       <.label for={@id}><%= @label %></.label>
       <div class="relative">
         <input
-          type={if show, do: "password-text", else: "password"}
+          type={if @show_password, do: "password-text", else: "password"}
           name={@name}
           id={@id}
           value={Phoenix.HTML.Form.normalize_value("password", @value)}
           class={[
             "mt-2 block w-full rounded-m text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
-            "phx-no-feedback:border-zinc-300 phx-no-feedback:focus:border-zinc-400",
             @errors == [] && "border-zinc-300 focus:border-zinc-400",
             @errors != [] && "border-rose-400 focus:border-rose-400"
           ]}
@@ -500,7 +497,7 @@ defmodule Website45sV3Web.CoreComponents do
           type="button"
           class="absolute top-1/2 right-0 pr-4 transform -translate-y-1/2"
         >
-          <%= if show do %>
+          <%= if @show_password do %>
             <img
               src="/images/fa-eye-slash.svg"
               alt="Hide password"
@@ -527,7 +524,7 @@ defmodule Website45sV3Web.CoreComponents do
   # All other inputs text, datetime-local, url, password, etc. are handled here...
   def input(assigns) do
     ~H"""
-    <div phx-feedback-for={@name} style={"background-color: ##{@background_color}; color: ##{@text_color};"}>
+    <div style={"background-color: ##{@background_color}; color: ##{@text_color};"}>
       <.label for={@id}><%= @label %></.label>
       <input
         type={@type}
@@ -536,7 +533,6 @@ defmodule Website45sV3Web.CoreComponents do
         value={Phoenix.HTML.Form.normalize_value(@type, @value)}
         class={[
           "mt-2 block w-full rounded-m text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
-          "phx-no-feedback:border-zinc-300 phx-no-feedback:focus:border-zinc-400",
           @errors == [] && "border-zinc-300 focus:border-zinc-400",
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
@@ -575,7 +571,7 @@ defmodule Website45sV3Web.CoreComponents do
 
   def error(assigns) do
     ~H"""
-    <p class="flex text-sm leading-6 text-rose-600 phx-no-feedback:hidden">
+    <p class="flex text-sm leading-6 text-rose-600">
       <.icon name="hero-exclamation-circle-mini" class="h-5 w-5 flex-none" />
       <%= render_slot(@inner_block) %>
     </p>

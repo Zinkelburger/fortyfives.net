@@ -20,5 +20,5 @@ defmodule Website45sV3Web.Gettext do
 
   See the [Gettext Docs](https://hexdocs.pm/gettext) for detailed usage.
   """
-  use Gettext, otp_app: :website_45s_v3
+  use Gettext.Backend, otp_app: :website_45s_v3
 end

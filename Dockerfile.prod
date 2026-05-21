@@ -1,5 +1,5 @@
 # Use the official Elixir image as the base image
-FROM elixir:1.16-alpine as build
+FROM elixir:1.18-alpine as build
 
 # Install build dependencies
 RUN apk update && \
@@ -45,7 +45,7 @@ RUN mix assets.deploy && \
 RUN mix release
 
 # Start a new build stage to create a cleaner final image
-FROM alpine:latest
+FROM alpine:3.21
 
 # Install runtime dependencies
 RUN apk update && \

@@ -43,7 +43,7 @@ defmodule Website45sV3Web do
         layouts: [html: Website45sV3Web.Layouts]
 
       import Plug.Conn
-      import Website45sV3Web.Gettext
+      use Gettext, backend: Website45sV3Web.Gettext
 
       unquote(verified_routes())
     end
@@ -85,7 +85,7 @@ defmodule Website45sV3Web do
       import Phoenix.HTML
       # Core UI components and translation
       import Website45sV3Web.CoreComponents
-      import Website45sV3Web.Gettext
+      use Gettext, backend: Website45sV3Web.Gettext
 
       # Shortcut for generating JS commands
       alias Phoenix.LiveView.JS

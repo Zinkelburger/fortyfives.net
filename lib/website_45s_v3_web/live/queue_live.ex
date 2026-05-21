@@ -34,7 +34,8 @@ defmodule Website45sV3Web.QueueLive do
            queue: initial_queue,
            in_queue: false,
            private_id: private_id,
-           left_game_info: nil
+           left_game_info: nil,
+           page_title: "Private Game | Play 45s Online Free"
          )}
 
       _ ->
@@ -51,9 +52,9 @@ defmodule Website45sV3Web.QueueLive do
            display_name: display_name,
            queue: initial_queue,
            in_queue: false,
-           # track which tab is showing
            tab: Map.get(params, "tab", "public"),
-           left_game_info: nil
+           left_game_info: nil,
+           page_title: "Play 45s Online | Join a Forty Fives Card Game Free"
          )}
     end
   end

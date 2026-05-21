@@ -767,6 +767,76 @@ header nav a {
         color: #d2e8f9;
 }
 
+.share-link-group {
+        display: inline-flex;
+        align-items: stretch;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid rgba(210, 232, 249, 0.25);
+        background: rgba(7, 31, 49, 0.6);
+        max-width: 100%;
+}
+
+.share-link-url {
+        color: #d2e8f9;
+        background: transparent;
+        padding: 0.35rem 0.75rem;
+        font-size: 0.9rem;
+        font-family: monospace;
+        user-select: all;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1;
+}
+
+.share-link-copy {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.35rem 0.65rem;
+        margin: 0;
+        background: rgba(210, 232, 249, 0.08);
+        color: #d2e8f9;
+        border: none;
+        border-left: 1px solid rgba(210, 232, 249, 0.25);
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-weight: 500;
+        white-space: nowrap;
+        transition: background 0.15s ease;
+}
+
+.share-link-copy:hover {
+        background: rgba(210, 232, 249, 0.15);
+}
+
+.share-link-copy:active {
+        background: rgba(210, 232, 249, 0.22);
+}
+
+.share-link-copy svg {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+}
+
+.share-link-copy .copy-check {
+        display: none;
+}
+
+.share-link-copy.copied .copy-icon {
+        display: none;
+}
+
+.share-link-copy.copied .copy-check {
+        display: inline;
+}
+
+.share-link-copy.copied {
+        color: #7be07b;
+}
+
 .btn {
     display: inline-block;
     padding: 0.7rem 1.5rem;

@@ -46,7 +46,7 @@ defmodule Website45sV3.MixProject do
       {:esbuild, "~> 0.7", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.2", runtime: Mix.env() == :dev},
       {:bamboo, "~> 2.3"},
-      {:bamboo_ses, "~> 0.3"},
+      {:bamboo_ses, "~> 0.5.0"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_google, "~> 0.11"},
       {:swoosh, "~> 1.17"},

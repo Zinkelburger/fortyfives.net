@@ -103,6 +103,10 @@ defmodule Website45sV3Web.UserAuth do
     assign(conn, :current_user, user)
   end
 
+  def assign_canonical_path(conn, _opts) do
+    assign(conn, :canonical_path, conn.request_path)
+  end
+
   defp ensure_user_token(conn) do
     if token = get_session(conn, :user_token) do
       {token, conn}
@@ -156,10 +160,7 @@ defmodule Website45sV3Web.UserAuth do
     socket =
       socket
       |> mount_current_user(session)
-      |> Phoenix.LiveView.attach_hook(:save_request_path, :handle_params, fn
-        _params, uri, socket ->
-          {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
-      end)
+      |> attach_request_path_hook()
 
     {:cont, socket}
   end
@@ -168,11 +169,7 @@ defmodule Website45sV3Web.UserAuth do
     socket = mount_current_user(socket, session)
 
     if socket.assigns.current_user do
-      socket =
-        Phoenix.LiveView.attach_hook(socket, :save_request_path, :handle_params, fn
-          _params, uri, socket ->
-            {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
-        end)
+      socket = attach_request_path_hook(socket)
 
       {:cont, socket}
     else
@@ -189,10 +186,7 @@ defmodule Website45sV3Web.UserAuth do
     socket =
       socket
       |> mount_current_user(session)
-      |> Phoenix.LiveView.attach_hook(:save_request_path, :handle_params, fn
-        _params, uri, socket ->
-          {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
-      end)
+      |> attach_request_path_hook()
 
     {:cont, socket}
   end
@@ -203,14 +197,23 @@ defmodule Website45sV3Web.UserAuth do
     if socket.assigns.current_user do
       {:halt, Phoenix.LiveView.redirect(socket, to: signed_in_path(socket))}
     else
-      socket =
-        Phoenix.LiveView.attach_hook(socket, :save_request_path, :handle_params, fn
-          _params, uri, socket ->
-            {:cont, Phoenix.Component.assign(socket, :current_uri, URI.parse(uri).path)}
-        end)
-
-      {:cont, socket}
+      {:cont, attach_request_path_hook(socket)}
     end
+  end
+
+  defp attach_request_path_hook(socket) do
+    Phoenix.LiveView.attach_hook(socket, :save_request_path, :handle_params, fn
+      _params, uri, socket ->
+        {:cont, assign_request_path(socket, uri)}
+    end)
+  end
+
+  defp assign_request_path(socket, uri) do
+    path = URI.parse(uri).path
+
+    socket
+    |> Phoenix.Component.assign(:current_uri, path)
+    |> Phoenix.Component.assign(:canonical_path, path)
   end
 
   defp mount_current_user(socket, session) do

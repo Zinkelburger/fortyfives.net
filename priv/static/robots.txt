@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.fortyfives.net/sitemap.xml
+Sitemap: https://fortyfives.net/sitemap.xml

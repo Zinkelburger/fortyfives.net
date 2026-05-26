@@ -17,7 +17,7 @@
     />
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://www.fortyfives.net" />
+    <meta property="og:url" content={"https://fortyfives.net#{assigns[:canonical_path] || "/"}"} />
     <meta
       property="og:title"
       content={assigns[:page_title] || "Forty Fives | Play the 45s Card Game Online Free"}
@@ -26,7 +26,7 @@
       property="og:description"
       content="Play the 45s card game online for free. Create a table, invite friends, and play Forty Fives in your browser. No download needed."
     />
-    <meta property="og:image" content="https://www.fortyfives.net/images/og-card.png" />
+    <meta property="og:image" content="https://fortyfives.net/images/og-card.png" />
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta
@@ -37,8 +37,8 @@
       name="twitter:description"
       content="Play the 45s card game online for free. Create a table, invite friends, and play Forty Fives in your browser. No download needed."
     />
-    <meta name="twitter:image" content="https://www.fortyfives.net/images/og-card.png" />
-    <link rel="canonical" href={"https://www.fortyfives.net#{assigns[:canonical_path] || "/"}"} />
+    <meta name="twitter:image" content="https://fortyfives.net/images/og-card.png" />
+    <link rel="canonical" href={"https://fortyfives.net#{assigns[:canonical_path] || "/"}"} />
     <.live_title>
       <%= assigns[:page_title] || "Forty Fives | Play the 45s Card Game Online Free" %>
     </.live_title>
@@ -51,7 +51,7 @@
         "@type": "WebApplication",
         "name": "Forty Fives",
         "alternateName": ["45s", "Forty-Fives", "FortyFives"],
-        "url": "https://www.fortyfives.net",
+        "url": "https://fortyfives.net",
         "description": "Play the 45s card game online for free. A classic trick-taking card game from the Merrimack Valley.",
         "applicationCategory": "GameApplication",
         "operatingSystem": "Any",

@@ -12,6 +12,7 @@ defmodule Website45sV3Web.Router do
     plug :put_secure_browser_headers
     plug :fetch_current_user
     plug :potentially_anonymous_user
+    plug :assign_canonical_path
   end
 
   pipeline :api do

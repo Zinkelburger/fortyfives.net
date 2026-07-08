@@ -42,6 +42,7 @@ defmodule Website45sV3.MixProject do
       {:phoenix_live_reload, "~> 1.5", only: :dev},
       {:phoenix_live_view, "~> 1.1.0"},
       {:floki, ">= 0.36.1", only: :test},
+      {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8"},
       {:esbuild, "~> 0.7", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.2", runtime: Mix.env() == :dev},
@@ -58,7 +59,7 @@ defmodule Website45sV3.MixProject do
       {:plug_cowboy, "~> 2.7"},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:uuid, "~> 1.1"},
+      {:uuid, "~> 1.1"}
     ]
   end
 

@@ -24,10 +24,16 @@ defmodule Website45sV3Web.GameLive do
         if user_id in game_state.player_ids do
           display_name = game_state.player_map[user_id] || "Anonymous"
 
-          if connected?(socket) do
-            Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
-            Presence.track(self(), game_id, user_id, %{})
-          end
+          game_state =
+            if connected?(socket) do
+              Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
+              Presence.track(self(), game_id, user_id, %{})
+              # Re-fetch after subscribing so an update broadcast between the
+              # first fetch and the subscription can't leave us one state behind.
+              GameController.get_game_state(game_pid)
+            else
+              game_state
+            end
 
           played_cards_with_id = played_cards_stream_entries(game_state.played_cards)
           auto_playing = user_auto_playing?(game_state, user_id)
@@ -141,11 +147,19 @@ defmodule Website45sV3Web.GameLive do
 
   def handle_event("play-card", _params, socket), do: {:noreply, socket}
 
-  def handle_event("confirm_discard", %{"cards" => cards_to_keep}, socket) do
-    socket = dispatch_game(socket, {:confirm_discard, socket.assigns.user_id, cards_to_keep})
-
-    {:noreply, assign(socket, confirm_discard_clicked: true)}
+  def handle_event("confirm_discard", %{"cards" => cards_to_keep}, socket)
+      when is_list(cards_to_keep) do
+    # Only forward well-formed payloads; a malformed card string must never
+    # reach (let alone crash) the game process.
+    if length(cards_to_keep) in 1..5 and Enum.all?(cards_to_keep, &is_binary/1) do
+      socket = dispatch_game(socket, {:confirm_discard, socket.assigns.user_id, cards_to_keep})
+      {:noreply, assign(socket, confirm_discard_clicked: true)}
+    else
+      {:noreply, socket}
+    end
   end
+
+  def handle_event("confirm_discard", _params, socket), do: {:noreply, socket}
 
   def handle_event("confirm_bid", _params, socket) do
     current_bid =
@@ -200,11 +214,15 @@ defmodule Website45sV3Web.GameLive do
     end
   end
 
-  def handle_event("set_bid_number", %{"bid-number" => bid_number}, socket) do
+  def handle_event("set_bid_number", %{"bid-number" => bid_number}, socket)
+      when bid_number in ["15", "20", "25", "30"] do
     {:noreply, assign(socket, selected_bid: bid_number)}
   end
 
-  def handle_event("set_bid_suit", %{"bid-suit" => bid_suit}, socket) do
+  def handle_event("set_bid_number", _params, socket), do: {:noreply, socket}
+
+  def handle_event("set_bid_suit", %{"bid-suit" => bid_suit}, socket)
+      when bid_suit in ["hearts", "diamonds", "clubs", "spades"] do
     {:noreply, assign(socket, selected_suit: bid_suit)}
   end
 
@@ -223,6 +241,9 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_event("exit_game", _params, socket) do
+    # The player is leaving on purpose (the game is over), so don't broadcast
+    # the "you left the game, rejoin here" message from terminate/2.
+    socket = assign(socket, :game_over, true)
     {:noreply, push_navigate(socket, to: "/play")}
   end
 
@@ -262,14 +283,14 @@ defmodule Website45sV3Web.GameLive do
     >
       <%= if assigns.game_state.phase != "Playing" do %>
         <h1 class="game-state-style">
-          <%= assigns.game_state.phase %>
+          {assigns.game_state.phase}
         </h1>
       <% end %>
       <div style="text-align: center;">
         <%= if assigns.game_state.phase == "Playing" do %>
           <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: -2rem;">
             <p style="color: #d2e8f9; line-height: 1; font-size: 0.9rem; margin: 0;">
-              Trump: <%= capitalize_first(optional_atom_to_string(assigns.game_state.trump)) %>
+              Trump: {capitalize_first(optional_atom_to_string(assigns.game_state.trump))}
             </p>
             <button class="score-button" phx-click="toggle_score_overlay">
               View Scores
@@ -277,13 +298,13 @@ defmodule Website45sV3Web.GameLive do
           </div>
         <% end %>
 
-        <%= render_auto_play_banner(assigns) %>
+        {render_auto_play_banner(assigns)}
 
-        <%= render_actions(assigns) %>
+        {render_actions(assigns)}
 
-        <%= render_phase_content(assigns) %>
+        {render_phase_content(assigns)}
 
-        <%= render_player_hand(assigns) %>
+        {render_player_hand(assigns)}
 
         <%= if assigns.game_state.phase not in ["Playing", "Scoring", "Final Scoring"] and not @auto_playing do %>
           <button class="blue-button" phx-click="toggle_score_overlay" style="margin-top: 1rem;">
@@ -295,7 +316,7 @@ defmodule Website45sV3Web.GameLive do
 
     <%= if @overlay_visible and @game_state.phase not in ["Scoring", "Final Scoring"] do %>
       <div class="score-overlay" phx-click="toggle_score_overlay">
-        <%= render_scoring(assigns) %>
+        {render_scoring(assigns)}
       </div>
     <% end %>
     """
@@ -307,7 +328,7 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div class="actions-list">
-      <%= @actions_string %>
+      {@actions_string}
     </div>
     """
   end
@@ -354,7 +375,7 @@ defmodule Website45sV3Web.GameLive do
     <div>
       <%= if not @is_current_player do %>
         <p style="color: #d2e8f9; text-align: center; font-size: 1rem;">
-          It is <%= @current_player_name %>'s turn
+          It is {@current_player_name}'s turn
         </p>
       <% else %>
         <%= if @bagged do %>
@@ -384,7 +405,7 @@ defmodule Website45sV3Web.GameLive do
                 (@bagged and bid != 15) or not bid_available?(@current_bid, bid) or not @can_control
               }
             >
-              <%= bid %>
+              {bid}
             </button>
           <% end %>
         </div>
@@ -480,7 +501,7 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div>
-      <p class="discard-message"><%= @discard_message %></p>
+      <p class="discard-message">{@discard_message}</p>
       <button id="confirm-discard-button" class="blue-button" phx-hook="ConfirmDiscardButton" {@attrs}>
         Confirm Keep
       </button>
@@ -572,7 +593,7 @@ defmodule Website45sV3Web.GameLive do
     ~H"""
     <div class="played-cards">
       <p class="turn-text">
-        <%= @turn_message %>
+        {@turn_message}
       </p>
       <div id="table" class="table" phx-update="stream" style="margin-top: -20px;">
         <%= for {dom_id, %{player_id: player_id, card: %Website45sV3.Game.Card{value: value, suit: suit}}} <- @streams.played_cards do %>
@@ -582,7 +603,7 @@ defmodule Website45sV3Web.GameLive do
           <% card_rotation = if relative_pos in [1, 3], do: "rotate", else: "" %>
 
           <div id={dom_id} class={"player-slot player-#{relative_pos}"}>
-            <p class="player-name"><%= player_name %></p>
+            <p class="player-name">{player_name}</p>
             <img
               class={"card #{card_rotation}"}
               src={get_image_location({value, suit})}
@@ -594,7 +615,7 @@ defmodule Website45sV3Web.GameLive do
       <button id="play-card-button" class="blue-button" phx-hook="PlayCardButton" {@attrs}>
         Play Card
       </button>
-      <div id="card-led-suit" style="display: none;"><%= @card_led_suit %></div>
+      <div id="card-led-suit" style="display: none;">{@card_led_suit}</div>
     </div>
     """
   end
@@ -638,15 +659,15 @@ defmodule Website45sV3Web.GameLive do
       <table style="color: #d2e8f9; max-width: 40%; margin: auto;">
         <thead>
           <tr>
-            <th style="padding: 5px 10px; border-right: 1px solid;"><%= @team_1_players %></th>
-            <th style="padding: 5px 10px;"><%= @team_2_players %></th>
+            <th style="padding: 5px 10px; border-right: 1px solid;">{@team_1_players}</th>
+            <th style="padding: 5px 10px;">{@team_2_players}</th>
           </tr>
         </thead>
         <tbody>
           <%= for {t1, t2} <- @scores do %>
             <tr>
-              <td style="padding: 5px 10px; border-right: 1px solid;"><%= t1 || "" %></td>
-              <td style="padding: 5px 10px;"><%= t2 || "" %></td>
+              <td style="padding: 5px 10px; border-right: 1px solid;">{t1 || ""}</td>
+              <td style="padding: 5px 10px;">{t2 || ""}</td>
             </tr>
           <% end %>
         </tbody>
@@ -658,7 +679,7 @@ defmodule Website45sV3Web.GameLive do
           data-seconds={@seconds}
           style="color: #d2e8f9; text-align: center; margin-top: 1rem;"
         >
-          <%= @seconds %>
+          {@seconds}
         </div>
       <% end %>
       <%= if @game_state.phase == "Final Scoring" do %>
@@ -701,7 +722,7 @@ defmodule Website45sV3Web.GameLive do
     <%= if @auto_playing do %>
       <div style="margin: 1rem auto; max-width: 24rem;">
         <p style="color: #d2e8f9; margin-bottom: 0.75rem;">
-          A bot is currently controlling<br/>your seat.
+          A bot is currently controlling<br />your seat.
         </p>
         <button id="resume-control-button" class="blue-button" phx-click="resume_control">
           Resume Game
@@ -742,7 +763,9 @@ defmodule Website45sV3Web.GameLive do
 
   defp dispatch_game(socket, message) do
     case GameController.dispatch(socket.assigns.game_id, message) do
-      :ok -> socket
+      :ok ->
+        socket
+
       {:error, :game_not_found} ->
         socket
         |> put_flash(:error, "Game no longer exists.")

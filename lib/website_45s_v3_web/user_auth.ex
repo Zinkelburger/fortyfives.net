@@ -42,6 +42,7 @@ defmodule Website45sV3Web.UserAuth do
     if live_socket_id = get_session(conn, :live_socket_id) do
       Website45sV3Web.Endpoint.broadcast(live_socket_id, "clear_anon_id", %{})
     end
+
     conn
   end
 
@@ -201,6 +202,10 @@ defmodule Website45sV3Web.UserAuth do
     end
   end
 
+  # A socket without a router (e.g. one built directly in tests) cannot have
+  # a :handle_params hook attached.
+  defp attach_request_path_hook(%Phoenix.LiveView.Socket{router: nil} = socket), do: socket
+
   defp attach_request_path_hook(socket) do
     Phoenix.LiveView.attach_hook(socket, :save_request_path, :handle_params, fn
       _params, uri, socket ->
@@ -260,6 +265,7 @@ defmodule Website45sV3Web.UserAuth do
     user = user_token && Accounts.get_user_by_session_token(user_token)
 
     user_id = get_session(conn, :user_id) || UUID.uuid4()
+
     conn
     |> put_session(:user_id, user_id)
     |> assign(:user_id, user_id)

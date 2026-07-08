@@ -1,11 +1,45 @@
 defmodule Website45sV3.Game.Card do
   alias Website45sV3.Game.Card
-  @type t :: {integer(), Suit.t()}
+  alias Website45sV3.Game.Suit
+
+  @type t :: %__MODULE__{value: integer(), suit: Suit.t() | :invalid}
 
   defstruct value: -1000, suit: :invalid
 
+  @suit_atoms %{
+    "hearts" => :hearts,
+    "diamonds" => :diamonds,
+    "clubs" => :clubs,
+    "spades" => :spades
+  }
+
   def new(value \\ -1000, suit \\ :invalid) do
     %__MODULE__{value: value, suit: suit}
+  end
+
+  @doc """
+  Parses a `"value_suit"` string (e.g. `"10_hearts"`) into a card.
+
+  Returns `{:ok, card}` or `:error`. Never raises, so it is safe to call on
+  untrusted client input.
+  """
+  def parse(card_string) when is_binary(card_string) do
+    with [value_str, suit_str] <- String.split(card_string, "_"),
+         {value, ""} when value in 1..13 <- Integer.parse(value_str),
+         {:ok, suit} <- Map.fetch(@suit_atoms, suit_str) do
+      {:ok, new(value, suit)}
+    else
+      _ -> :error
+    end
+  end
+
+  def parse(_), do: :error
+
+  @doc """
+  Encodes a card as a `"value_suit"` string, the inverse of `parse/1`.
+  """
+  def encode(%__MODULE__{value: value, suit: suit}) do
+    "#{value}_#{Atom.to_string(suit)}"
   end
 
   def to_string(card) do
@@ -54,8 +88,8 @@ defmodule Website45sV3.Game.Card do
   returns card1 < card2, requires suit_led and trump
   """
   def less_than(
-        %Website45sV3.Game.Card{value: value1, suit: suit1},
-        %Website45sV3.Game.Card{value: value2, suit: suit2},
+        %Card{value: value1, suit: suit1},
+        %Card{value: value2, suit: suit2},
         suit_led,
         trump
       ) do
@@ -93,34 +127,20 @@ defmodule Website45sV3.Game.Card do
       suit1 == suit_led and suit2 == suit_led ->
         eval_offsuite({suit1, value1}) < eval_offsuite({suit2, value2})
 
-      # I had :error before, but it is possible for the comparison to take place
+      # Neither card can win the trick, so the ordering does not matter.
       true ->
         true
     end
   end
 
   def card_to_filename({value, suit}) when is_binary(suit) do
-    value_str =
-      case value do
-        1 -> "A"
-        11 -> "J"
-        12 -> "Q"
-        13 -> "K"
-        _ -> Integer.to_string(value)
-      end
-
-    suit_str =
-      case suit do
-        "hearts" -> "H"
-        "diamonds" -> "D"
-        "clubs" -> "C"
-        "spades" -> "S"
-      end
-
-    "#{value_str}#{suit_str}"
+    case Map.fetch(@suit_atoms, suit) do
+      {:ok, suit_atom} -> card_to_filename({value, suit_atom})
+      :error -> :error
+    end
   end
 
-  def card_to_filename({value, suit}) do
+  def card_to_filename({value, suit}) when suit in [:hearts, :diamonds, :clubs, :spades] do
     value_str =
       case value do
         1 -> "A"
@@ -141,8 +161,5 @@ defmodule Website45sV3.Game.Card do
     "#{value_str}#{suit_str}"
   end
 
-  def card_to_filename(arg) do
-    IO.puts("Unexpected argument: #{inspect(arg)}")
-    :error
-  end
+  def card_to_filename(_arg), do: :error
 end

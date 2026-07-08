@@ -34,7 +34,8 @@ defmodule Website45sV3Web.QueueLive do
            queue: initial_queue,
            in_queue: false,
            private_id: private_id,
-           left_game_info: nil,
+           left_game_id: nil,
+           last_bot_request: nil,
            page_title: "Private Game | Play 45s Online Free"
          )}
 
@@ -53,7 +54,8 @@ defmodule Website45sV3Web.QueueLive do
            queue: initial_queue,
            in_queue: false,
            tab: Map.get(params, "tab", "public"),
-           left_game_info: nil,
+           left_game_id: nil,
+           last_bot_request: nil,
            page_title: "Play 45s Online | Join a Forty Fives Card Game Free"
          )}
     end
@@ -130,32 +132,40 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_event("request_bot", _payload, socket) do
-    queue = socket.assigns.queue
+    now = System.monotonic_time(:millisecond)
+    last = socket.assigns.last_bot_request
 
-    existing_bot_numbers =
-      queue
-      |> Map.values()
-      |> Enum.flat_map(fn %{metas: metas} ->
-        Enum.map(metas, & &1.display_name)
-      end)
-      |> Enum.filter(&String.starts_with?(&1, "Bot"))
-      |> Enum.map(fn "Bot" <> num ->
-        case Integer.parse(num) do
-          {int, ""} -> int
-          _ -> 0
+    cond do
+      last != nil and now - last < 3_000 ->
+        {:noreply, put_flash(socket, :error, "Please wait a moment before adding another bot.")}
+
+      true ->
+        display_name = next_bot_name(socket.assigns.queue)
+
+        result =
+          case socket.assigns.live_action do
+            :private_game ->
+              Website45sV3.Game.BotSupervisor.start_private_bot(
+                socket.assigns.private_id,
+                display_name
+              )
+
+            _ ->
+              Website45sV3.Game.BotSupervisor.start_bot(display_name)
+          end
+
+        case result do
+          {:ok, _pid} ->
+            {:noreply, assign(socket, :last_bot_request, now)}
+
+          {:error, :too_many_bots} ->
+            {:noreply,
+             put_flash(socket, :error, "Too many bots are playing right now. Try again soon.")}
+
+          {:error, _reason} ->
+            {:noreply, put_flash(socket, :error, "Could not add a bot. Try again.")}
         end
-      end)
-
-    next_number =
-      case existing_bot_numbers do
-        [] -> 1
-        nums -> Enum.max(nums) + 1
-      end
-
-    display_name = "Bot" <> Integer.to_string(next_number)
-
-    Website45sV3.Game.BotSupervisor.start_bot(display_name)
-    {:noreply, socket}
+    end
   end
 
   # Ignore game updates that might still be broadcast to the user after they
@@ -167,11 +177,14 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_info({:left_game, game_id}, socket) do
-    message =
-      "You have left /game/#{game_id}. Please rejoin " <>
-        "<a href=\"/game/#{game_id}\">here</a>"
+    {:noreply, assign(socket, left_game_id: game_id)}
+  end
 
-    {:noreply, assign(socket, left_game_info: message)}
+  def handle_info(:queue_closed, socket) do
+    {:noreply,
+     socket
+     |> assign(in_queue: false)
+     |> put_flash(:error, "This game lobby has expired. Please create a new one.")}
   end
 
   def handle_info(:game_end, socket) do
@@ -207,12 +220,39 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, assign(socket, queue: updated_queue)}
   end
 
+  defp next_bot_name(queue) do
+    existing_bot_numbers =
+      queue
+      |> Map.values()
+      |> Enum.flat_map(fn %{metas: metas} ->
+        Enum.map(metas, & &1.display_name)
+      end)
+      |> Enum.filter(&String.starts_with?(&1, "Bot"))
+      |> Enum.map(fn "Bot" <> num ->
+        case Integer.parse(num) do
+          {int, ""} -> int
+          _ -> 0
+        end
+      end)
+
+    next_number =
+      case existing_bot_numbers do
+        [] -> 1
+        nums -> Enum.max(nums) + 1
+      end
+
+    "Bot" <> Integer.to_string(next_number)
+  end
+
   def render(%{live_action: :private_game} = assigns) do
     ~H"""
     <div style="text-align: center; margin-top:10px;">
-      <%= if @left_game_info do %>
+      <%= if @left_game_id do %>
         <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem;">
-          <%= raw(@left_game_info) %>
+          You have left your game.
+          <.link navigate={~p"/game/#{@left_game_id}"} style="text-decoration: underline;">
+            Rejoin here
+          </.link>
         </div>
       <% end %>
       <p style="color: #d2e8f9; margin-bottom: 1rem;">
@@ -220,7 +260,7 @@ defmodule Website45sV3Web.QueueLive do
       </p>
       <div style="display: flex; justify-content: center; margin-bottom: 1rem;">
         <div class="share-link-group">
-          <span id="share_link" class="share-link-url"><%= url(~p"/play/private/#{@private_id}") %></span>
+          <span id="share_link" class="share-link-url">{url(~p"/play/private/#{@private_id}")}</span>
           <button
             id="copy_button"
             type="button"
@@ -234,8 +274,30 @@ defmodule Website45sV3Web.QueueLive do
               });
             "
           >
-            <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            <svg class="copy-check" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <svg
+              class="copy-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <svg
+              class="copy-check"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
             <span class="copy-icon">Copy</span>
             <span class="copy-check">Copied!</span>
           </button>
@@ -246,31 +308,41 @@ defmodule Website45sV3Web.QueueLive do
         <%= for {_user_id, presence} <- @queue do %>
           <%= for meta <- presence.metas do %>
             <div class="player-card">
-              <p><%= meta.display_name %></p>
+              <p>{meta.display_name}</p>
             </div>
           <% end %>
         <% end %>
       </div>
 
       <%= if !@in_queue do %>
-        <form phx-submit="join">
-          <button
-            type="submit"
-            class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
-          >
-            Join Private Game
+        <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+          <form phx-submit="join">
+            <button
+              type="submit"
+              class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+            >
+              Join Private Game
+            </button>
+          </form>
+          <button phx-click="request_bot" class="request-bot-button" title="Add a Bot">
+            🤖
           </button>
-        </form>
+        </div>
       <% else %>
         <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the game lobby</p>
-        <form phx-submit="leave">
-          <button
-            type="submit"
-            class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
-          >
-            Leave
+        <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+          <form phx-submit="leave">
+            <button
+              type="submit"
+              class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+            >
+              Leave
+            </button>
+          </form>
+          <button phx-click="request_bot" class="request-bot-button" title="Add a Bot">
+            🤖
           </button>
-        </form>
+        </div>
       <% end %>
     </div>
     """
@@ -279,9 +351,12 @@ defmodule Website45sV3Web.QueueLive do
   def render(assigns) do
     ~H"""
     <div class="tabs-container">
-      <%= if @left_game_info do %>
+      <%= if @left_game_id do %>
         <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem; text-align:center;">
-          <%= raw(@left_game_info) %>
+          You have left your game.
+          <.link navigate={~p"/game/#{@left_game_id}"} style="text-decoration: underline;">
+            Rejoin here
+          </.link>
         </div>
       <% end %>
       <!-- Tab nav -->
@@ -311,7 +386,7 @@ defmodule Website45sV3Web.QueueLive do
             <%= for {_user_id, presence} <- @queue do %>
               <%= for meta <- presence.metas do %>
                 <div class="player-card">
-                  <p><%= meta.display_name %></p>
+                  <p>{meta.display_name}</p>
                 </div>
               <% end %>
             <% end %>

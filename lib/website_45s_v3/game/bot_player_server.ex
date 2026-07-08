@@ -1,13 +1,22 @@
 defmodule Website45sV3.Game.BotPlayerServer do
+  @moduledoc """
+  A bot that occupies a real seat: it joins the public queue or a private
+  lobby, waits for a game, and plays it with `BotPlayer`'s heuristics.
+  """
   use GenServer
+
   alias Website45sV3Web.Presence
   alias Website45sV3.Game.QueueStarter
+  alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.BotPlayer
   alias Website45sV3.Game.GameController
-  alias UUID
 
-  def start_link(display_name) do
-    GenServer.start_link(__MODULE__, display_name)
+  # A bot that has not been matched into a game after this long removes
+  # itself from the queue instead of lingering forever.
+  @queue_idle_timeout_ms 10 * 60 * 1000
+
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts)
   end
 
   def child_spec(arg) do
@@ -16,26 +25,54 @@ defmodule Website45sV3.Game.BotPlayerServer do
   end
 
   @impl true
-  def init(display_name) do
+  def init({:public, display_name}) do
+    init_bot(display_name, :public, "queue")
+  end
+
+  def init({:private, private_id, display_name}) do
+    init_bot(display_name, {:private, private_id}, "private_queue:#{private_id}")
+  end
+
+  # Backwards-compatible: a bare display name means the public queue.
+  def init(display_name) when is_binary(display_name) do
+    init({:public, display_name})
+  end
+
+  defp init_bot(display_name, queue, queue_topic) do
     user_id = "bot_" <> UUID.uuid4()
-    Presence.track(self(), "queue", user_id, %{display_name: display_name})
+    Presence.track(self(), queue_topic, user_id, %{display_name: display_name})
     Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
-    QueueStarter.add_player({display_name, user_id})
-    {:ok, %{user_id: user_id, game: nil}}
+
+    case queue do
+      :public ->
+        QueueStarter.add_player({display_name, user_id})
+
+      {:private, private_id} ->
+        PrivateQueueManager.add_player(private_id, {display_name, user_id})
+    end
+
+    Process.send_after(self(), :queue_idle_timeout, @queue_idle_timeout_ms)
+
+    {:ok,
+     %{
+       user_id: user_id,
+       display_name: display_name,
+       queue: queue,
+       queue_topic: queue_topic,
+       game: nil
+     }}
   end
 
   @impl true
   def handle_info({:redirect, "/game/" <> game_name}, state) do
-    Presence.untrack(self(), "queue", state.user_id)
+    Presence.untrack(self(), state.queue_topic, state.user_id)
     Presence.track(self(), game_name, state.user_id, %{})
 
     # Just like a real player, fetch the current game state so the bot
-    # can immediately act on its turn. We lookup the GameController
-    # process via the Registry and send ourselves an `:update_state`
-    # message with the initial state.
+    # can immediately act on its turn.
     case Registry.lookup(Website45sV3.Registry, game_name) do
       [{game_pid, _}] ->
-        game_state = Website45sV3.Game.GameController.get_game_state(game_pid)
+        game_state = GameController.get_game_state(game_pid)
         send(self(), {:update_state, game_state})
 
       _ ->
@@ -71,17 +108,42 @@ defmodule Website45sV3.Game.BotPlayerServer do
     {:noreply, state}
   end
 
+  def handle_info(:queue_idle_timeout, %{game: nil} = state) do
+    remove_from_queue(state)
+    {:stop, :normal, state}
+  end
+
+  def handle_info(:queue_idle_timeout, state), do: {:noreply, state}
+
+  def handle_info(:queue_closed, %{game: nil} = state) do
+    remove_from_queue(state)
+    {:stop, :normal, state}
+  end
+
+  def handle_info(:queue_closed, state), do: {:noreply, state}
+
   def handle_info(:game_end, state), do: {:stop, :normal, state}
   def handle_info(:game_crash, state), do: {:stop, :normal, state}
+  def handle_info({:game_crash, _reason}, state), do: {:stop, :normal, state}
   def handle_info(_, state), do: {:noreply, state}
 
   defp schedule_move(game_name, message) do
     Process.send_after(self(), {:delayed_move, game_name, message}, 1000)
   end
 
+  defp remove_from_queue(state) do
+    case state.queue do
+      :public ->
+        QueueStarter.remove_player({state.display_name, state.user_id})
+
+      {:private, private_id} ->
+        PrivateQueueManager.remove_player(private_id, state.user_id)
+    end
+  end
+
   @impl true
   def terminate(_reason, state) do
-    Presence.untrack(self(), "queue", state.user_id)
+    Presence.untrack(self(), state.queue_topic, state.user_id)
 
     if state.game do
       Presence.untrack(self(), state.game, state.user_id)

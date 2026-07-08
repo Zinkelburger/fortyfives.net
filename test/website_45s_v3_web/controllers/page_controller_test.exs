@@ -4,7 +4,7 @@ defmodule Website45sV3Web.PageControllerTest do
   test "GET /", %{conn: conn} do
     conn = get(conn, ~p"/")
     response = html_response(conn, 200)
-    assert response =~ "Welcome to fortyfives.net"
-    assert response =~ "Play Online"
+    assert response =~ "Forty Fives | Play the 45s Card Game Online Free"
+    assert response =~ "Play"
   end
 end

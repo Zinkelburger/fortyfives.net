@@ -1,5 +1,7 @@
-defmodule Deck do
+defmodule Website45sV3.Game.Deck do
   alias Website45sV3.Game.Card
+  alias Website45sV3.Game.Suit
+
   @type t :: %__MODULE__{cards: [Card.t()]}
 
   defstruct cards: []
@@ -16,7 +18,7 @@ defmodule Deck do
           value <- values,
           do: Card.new(value, suit)
 
-    %Deck{cards: cards}
+    %__MODULE__{cards: cards}
   end
 
   @doc """

@@ -26,6 +26,13 @@ config :website_45s_v3, Website45sV3Web.Endpoint,
 # In test we don't send emails.
 config :website_45s_v3, Website45sV3.Mailer, adapter: Bamboo.TestAdapter
 
+# Shrink the game's cosmetic delays so tests can drive a full game quickly.
+# Idle/discard timeouts stay long so tests control every move themselves.
+config :website_45s_v3, :game_timings,
+  bot_move_delay: 10,
+  trick_transition: 10,
+  scoring_display: 10
+
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
 

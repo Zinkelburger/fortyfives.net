@@ -1,4 +1,4 @@
-defmodule Suit do
+defmodule Website45sV3.Game.Suit do
   @type t :: :hearts | :diamonds | :clubs | :spades
 
   @suits %{

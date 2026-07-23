@@ -18,10 +18,12 @@ defmodule Website45sV3Web.GameLive do
 
     case Registry.lookup(Website45sV3.Registry, game_id) do
       [{game_pid, _}] ->
-        # Check if the user is in the game
+        # Check if the user is in the game (an abandoned seat is bot-owned
+        # for the rest of the game, so its former player can't come back)
         game_state = GameController.get_game_state(game_pid)
+        abandoned = Map.get(game_state, :abandoned_players, MapSet.new())
 
-        if user_id in game_state.player_ids do
+        if user_id in game_state.player_ids and not MapSet.member?(abandoned, user_id) do
           display_name = game_state.player_map[user_id] || "Anonymous"
 
           game_state =
@@ -50,7 +52,6 @@ defmodule Website45sV3Web.GameLive do
              confirm_discard_clicked: false,
              current_player_id: game_state[:current_player_id],
              overlay_visible: false,
-             game_over: false,
              auto_playing: auto_playing
            )
            |> stream(:played_cards, played_cards_with_id)}
@@ -91,17 +92,14 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_info({:game_crash, _reason}, socket) do
-    socket = assign(socket, :game_over, true)
     {:noreply, push_navigate(socket |> put_flash(:error, "Game ended unexpectedly"), to: "/play")}
   end
 
   def handle_info(:game_crash, socket) do
-    socket = assign(socket, :game_over, true)
     {:noreply, push_navigate(socket |> put_flash(:error, "Game ended unexpectedly"), to: "/play")}
   end
 
   def handle_info(:game_end, socket) do
-    socket = assign(socket, :game_over, true)
     {:noreply, push_navigate(socket, to: "/play", replace: :replace)}
   end
 
@@ -121,8 +119,6 @@ defmodule Website45sV3Web.GameLive do
      )
      |> assign(:auto_playing, false)}
   end
-
-  def handle_info({:left_game, _game_id}, socket), do: {:noreply, socket}
 
   def handle_info({:redirect, _url}, socket), do: {:noreply, socket}
 
@@ -241,9 +237,12 @@ defmodule Website45sV3Web.GameLive do
   end
 
   def handle_event("exit_game", _params, socket) do
-    # The player is leaving on purpose (the game is over), so don't broadcast
-    # the "you left the game, rejoin here" message from terminate/2.
-    socket = assign(socket, :game_over, true)
+    # Leaving for good: free this session for new games. If the game process
+    # is still running (final scoring screen), a bot owns the seat from here.
+    # The dispatch is async, so also clear the seat record synchronously —
+    # the lobby we're navigating to must not show a rejoin banner.
+    socket = dispatch_game(socket, {:abandon_game, socket.assigns.user_id})
+    Website45sV3.Game.ActiveGames.remove_player(socket.assigns.user_id)
     {:noreply, push_navigate(socket, to: "/play")}
   end
 
@@ -251,19 +250,6 @@ defmodule Website45sV3Web.GameLive do
     socket = dispatch_game(socket, {:resume_control, socket.assigns.user_id})
 
     {:noreply, socket}
-  end
-
-  @impl true
-  def terminate(_reason, socket) do
-    unless socket.assigns[:game_over] do
-      Phoenix.PubSub.broadcast(
-        Website45sV3.PubSub,
-        "user:#{socket.assigns.user_id}",
-        {:left_game, socket.assigns.game_id}
-      )
-    end
-
-    :ok
   end
 
   @impl true

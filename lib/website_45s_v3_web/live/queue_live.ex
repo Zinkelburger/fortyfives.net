@@ -1,9 +1,17 @@
 defmodule Website45sV3Web.QueueLive do
   use Website45sV3Web, :live_view
   alias Website45sV3Web.Presence
+  alias Website45sV3.Game.ActiveGames
+  alias Website45sV3.Game.BotSupervisor
+  alias Website45sV3.Game.GameController
   alias Website45sV3.Game.QueueStarter
   alias Website45sV3.Game.PrivateQueueManager
   alias UUID
+
+  # A player only ever needs 3 bots to fill their game, so that is the cap on
+  # bots one session can have waiting in a queue. The global process cap
+  # lives in BotSupervisor.
+  @max_bots_per_requester 3
 
   def mount(params, session, socket) do
     display_name =
@@ -34,8 +42,7 @@ defmodule Website45sV3Web.QueueLive do
            queue: initial_queue,
            in_queue: false,
            private_id: private_id,
-           left_game_id: nil,
-           last_bot_request: nil,
+           active_game: fetch_active_game(user_id),
            page_title: "Private Game | Play 45s Online Free"
          )}
 
@@ -54,8 +61,7 @@ defmodule Website45sV3Web.QueueLive do
            queue: initial_queue,
            in_queue: false,
            tab: Map.get(params, "tab", "public"),
-           left_game_id: nil,
-           last_bot_request: nil,
+           active_game: fetch_active_game(user_id),
            page_title: "Play 45s Online | Join a Forty Fives Card Game Free"
          )}
     end
@@ -74,29 +80,8 @@ defmodule Website45sV3Web.QueueLive do
     :ok
   end
 
-  def handle_event("join", _, %{assigns: %{live_action: :private_game}} = socket) do
-    if socket.assigns.user_id do
-      {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
-      private_id = socket.assigns.private_id
-
-      Presence.track(self(), "private_queue:#{private_id}", user_id, %{display_name: display_name})
-
-      PrivateQueueManager.add_player(private_id, {display_name, user_id})
-      {:noreply, assign(socket, in_queue: true)}
-    else
-      raise "No user ID found in assigns"
-    end
-  end
-
   def handle_event("join", _, socket) do
-    if socket.assigns.user_id do
-      {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
-      Presence.track(self(), "queue", user_id, %{display_name: display_name})
-      QueueStarter.add_player({display_name, user_id})
-      {:noreply, assign(socket, in_queue: true)}
-    else
-      raise "No user ID found in assigns"
-    end
+    {:noreply, join_queue(socket)}
   end
 
   def handle_event("leave", _, %{assigns: %{live_action: :private_game}} = socket) do
@@ -119,52 +104,81 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_event("create_private", _payload, socket) do
-    # generate a random UUID for the private game
-    private_id = UUID.uuid4()
+    cond do
+      socket.assigns.active_game ->
+        {:noreply, put_flash(socket, :error, "Rejoin or abandon your current game first.")}
 
-    case PrivateQueueManager.create_queue(private_id, socket.assigns.user_id) do
-      :ok ->
-        {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
+      true ->
+        # generate a random UUID for the private game
+        private_id = UUID.uuid4()
 
-      {:error, :too_soon} ->
-        {:noreply, put_flash(socket, :error, "Please wait before creating another link")}
+        case PrivateQueueManager.create_queue(private_id, socket.assigns.user_id) do
+          :ok ->
+            {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
+
+          {:error, :too_soon} ->
+            {:noreply, put_flash(socket, :error, "Please wait before creating another link")}
+        end
     end
   end
 
   def handle_event("request_bot", _payload, socket) do
-    now = System.monotonic_time(:millisecond)
-    last = socket.assigns.last_bot_request
-
     cond do
-      last != nil and now - last < 3_000 ->
-        {:noreply, put_flash(socket, :error, "Please wait a moment before adding another bot.")}
+      socket.assigns.active_game ->
+        {:noreply, put_flash(socket, :error, "Rejoin or abandon your current game first.")}
+
+      my_queued_bots(socket) >= @max_bots_per_requester ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "You already have #{@max_bots_per_requester} bots waiting — join to start the game."
+         )}
 
       true ->
-        display_name = next_bot_name(socket.assigns.queue)
+        {:noreply, spawn_bots(socket, 1)}
+    end
+  end
 
-        result =
-          case socket.assigns.live_action do
-            :private_game ->
-              Website45sV3.Game.BotSupervisor.start_private_bot(
-                socket.assigns.private_id,
-                display_name
-              )
+  # One click to play right now: joins the queue if needed, then fills the
+  # remaining seats with bots (the 4th seat starts the game).
+  def handle_event("fill_bots", _payload, socket) do
+    if socket.assigns.active_game do
+      {:noreply, put_flash(socket, :error, "Rejoin or abandon your current game first.")}
+    else
+      socket = if socket.assigns.in_queue, do: socket, else: join_queue(socket)
 
-            _ ->
-              Website45sV3.Game.BotSupervisor.start_bot(display_name)
-          end
+      cond do
+        # Join was refused; join_queue already set a flash explaining why.
+        not socket.assigns.in_queue ->
+          {:noreply, socket}
 
-        case result do
-          {:ok, _pid} ->
-            {:noreply, assign(socket, :last_bot_request, now)}
+        # Joining completed a game (e.g. bots were already waiting) — the
+        # redirect is on its way, don't seed the next queue with strays.
+        ActiveGames.find_game(socket.assigns.user_id) != nil ->
+          {:noreply, socket}
 
-          {:error, :too_many_bots} ->
-            {:noreply,
-             put_flash(socket, :error, "Too many bots are playing right now. Try again soon.")}
+        true ->
+          {:noreply, spawn_bots(socket, max(4 - queue_size(socket), 0))}
+      end
+    end
+  end
 
-          {:error, _reason} ->
-            {:noreply, put_flash(socket, :error, "Could not add a bot. Try again.")}
-        end
+  def handle_event("abandon_game", _payload, socket) do
+    case socket.assigns.active_game do
+      nil ->
+        {:noreply, socket}
+
+      %{id: game_id} ->
+        GameController.dispatch(game_id, {:abandon_game, socket.assigns.user_id})
+        # The dispatch is async; free the session now so an immediate
+        # "Join Queue" click isn't refused while the game catches up.
+        ActiveGames.remove_player(socket.assigns.user_id)
+
+        {:noreply,
+         socket
+         |> assign(active_game: nil)
+         |> put_flash(:info, "You left your game. A bot will finish it for you.")}
     end
   end
 
@@ -176,10 +190,6 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, socket}
   end
 
-  def handle_info({:left_game, game_id}, socket) do
-    {:noreply, assign(socket, left_game_id: game_id)}
-  end
-
   def handle_info(:queue_closed, socket) do
     {:noreply,
      socket
@@ -187,13 +197,16 @@ defmodule Website45sV3Web.QueueLive do
      |> put_flash(:error, "This game lobby has expired. Please create a new one.")}
   end
 
+  # The user's running game ended or crashed while they were on the lobby
+  # page: retire the "game in progress" card.
   def handle_info(:game_end, socket) do
-    {:noreply, socket}
+    {:noreply, assign(socket, active_game: nil)}
   end
 
-  def handle_info(:game_crash, socket), do: {:noreply, socket}
+  def handle_info(:game_crash, socket), do: {:noreply, assign(socket, active_game: nil)}
 
-  def handle_info({:game_crash, _reason}, socket), do: {:noreply, socket}
+  def handle_info({:game_crash, _reason}, socket),
+    do: {:noreply, assign(socket, active_game: nil)}
 
   def handle_info(:auto_playing, socket), do: {:noreply, socket}
 
@@ -220,41 +233,170 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, assign(socket, queue: updated_queue)}
   end
 
-  defp next_bot_name(queue) do
+  ## Queue helpers
+
+  defp queue_topic(%{assigns: %{live_action: :private_game, private_id: id}}),
+    do: "private_queue:#{id}"
+
+  defp queue_topic(_socket), do: "queue"
+
+  # Adds the user to their queue and tracks presence. On refusal (their
+  # session is still seated in a running game) refreshes the banner instead.
+  defp join_queue(socket) do
+    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
+
+    result =
+      case socket.assigns.live_action do
+        :private_game ->
+          PrivateQueueManager.add_player(socket.assigns.private_id, {display_name, user_id})
+
+        _ ->
+          QueueStarter.add_player({display_name, user_id})
+      end
+
+    case result do
+      :ok ->
+        Presence.track(self(), queue_topic(socket), user_id, %{display_name: display_name})
+        assign(socket, in_queue: true)
+
+      {:error, :already_in_game} ->
+        socket
+        |> assign(active_game: fetch_active_game(user_id))
+        |> put_flash(:error, "You already have a game in progress.")
+    end
+  end
+
+  # Authoritative queue size (the assigns copy lags behind presence
+  # broadcasts). Bots register themselves synchronously on spawn, so this is
+  # accurate immediately after each spawn.
+  defp queue_size(%{assigns: %{live_action: :private_game, private_id: id}}) do
+    id |> PrivateQueueManager.queue_players() |> length()
+  end
+
+  defp queue_size(_socket), do: QueueStarter.player_count()
+
+  defp my_queued_bots(socket) do
+    user_id = socket.assigns.user_id
+
+    socket
+    |> queue_topic()
+    |> Presence.list()
+    |> Map.values()
+    |> Enum.count(fn %{metas: metas} ->
+      Enum.any?(metas, &(Map.get(&1, :requester) == user_id))
+    end)
+  end
+
+  defp spawn_bots(socket, 0), do: socket
+
+  defp spawn_bots(socket, count) do
+    # Read presence fresh: the assigns copy may not include bots spawned a
+    # moment ago, and duplicate names confuse the table.
+    names = socket |> queue_topic() |> Presence.list() |> next_bot_names(count)
+
+    Enum.reduce_while(names, socket, fn name, socket ->
+      result =
+        case socket.assigns.live_action do
+          :private_game ->
+            BotSupervisor.start_private_bot(
+              socket.assigns.private_id,
+              name,
+              socket.assigns.user_id
+            )
+
+          _ ->
+            BotSupervisor.start_bot(name, socket.assigns.user_id)
+        end
+
+      case result do
+        {:ok, _pid} ->
+          {:cont, socket}
+
+        {:error, :too_many_bots} ->
+          {:halt,
+           put_flash(socket, :error, "Too many bots are playing right now. Try again soon.")}
+
+        {:error, _reason} ->
+          {:halt, put_flash(socket, :error, "Could not add a bot. Try again.")}
+      end
+    end)
+  end
+
+  defp next_bot_names(presence, count) do
     existing_bot_numbers =
-      queue
+      presence
       |> Map.values()
       |> Enum.flat_map(fn %{metas: metas} ->
         Enum.map(metas, & &1.display_name)
       end)
       |> Enum.filter(&String.starts_with?(&1, "Bot"))
-      |> Enum.map(fn "Bot" <> num ->
+      |> Enum.flat_map(fn "Bot" <> num ->
         case Integer.parse(num) do
-          {int, ""} -> int
-          _ -> 0
+          {int, ""} -> [int]
+          _ -> []
         end
       end)
 
-    next_number =
-      case existing_bot_numbers do
-        [] -> 1
-        nums -> Enum.max(nums) + 1
-      end
+    start = Enum.max(existing_bot_numbers, fn -> 0 end) + 1
 
-    "Bot" <> Integer.to_string(next_number)
+    Enum.map(start..(start + count - 1), &("Bot" <> Integer.to_string(&1)))
+  end
+
+  ## Active-game banner
+
+  # Resolves the user's running game (if any) into what the banner needs.
+  # Falls back to nil if the game died between the lookup and the state read.
+  defp fetch_active_game(user_id) do
+    with game_name when is_binary(game_name) <- ActiveGames.find_game(user_id),
+         [{game_pid, _}] <- Registry.lookup(Website45sV3.Registry, game_name) do
+      try do
+        game_state = GameController.get_game_state(game_pid)
+
+        others =
+          game_state.player_ids
+          |> Enum.reject(&(&1 == user_id))
+          |> Enum.map(&Map.get(game_state.player_map, &1, "Anonymous"))
+
+        %{id: game_name, players: others}
+      catch
+        :exit, _ -> nil
+      end
+    else
+      _ -> nil
+    end
+  end
+
+  defp active_game_card(assigns) do
+    ~H"""
+    <div class="active-game-card">
+      <p class="active-game-title">You have a game in progress</p>
+      <p :if={@game.players != []} class="active-game-players">
+        Playing with {Enum.join(@game.players, ", ")}
+      </p>
+      <div class="active-game-actions">
+        <.link
+          id="rejoin-game-button"
+          navigate={~p"/game/#{@game.id}"}
+          class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+        >
+          Rejoin Game
+        </.link>
+        <button
+          id="abandon-game-button"
+          phx-click="abandon_game"
+          data-confirm="Abandon this game? A bot will play your seat for the rest of the game."
+          class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+        >
+          Abandon
+        </button>
+      </div>
+    </div>
+    """
   end
 
   def render(%{live_action: :private_game} = assigns) do
     ~H"""
     <div style="text-align: center; margin-top:10px;">
-      <%= if @left_game_id do %>
-        <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem;">
-          You have left your game.
-          <.link navigate={~p"/game/#{@left_game_id}"} style="text-decoration: underline;">
-            Rejoin here
-          </.link>
-        </div>
-      <% end %>
       <p style="color: #d2e8f9; margin-bottom: 1rem;">
         Share this link with friends:
       </p>
@@ -314,35 +456,46 @@ defmodule Website45sV3Web.QueueLive do
         <% end %>
       </div>
 
-      <%= if !@in_queue do %>
-        <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
-          <form phx-submit="join">
-            <button
-              type="submit"
-              class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
-            >
-              Join Private Game
-            </button>
-          </form>
-          <button phx-click="request_bot" class="request-bot-button" title="Add a Bot">
-            🤖
-          </button>
-        </div>
+      <%= if @active_game do %>
+        <.active_game_card game={@active_game} />
       <% else %>
-        <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the game lobby</p>
-        <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
-          <form phx-submit="leave">
-            <button
-              type="submit"
-              class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
-            >
-              Leave
+        <%= if !@in_queue do %>
+          <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+            <form phx-submit="join">
+              <button
+                type="submit"
+                class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+              >
+                Join Private Game
+              </button>
+            </form>
+            <button phx-click="request_bot" class="request-bot-button" title="Add a Bot">
+              🤖
             </button>
-          </form>
-          <button phx-click="request_bot" class="request-bot-button" title="Add a Bot">
-            🤖
-          </button>
-        </div>
+          </div>
+        <% else %>
+          <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the game lobby</p>
+          <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+            <form phx-submit="leave">
+              <button
+                type="submit"
+                class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+              >
+                Leave
+              </button>
+            </form>
+            <button
+              id="fill-bots-button"
+              phx-click="fill_bots"
+              class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 fill-bots-button"
+            >
+              Fill with Bots
+            </button>
+            <button phx-click="request_bot" class="request-bot-button" title="Add a Bot">
+              🤖
+            </button>
+          </div>
+        <% end %>
       <% end %>
     </div>
     """
@@ -351,14 +504,6 @@ defmodule Website45sV3Web.QueueLive do
   def render(assigns) do
     ~H"""
     <div class="tabs-container">
-      <%= if @left_game_id do %>
-        <div class="left-game-info" style="color:#d2e8f9; margin-bottom:1rem; text-align:center;">
-          You have left your game.
-          <.link navigate={~p"/game/#{@left_game_id}"} style="text-decoration: underline;">
-            Rejoin here
-          </.link>
-        </div>
-      <% end %>
       <!-- Tab nav -->
       <div class="tabs">
         <button
@@ -392,38 +537,56 @@ defmodule Website45sV3Web.QueueLive do
             <% end %>
           </div>
 
-          <%= if !@in_queue do %>
-            <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
-              <form phx-submit="join">
-                <button
-                  id="join-queue-button"
-                  type="submit"
-                  class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
-                >
-                  Join Queue
-                </button>
-              </form>
-              <!-- our new circular button -->
-              <button phx-click="request_bot" class="request-bot-button" title="Request Bot">
-                🤖
-              </button>
-            </div>
+          <%= if @active_game do %>
+            <.active_game_card game={@active_game} />
           <% else %>
-            <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the queue</p>
-            <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
-              <form phx-submit="leave">
+            <%= if !@in_queue do %>
+              <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                <form phx-submit="join">
+                  <button
+                    id="join-queue-button"
+                    type="submit"
+                    class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+                  >
+                    Join Queue
+                  </button>
+                </form>
                 <button
-                  id="leave-queue-button"
-                  type="submit"
-                  class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+                  id="play-vs-bots-button"
+                  phx-click="fill_bots"
+                  class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 fill-bots-button"
                 >
-                  Leave Queue
+                  Play vs Bots
                 </button>
-              </form>
-              <button phx-click="request_bot" class="request-bot-button" title="Request Bot">
-                🤖
-              </button>
-            </div>
+                <!-- our new circular button -->
+                <button phx-click="request_bot" class="request-bot-button" title="Request Bot">
+                  🤖
+                </button>
+              </div>
+            <% else %>
+              <p style="color: #d2e8f9; margin-bottom: 10px;">You are in the queue</p>
+              <div style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                <form phx-submit="leave">
+                  <button
+                    id="leave-queue-button"
+                    type="submit"
+                    class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
+                  >
+                    Leave Queue
+                  </button>
+                </form>
+                <button
+                  id="fill-bots-button"
+                  phx-click="fill_bots"
+                  class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 fill-bots-button"
+                >
+                  Fill with Bots
+                </button>
+                <button phx-click="request_bot" class="request-bot-button" title="Request Bot">
+                  🤖
+                </button>
+              </div>
+            <% end %>
           <% end %>
         </div>
       <% else %>
@@ -432,14 +595,18 @@ defmodule Website45sV3Web.QueueLive do
           <p style="color: #d2e8f9; margin-bottom: 1rem;">
             Invite a friend with a private link:
           </p>
-          <form phx-submit="create_private">
-            <button
-              type="submit"
-              class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
-            >
-              Create Private Game
-            </button>
-          </form>
+          <%= if @active_game do %>
+            <.active_game_card game={@active_game} />
+          <% else %>
+            <form phx-submit="create_private">
+              <button
+                type="submit"
+                class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"
+              >
+                Create Private Game
+              </button>
+            </form>
+          <% end %>
         </div>
       <% end %>
     </div>

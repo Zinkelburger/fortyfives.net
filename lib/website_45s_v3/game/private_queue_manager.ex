@@ -2,6 +2,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   use GenServer
   require Logger
 
+  alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Matchmaking
 
   # How long an unfilled private lobby lives before it is cleaned up.
@@ -56,25 +57,31 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     queue = Map.get(state.queues, id, new_queue(nil))
     players = queue.players
 
-    if Enum.any?(players, fn {_n, id2} -> id2 == user_id end) do
-      {:reply, :ok, state}
-    else
-      assigned_name = Matchmaking.assign_display_name(incoming_name, players)
-      updated_players = players ++ [{assigned_name, user_id}]
-
-      if length(updated_players) >= 4 do
-        case Matchmaking.start_game(updated_players) do
-          :ok ->
-            {:reply, :ok, %{state | queues: Map.delete(state.queues, id)}}
-
-          {:error, _reason} ->
-            state = put_in(state.queues[id], %{queue | players: updated_players})
-            {:reply, :ok, state}
-        end
-      else
-        state = put_in(state.queues[id], %{queue | players: updated_players})
+    cond do
+      Enum.any?(players, fn {_n, id2} -> id2 == user_id end) ->
         {:reply, :ok, state}
-      end
+
+      ActiveGames.find_game(user_id) != nil ->
+        # One game per session: rejoin (or abandon) the running game first.
+        {:reply, {:error, :already_in_game}, state}
+
+      true ->
+        assigned_name = Matchmaking.assign_display_name(incoming_name, players)
+        updated_players = players ++ [{assigned_name, user_id}]
+
+        if length(updated_players) >= 4 do
+          case Matchmaking.start_game(updated_players) do
+            :ok ->
+              {:reply, :ok, %{state | queues: Map.delete(state.queues, id)}}
+
+            {:error, _reason} ->
+              state = put_in(state.queues[id], %{queue | players: updated_players})
+              {:reply, :ok, state}
+          end
+        else
+          state = put_in(state.queues[id], %{queue | players: updated_players})
+          {:reply, :ok, state}
+        end
     end
   end
 

@@ -25,22 +25,32 @@ defmodule Website45sV3.Game.BotPlayerServer do
   end
 
   @impl true
-  def init({:public, display_name}) do
-    init_bot(display_name, :public, "queue")
+  def init({:public, display_name, requester}) do
+    init_bot(display_name, :public, "queue", requester)
   end
 
-  def init({:private, private_id, display_name}) do
-    init_bot(display_name, {:private, private_id}, "private_queue:#{private_id}")
+  def init({:private, private_id, display_name, requester}) do
+    init_bot(display_name, {:private, private_id}, "private_queue:#{private_id}", requester)
   end
+
+  def init({:public, display_name}), do: init({:public, display_name, nil})
+
+  def init({:private, private_id, display_name}),
+    do: init({:private, private_id, display_name, nil})
 
   # Backwards-compatible: a bare display name means the public queue.
   def init(display_name) when is_binary(display_name) do
-    init({:public, display_name})
+    init({:public, display_name, nil})
   end
 
-  defp init_bot(display_name, queue, queue_topic) do
+  defp init_bot(display_name, queue, queue_topic, requester) do
     user_id = "bot_" <> UUID.uuid4()
-    Presence.track(self(), queue_topic, user_id, %{display_name: display_name})
+
+    Presence.track(self(), queue_topic, user_id, %{
+      display_name: display_name,
+      requester: requester
+    })
+
     Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
 
     case queue do

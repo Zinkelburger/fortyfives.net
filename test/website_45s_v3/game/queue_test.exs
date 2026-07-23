@@ -1,12 +1,24 @@
 defmodule Website45sV3.Game.QueueTest do
   use ExUnit.Case, async: true
 
+  alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.BotSupervisor
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.QueueStarter
 
   defp from, do: {self(), make_ref()}
+
+  # Marks a user as seated in a running game, backed by a stub process so
+  # ActiveGames' monitor cleanup works as in production.
+  defp seat_in_game(user_id) do
+    pid = spawn(fn -> Process.sleep(:infinity) end)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    game_name = "stub_game_" <> Integer.to_string(System.unique_integer([:positive]))
+    :ok = ActiveGames.register_game(pid, game_name, [user_id])
+    game_name
+  end
 
   describe "QueueStarter dedup" do
     test "the same user cannot occupy two queue slots" do
@@ -25,6 +37,16 @@ defmodule Website45sV3.Game.QueueTest do
       {:reply, :ok, state} = QueueStarter.handle_call({:remove_player, "user_1"}, from(), state)
 
       assert state.players == [{"Bob", "user_2"}]
+    end
+
+    test "a player seated in a running game cannot queue for another" do
+      user_id = "in_game_" <> Integer.to_string(System.unique_integer([:positive]))
+      seat_in_game(user_id)
+
+      {:reply, {:error, :already_in_game}, state} =
+        QueueStarter.handle_call({:add_player, {"Alice", user_id}}, from(), %{players: []})
+
+      assert state.players == []
     end
   end
 
@@ -49,6 +71,18 @@ defmodule Website45sV3.Game.QueueTest do
         PrivateQueueManager.handle_call({:add_player, "q1", {"Alice", "user_1"}}, from(), state)
 
       assert get_in(state.queues, ["q1", :players]) == [{"Alice", "user_1"}]
+    end
+
+    test "a player seated in a running game cannot join a lobby" do
+      user_id = "in_game_" <> Integer.to_string(System.unique_integer([:positive]))
+      seat_in_game(user_id)
+
+      state = %{queues: %{}, last_created: %{}}
+
+      {:reply, {:error, :already_in_game}, state} =
+        PrivateQueueManager.handle_call({:add_player, "q1", {"Alice", user_id}}, from(), state)
+
+      assert get_in(state.queues, ["q1", :players]) == nil
     end
 
     test "a private lobby can be filled with bots and starts a game" do

@@ -7,6 +7,7 @@ defmodule Website45sV3.Game.GameController do
   use GenServer
   require Logger
 
+  alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.Deck
   alias Website45sV3.Game.GameLog
@@ -85,6 +86,10 @@ defmodule Website45sV3.Game.GameController do
           |> Map.put(:game_name, game_name)
 
         Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
+        # Register before any player is redirected, so the lobby can always
+        # answer "which game is this user in?". Cleaned up by ActiveGames'
+        # monitor when this process exits.
+        ActiveGames.register_game(self(), game_name, player_ids)
 
         state
         |> schedule_termination_timer(timing(:game_max_lifetime))
@@ -130,6 +135,7 @@ defmodule Website45sV3.Game.GameController do
       termination_timer_ref: nil,
       seat_bots: MapSet.new(seat_bot_ids),
       auto_play_players: MapSet.new(),
+      abandoned_players: MapSet.new(),
       all_bot_controlled_timer_ref: nil
     }
   end
@@ -186,6 +192,8 @@ defmodule Website45sV3.Game.GameController do
   defp seat_bot?(state, player_id), do: MapSet.member?(state.seat_bots, player_id)
 
   defp auto_playing?(state, player_id), do: MapSet.member?(state.auto_play_players, player_id)
+
+  defp abandoned?(state, player_id), do: MapSet.member?(state.abandoned_players, player_id)
 
   defp bot_controlled?(state, player_id),
     do: seat_bot?(state, player_id) or auto_playing?(state, player_id)
@@ -474,6 +482,7 @@ defmodule Website45sV3.Game.GameController do
       |> Map.put(:active_players, state.active_players)
       |> Map.put(:seat_bots, state.seat_bots)
       |> Map.put(:auto_play_players, state.auto_play_players)
+      |> Map.put(:abandoned_players, state.abandoned_players)
       |> Map.put(:all_bot_controlled_timer_ref, state.all_bot_controlled_timer_ref)
 
     broadcast_state(new_state)
@@ -502,7 +511,9 @@ defmodule Website45sV3.Game.GameController do
     new_state =
       joined_players
       |> Enum.reduce(%{state | active_players: updated_active_players}, fn player, acc ->
-        disable_auto_play(acc, player)
+        # Abandoned seats stay bot-controlled even if the player somehow
+        # shows up in presence again.
+        if abandoned?(acc, player), do: acc, else: disable_auto_play(acc, player)
       end)
 
     new_state = schedule_idle_timer(new_state)
@@ -510,8 +521,52 @@ defmodule Website45sV3.Game.GameController do
     {:noreply, new_state}
   end
 
+  # A player permanently gives up their seat: their session is freed for new
+  # games and a bot plays out the rest of this one. Unlike idle auto-play,
+  # this is not reversible — an abandoned player can no longer rejoin.
+  def handle_info({:abandon_game, player_id}, state) do
+    if player_id in state.player_ids and not seat_bot?(state, player_id) and
+         not abandoned?(state, player_id) do
+      ActiveGames.remove_player(player_id)
+
+      # Take over the seat without enable_auto_play/2's :auto_playing
+      # broadcast — that message ("a bot is playing for you") is for players
+      # who idled out, not ones who deliberately left.
+      new_state =
+        state
+        |> Map.update!(:abandoned_players, &MapSet.put(&1, player_id))
+        |> Map.update!(:auto_play_players, &MapSet.put(&1, player_id))
+        |> reconcile_all_bot_controlled_timer()
+
+      # If the game is currently waiting on this seat, nudge the bot now
+      # instead of waiting for the idle timeout to fire.
+      cond do
+        new_state.phase == "Discard" and player_id not in new_state.received_discards_from ->
+          Process.send_after(
+            self(),
+            {:bot_execute, player_id, "Discard"},
+            timing(:bot_move_delay)
+          )
+
+        new_state.current_player_id == player_id ->
+          Process.send_after(
+            self(),
+            {:bot_execute, player_id, new_state.phase},
+            timing(:bot_move_delay)
+          )
+
+        true ->
+          :ok
+      end
+
+      {:noreply, new_state}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:resume_control, player_id}, state) do
-    if auto_playing?(state, player_id) do
+    if auto_playing?(state, player_id) and not abandoned?(state, player_id) do
       new_state =
         state
         |> disable_auto_play(player_id)

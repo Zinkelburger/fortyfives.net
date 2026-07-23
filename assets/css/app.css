@@ -1018,3 +1018,57 @@ header nav a {
   justify-content: center;    /* horizontal centering */
   cursor: pointer;            /* pointer on hover */
 }
+
+/* One-click "Play vs Bots" / "Fill with Bots" — shaped like the queue's
+   green/red buttons, colored like the bot button */
+.fill-bots-button {
+  cursor: pointer;
+  background-color: #2563eb;
+  outline-color: transparent;
+  border-color: transparent;
+  color: #d2e8f9;
+  font-size: 1.5rem;
+  line-height: 3rem;
+  transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.fill-bots-button:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
+}
+
+.fill-bots-button:active {
+  background-color: #1e40af;
+  transform: translateY(1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+/* "You have a game in progress" banner on the lobby page */
+.active-game-card {
+  display: inline-block;
+  padding: 1rem 1.5rem;
+  margin: 0 auto 1rem;
+  border-radius: 10px;
+  background-color: #071f31;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  color: #d2e8f9;
+  text-align: center;
+}
+
+.active-game-card .active-game-title {
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.active-game-card .active-game-players {
+  font-size: 0.9em;
+  opacity: 0.85;
+  margin: 0 0 0.75rem;
+}
+
+.active-game-card .active-game-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}

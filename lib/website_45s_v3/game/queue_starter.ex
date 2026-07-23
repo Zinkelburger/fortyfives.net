@@ -2,6 +2,7 @@ defmodule Website45sV3.Game.QueueStarter do
   use GenServer
   require Logger
 
+  alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Matchmaking
 
   # API
@@ -9,12 +10,20 @@ defmodule Website45sV3.Game.QueueStarter do
     GenServer.start_link(__MODULE__, %{players: []}, name: __MODULE__)
   end
 
+  @doc """
+  Adds a player to the queue. Returns `:ok`, or `{:error, :already_in_game}`
+  when the player is still seated in a running game — one game per session.
+  """
   def add_player({player_name, player_id}) do
     GenServer.call(__MODULE__, {:add_player, {player_name, player_id}})
   end
 
   def remove_player({_player_name, player_id}) do
     GenServer.call(__MODULE__, {:remove_player, player_id})
+  end
+
+  def player_count do
+    GenServer.call(__MODULE__, :player_count)
   end
 
   def init(state) do
@@ -26,31 +35,42 @@ defmodule Website45sV3.Game.QueueStarter do
         _from,
         %{players: players} = state
       ) do
-    if Enum.any?(players, fn {_name, id} -> id == player_id end) do
-      # Already queued (e.g. the same session joined from a second tab).
-      # Adding them twice would start a broken game with a duplicate seat.
-      {:reply, :ok, state}
-    else
-      assigned_player_name = Matchmaking.assign_display_name(incoming_player_name, players)
-      Logger.info("Player joined queue: #{assigned_player_name} (ID: #{player_id})")
+    cond do
+      Enum.any?(players, fn {_name, id} -> id == player_id end) ->
+        # Already queued (e.g. the same session joined from a second tab).
+        # Adding them twice would start a broken game with a duplicate seat.
+        {:reply, :ok, state}
 
-      updated_players = players ++ [{assigned_player_name, player_id}]
+      ActiveGames.find_game(player_id) != nil ->
+        # One game per session: they should rejoin (or abandon) that game
+        # instead of accumulating a second one.
+        {:reply, {:error, :already_in_game}, state}
 
-      if length(updated_players) >= 4 do
-        {game_players, remaining} = Enum.split(updated_players, 4)
+      true ->
+        assigned_player_name = Matchmaking.assign_display_name(incoming_player_name, players)
+        Logger.info("Player joined queue: #{assigned_player_name} (ID: #{player_id})")
 
-        case Matchmaking.start_game(game_players) do
-          :ok ->
-            {:reply, :ok, %{state | players: remaining}}
+        updated_players = players ++ [{assigned_player_name, player_id}]
 
-          {:error, _reason} ->
-            # Keep everyone queued; the next join will retry.
-            {:reply, :ok, %{state | players: updated_players}}
+        if length(updated_players) >= 4 do
+          {game_players, remaining} = Enum.split(updated_players, 4)
+
+          case Matchmaking.start_game(game_players) do
+            :ok ->
+              {:reply, :ok, %{state | players: remaining}}
+
+            {:error, _reason} ->
+              # Keep everyone queued; the next join will retry.
+              {:reply, :ok, %{state | players: updated_players}}
+          end
+        else
+          {:reply, :ok, %{state | players: updated_players}}
         end
-      else
-        {:reply, :ok, %{state | players: updated_players}}
-      end
     end
+  end
+
+  def handle_call(:player_count, _from, %{players: players} = state) do
+    {:reply, length(players), state}
   end
 
   def handle_call({:remove_player, player_id}, _from, %{players: players} = state) do

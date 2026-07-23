@@ -13,12 +13,14 @@ defmodule Website45sV3.Game.BotSupervisor do
     DynamicSupervisor.init(strategy: :one_for_one)
   end
 
-  def start_bot(display_name) when is_binary(display_name) do
-    start_child({:public, display_name})
+  # `requester` is the session user_id that asked for the bot; it is stored
+  # in the bot's presence metadata so the lobby can cap bots per requester.
+  def start_bot(display_name, requester \\ nil) when is_binary(display_name) do
+    start_child({:public, display_name, requester})
   end
 
-  def start_private_bot(private_id, display_name) do
-    start_child({:private, private_id, display_name})
+  def start_private_bot(private_id, display_name, requester \\ nil) do
+    start_child({:private, private_id, display_name, requester})
   end
 
   def bot_count do

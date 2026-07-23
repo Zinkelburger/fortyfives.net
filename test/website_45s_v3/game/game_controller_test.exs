@@ -1,6 +1,7 @@
 defmodule Website45sV3.Game.GameControllerTest do
   use ExUnit.Case
 
+  alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.GameController
 
@@ -47,6 +48,11 @@ defmodule Website45sV3.Game.GameControllerTest do
     {:ok, pid} = GameController.start_link({game_name, players})
     on_exit(fn -> stop_game(pid) end)
     pid
+  end
+
+  defp unique_players do
+    unique = System.unique_integer([:positive])
+    for n <- 1..4, do: {"Player#{n}", "abandon_h#{n}_#{unique}"}
   end
 
   test "start_game tracks permanent bots separately from autoplay players" do
@@ -160,6 +166,65 @@ defmodule Website45sV3.Game.GameControllerTest do
 
     assert Enum.any?(final_state.actions, &String.contains?(&1, "won the game!"))
     assert Process.alive?(pid)
+  end
+
+  describe "active-game tracking and abandonment" do
+    test "starting a game registers its human players" do
+      players = unique_players()
+      game_name = unique_game_name()
+      {:ok, pid} = GameController.start_link({game_name, players})
+      on_exit(fn -> stop_game(pid) end)
+
+      for {_name, id} <- players do
+        assert ActiveGames.find_game(id) == game_name
+      end
+    end
+
+    test "abandoning hands the seat to a bot and frees the session" do
+      [{_, quitter_id} | _] = players = unique_players()
+      game_name = unique_game_name()
+      {:ok, pid} = GameController.start_link({game_name, players})
+      on_exit(fn -> stop_game(pid) end)
+
+      send(pid, {:abandon_game, quitter_id})
+      state = GameController.get_game_state(pid)
+
+      assert MapSet.member?(state.abandoned_players, quitter_id)
+      assert MapSet.member?(state.auto_play_players, quitter_id)
+      assert ActiveGames.find_game(quitter_id) == nil
+
+      # The other seats are untouched.
+      for {_name, id} <- tl(players) do
+        assert ActiveGames.find_game(id) == game_name
+        refute MapSet.member?(state.abandoned_players, id)
+      end
+    end
+
+    test "an abandoned player cannot resume control of their seat" do
+      [{_, quitter_id} | _] = players = unique_players()
+      {:ok, pid} = GameController.start_link({unique_game_name(), players})
+      on_exit(fn -> stop_game(pid) end)
+
+      send(pid, {:abandon_game, quitter_id})
+      send(pid, {:resume_control, quitter_id})
+      state = GameController.get_game_state(pid)
+
+      assert MapSet.member?(state.auto_play_players, quitter_id)
+      assert MapSet.member?(state.abandoned_players, quitter_id)
+    end
+
+    test "abandonment survives the end of a round" do
+      [{_, quitter_id} | _] = players = unique_players()
+      {:ok, pid} = GameController.start_link({unique_game_name(), players})
+      on_exit(fn -> stop_game(pid) end)
+
+      send(pid, {:abandon_game, quitter_id})
+      # :end_scoring rebuilds most of the state for the next round.
+      send(pid, :end_scoring)
+      state = GameController.get_game_state(pid)
+
+      assert MapSet.member?(state.abandoned_players, quitter_id)
+    end
   end
 
   ## Game-driving helpers

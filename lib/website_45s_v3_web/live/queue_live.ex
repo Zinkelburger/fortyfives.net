@@ -551,14 +551,6 @@ defmodule Website45sV3Web.QueueLive do
                     Join Queue
                   </button>
                 </form>
-                <button
-                  id="play-vs-bots-button"
-                  phx-click="fill_bots"
-                  class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 fill-bots-button"
-                >
-                  Play vs Bots
-                </button>
-                <!-- our new circular button -->
                 <button phx-click="request_bot" class="request-bot-button" title="Request Bot">
                   🤖
                 </button>

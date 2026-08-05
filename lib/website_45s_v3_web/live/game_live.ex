@@ -706,13 +706,18 @@ defmodule Website45sV3Web.GameLive do
   defp render_auto_play_banner(assigns) do
     ~H"""
     <%= if @auto_playing do %>
+      <div
+        id="resume-control-overlay"
+        phx-click="resume_control"
+        role="button"
+        aria-label="Resume playing"
+        style="position: fixed; inset: 0; z-index: 1100; cursor: pointer;"
+      >
+      </div>
       <div style="margin: 1rem auto; max-width: 24rem;">
         <p style="color: #d2e8f9; margin-bottom: 0.75rem;">
-          A bot is currently controlling<br />your seat.
+          A bot is playing your seat.<br />Click anywhere to take back control.
         </p>
-        <button id="resume-control-button" class="blue-button" phx-click="resume_control">
-          Resume Game
-        </button>
       </div>
     <% end %>
     """

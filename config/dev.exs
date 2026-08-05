@@ -77,3 +77,9 @@ config :phoenix, :plug_init_mode, :runtime
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# Cloudflare's dummy Turnstile pair: the widget always passes on any
+# hostname and the secret accepts any token, so the full flow runs locally.
+config :website_45s_v3,
+  turnstile_site_key: "1x00000000000000000000AA",
+  turnstile_secret: "1x0000000000000000000000000000000AA"

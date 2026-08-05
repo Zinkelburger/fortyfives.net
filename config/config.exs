@@ -64,6 +64,11 @@ config :ueberauth, Ueberauth,
     google: {Ueberauth.Strategy.Google, [default_scope: "email profile"]}
   ]
 
+# Cloudflare Turnstile. The site key is public; the secret comes from the
+# TURNSTILE_SECRET environment variable (see config/runtime.exs). Dev and
+# test override the site key below.
+config :website_45s_v3, :turnstile_site_key, "0x4AAAAAAEGpyLaFBK7uF126"
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

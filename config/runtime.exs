@@ -20,6 +20,12 @@ if System.get_env("PHX_SERVER") do
   config :website_45s_v3, Website45sV3Web.Endpoint, server: true
 end
 
+# Cloudflare Turnstile siteverify secret. Only override the compile-time
+# config when the variable is actually set, so dev's dummy secret survives.
+if turnstile_secret = System.get_env("TURNSTILE_SECRET") do
+  config :website_45s_v3, :turnstile_secret, turnstile_secret
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

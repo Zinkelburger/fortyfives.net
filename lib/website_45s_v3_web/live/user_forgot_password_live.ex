@@ -2,6 +2,7 @@ defmodule Website45sV3Web.UserForgotPasswordLive do
   use Website45sV3Web, :live_view
 
   alias Website45sV3.Accounts
+  alias Website45sV3.Turnstile
 
   def render(assigns) do
     ~H"""
@@ -13,6 +14,7 @@ defmodule Website45sV3Web.UserForgotPasswordLive do
 
       <.simple_form for={@form} id="reset_password_form" phx-submit="send_email" background_color="041624">
         <.input field={@form[:email]} type="email" placeholder="Email" required background_color="041624"/>
+        <.turnstile id="forgot-password-turnstile" />
         <:actions>
           <.button phx-disable-with="Sending..." class="w-full green-button mt-1">
             Send reset instructions
@@ -33,23 +35,44 @@ defmodule Website45sV3Web.UserForgotPasswordLive do
   end
 
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, form: to_form(%{}, as: "user"))}
+    socket =
+      socket
+      |> assign(:client_ip, client_ip(socket))
+      |> assign(form: to_form(%{}, as: "user"))
+
+    {:ok, socket}
   end
 
-  def handle_event("send_email", %{"user" => %{"email" => email}}, socket) do
-    if user = Accounts.get_user_by_email(email) do
-      Accounts.deliver_user_reset_password_instructions(
-        user,
-        &url(~p"/users/reset_password/#{&1}")
-      )
+  def handle_event("send_email", %{"user" => %{"email" => email}} = params, socket) do
+    case Turnstile.verify(params["cf-turnstile-response"], socket.assigns.client_ip) do
+      :ok ->
+        if user = Accounts.get_user_by_email(email) do
+          Accounts.deliver_user_reset_password_instructions(
+            user,
+            &url(~p"/users/reset_password/#{&1}")
+          )
+        end
+
+        info =
+          "If your email is in our system, you will receive instructions to reset your password shortly."
+
+        {:noreply,
+         socket
+         |> put_flash(:info, info)
+         |> redirect(to: ~p"/")}
+
+      {:error, :turnstile_failed} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Please complete the verification challenge and try again.")
+         |> push_event("turnstile:reset", %{})}
     end
+  end
 
-    info =
-      "If your email is in our system, you will receive instructions to reset your password shortly."
-
-    {:noreply,
-     socket
-     |> put_flash(:info, info)
-     |> redirect(to: ~p"/")}
+  defp client_ip(socket) do
+    Turnstile.client_ip(
+      get_connect_info(socket, :x_headers),
+      get_connect_info(socket, :peer_data)
+    )
   end
 end

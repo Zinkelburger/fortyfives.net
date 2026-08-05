@@ -39,6 +39,7 @@ defmodule Website45sV3Web.UserLoginLive do
             required
             phx-debounce="400"
           />
+          <.turnstile id="login-turnstile" />
           <:actions>
             <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
             <li style="margin-top: 0.25rem; margin-bottom: 0; list-style-type: none;">

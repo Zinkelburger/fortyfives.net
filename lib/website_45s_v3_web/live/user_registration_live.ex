@@ -3,6 +3,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
 
   alias Website45sV3.Accounts
   alias Website45sV3.Accounts.User
+  alias Website45sV3.Turnstile
 
   def render(assigns) do
     ~H"""
@@ -50,6 +51,8 @@ defmodule Website45sV3Web.UserRegistrationLive do
           phx-debounce="400"
         />
 
+        <.turnstile id="registration-turnstile" />
+
         <:actions>
           <.button phx-disable-with="Creating account..." class="w-full green-button" style="margin-bottom: 0; margin-top: 0;">
             Create an account
@@ -75,25 +78,38 @@ defmodule Website45sV3Web.UserRegistrationLive do
     socket =
       socket
       |> assign(trigger_submit: false, check_errors: false, show_password: false)
+      |> assign(:client_ip, client_ip(socket))
       |> assign_form(changeset)
 
     {:ok, socket, temporary_assigns: [form: nil]}
   end
 
-  def handle_event("save", %{"user" => user_params}, socket) do
-    case Accounts.register_user(user_params) do
-      {:ok, user} ->
-        {:ok, _} =
-          Accounts.deliver_user_confirmation_instructions(
-            user,
-            &url(~p"/users/confirm/#{&1}")
-          )
+  def handle_event("save", %{"user" => user_params} = params, socket) do
+    with :ok <- Turnstile.verify(params["cf-turnstile-response"], socket.assigns.client_ip),
+         {:ok, user} <- Accounts.register_user(user_params) do
+      {:ok, _} =
+        Accounts.deliver_user_confirmation_instructions(
+          user,
+          &url(~p"/users/confirm/#{&1}")
+        )
 
-        changeset = Accounts.change_user_registration(user)
-        {:noreply, socket |> assign(trigger_submit: true) |> assign_form(changeset)}
+      changeset = Accounts.change_user_registration(user)
+      {:noreply, socket |> assign(trigger_submit: true) |> assign_form(changeset)}
+    else
+      {:error, :turnstile_failed} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Please complete the verification challenge and try again.")
+         |> push_event("turnstile:reset", %{})}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, socket |> assign(check_errors: true) |> assign_form(changeset)}
+        # The Turnstile token was consumed by the failed attempt; reset the
+        # widget so the retry submits a fresh one.
+        {:noreply,
+         socket
+         |> assign(check_errors: true)
+         |> assign_form(changeset)
+         |> push_event("turnstile:reset", %{})}
     end
   end
 
@@ -104,6 +120,13 @@ defmodule Website45sV3Web.UserRegistrationLive do
 
   def handle_event("toggle_visibility", _value, socket) do
     {:noreply, assign(socket, show_password: not socket.assigns.show_password)}
+  end
+
+  defp client_ip(socket) do
+    Turnstile.client_ip(
+      get_connect_info(socket, :x_headers),
+      get_connect_info(socket, :peer_data)
+    )
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

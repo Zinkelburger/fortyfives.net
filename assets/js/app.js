@@ -26,6 +26,41 @@ let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("
 
 let Hooks = {};
 
+// Renders a Cloudflare Turnstile widget (api.js is loaded with
+// ?render=explicit in the root layout, so nothing auto-renders). Turnstile
+// tokens are single-use: the server pushes "turnstile:reset" after a failed
+// submit so the retry gets a fresh token instead of timeout-or-duplicate.
+Hooks.Turnstile = {
+  mounted() {
+    this.widgetId = null;
+    this.handleEvent("turnstile:reset", () => {
+      if (this.widgetId !== null && window.turnstile) {
+        window.turnstile.reset(this.widgetId);
+      }
+    });
+    this.renderWidget();
+  },
+  destroyed() {
+    if (this.widgetId !== null && window.turnstile) {
+      window.turnstile.remove(this.widgetId);
+      this.widgetId = null;
+    }
+  },
+  renderWidget() {
+    if (this.widgetId !== null) return;
+    if (window.turnstile) {
+      this.widgetId = window.turnstile.render(this.el, {
+        sitekey: this.el.dataset.sitekey,
+        action: this.el.dataset.action,
+        theme: "dark",
+        "response-field-name": "cf-turnstile-response",
+      });
+    } else if (document.body.contains(this.el)) {
+      setTimeout(() => this.renderWidget(), 100);
+    }
+  },
+};
+
 Hooks.CardSelection = {
   mounted() {
     this.selectedCards = new Set();

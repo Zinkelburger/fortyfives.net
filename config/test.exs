@@ -36,6 +36,9 @@ config :website_45s_v3, :game_timings,
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
 
+# Disable Turnstile entirely in tests (no widget, no verification)
+config :website_45s_v3, :turnstile_site_key, nil
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

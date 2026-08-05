@@ -2,8 +2,12 @@ defmodule Website45sV3Web.UserSessionController do
   use Website45sV3Web, :controller
 
   alias Website45sV3.Accounts
+  alias Website45sV3.Turnstile
   alias Website45sV3Web.UserAuth
 
+  # The Turnstile token for these two actions was already verified (and
+  # consumed) by the LiveView that triggered the follow-up log-in POST, so
+  # they are not re-checked here.
   def create(conn, %{"_action" => "registered"} = params) do
     create(conn, params, "Account created successfully!")
   end
@@ -15,7 +19,18 @@ defmodule Website45sV3Web.UserSessionController do
   end
 
   def create(conn, params) do
-    create(conn, params, "Welcome back!")
+    case Turnstile.verify(params["cf-turnstile-response"], Turnstile.client_ip(conn)) do
+      :ok ->
+        create(conn, params, "Welcome back!")
+
+      {:error, :turnstile_failed} ->
+        username_or_email = get_in(params, ["user", "username_or_email"]) || ""
+
+        conn
+        |> put_flash(:error, "Please complete the verification challenge and try again.")
+        |> put_flash(:username_or_email, String.slice(username_or_email, 0, 160))
+        |> redirect(to: ~p"/users/log_in")
+    end
   end
 
   defp create(

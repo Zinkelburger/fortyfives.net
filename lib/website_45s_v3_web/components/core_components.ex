@@ -310,6 +310,39 @@ defmodule Website45sV3Web.CoreComponents do
   end
 
   @doc """
+  Renders a Cloudflare Turnstile widget inside a form.
+
+  The widget injects a hidden `cf-turnstile-response` input into the form;
+  handlers verify it with `Website45sV3.Turnstile.verify/2`. Renders nothing
+  when no site key is configured (test env). The `Turnstile` JS hook renders
+  the widget explicitly and listens for the `turnstile:reset` event so a
+  failed submit gets a fresh token (tokens are single-use).
+
+  ## Examples
+
+      <.turnstile id="registration-turnstile" />
+  """
+  attr :id, :string, required: true
+
+  def turnstile(assigns) do
+    assigns = assign(assigns, :site_key, Website45sV3.Turnstile.site_key())
+
+    ~H"""
+    <div
+      :if={@site_key}
+      id={@id}
+      phx-hook="Turnstile"
+      phx-update="ignore"
+      class="cf-turnstile"
+      data-sitekey={@site_key}
+      data-action="turnstile-spin-v2"
+      style="margin-top: 8px;"
+    >
+    </div>
+    """
+  end
+
+  @doc """
   Renders a button.
 
   ## Examples

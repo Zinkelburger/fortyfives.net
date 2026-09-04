@@ -20,13 +20,22 @@ if System.get_env("PHX_SERVER") do
   config :website_45s_v3, Website45sV3Web.Endpoint, server: true
 end
 
-# Cloudflare Turnstile siteverify secret. Only override the compile-time
-# config when the variable is actually set, so dev's dummy secret survives.
-if turnstile_secret = System.get_env("TURNSTILE_SECRET") do
-  config :website_45s_v3, :turnstile_secret, turnstile_secret
+# Allow an explicit non-production override while preserving dev's dummy pair.
+if config_env() != :prod do
+  if turnstile_secret = System.get_env("TURNSTILE_SECRET") do
+    config :website_45s_v3, :turnstile_secret, turnstile_secret
+  end
 end
 
 if config_env() == :prod do
+  turnstile_secret = System.fetch_env!("TURNSTILE_SECRET")
+
+  if String.trim(turnstile_secret) == "" do
+    raise "environment variable TURNSTILE_SECRET must not be empty"
+  end
+
+  config :website_45s_v3, :turnstile_secret, turnstile_secret
+
   database_url =
     System.get_env("DATABASE_URL") ||
       raise """
@@ -62,12 +71,13 @@ if config_env() == :prod do
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://hexdocs.pm/plug_cowboy/Plug.Cowboy.html
+      # See the documentation on https://hexdocs.pm/bandit/Bandit.html
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: port
     ],
     secret_key_base: secret_key_base,
+    force_ssl: [hsts: true, rewrite_on: [:x_forwarded_proto]],
     check_origin: [
       "https://fortyfives.net",
       "https://www.fortyfives.net",
@@ -84,6 +94,7 @@ if config_env() == :prod do
   config :ueberauth, Ueberauth.Strategy.Google.OAuth,
     client_id: System.fetch_env!("GOOGLE_CLIENT_ID"),
     client_secret: System.fetch_env!("GOOGLE_CLIENT_SECRET")
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key

@@ -4,6 +4,7 @@ defmodule Website45sV3.Game.QueueStarter do
 
   alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Matchmaking
+  alias Website45sV3.Security.RateLimiter
 
   # API
   def start_link(_args) do
@@ -14,8 +15,8 @@ defmodule Website45sV3.Game.QueueStarter do
   Adds a player to the queue. Returns `:ok`, or `{:error, :already_in_game}`
   when the player is still seated in a running game — one game per session.
   """
-  def add_player({player_name, player_id}) do
-    GenServer.call(__MODULE__, {:add_player, {player_name, player_id}})
+  def add_player({player_name, player_id}, remote_ip \\ nil) do
+    GenServer.call(__MODULE__, {:add_player, {player_name, player_id}, remote_ip})
   end
 
   def remove_player({_player_name, player_id}) do
@@ -32,6 +33,14 @@ defmodule Website45sV3.Game.QueueStarter do
 
   def handle_call(
         {:add_player, {incoming_player_name, player_id}},
+        from,
+        state
+      ) do
+    handle_call({:add_player, {incoming_player_name, player_id}, nil}, from, state)
+  end
+
+  def handle_call(
+        {:add_player, {incoming_player_name, player_id}, remote_ip},
         _from,
         %{players: players} = state
       ) do
@@ -46,9 +55,12 @@ defmodule Website45sV3.Game.QueueStarter do
         # instead of accumulating a second one.
         {:reply, {:error, :already_in_game}, state}
 
+      not queue_admission_allowed?(remote_ip) ->
+        {:reply, {:error, :rate_limited}, state}
+
       true ->
         assigned_player_name = Matchmaking.assign_display_name(incoming_player_name, players)
-        Logger.info("Player joined queue: #{assigned_player_name} (ID: #{player_id})")
+        Logger.info("Player joined matchmaking queue")
 
         updated_players = players ++ [{assigned_player_name, player_id}]
 
@@ -74,8 +86,11 @@ defmodule Website45sV3.Game.QueueStarter do
   end
 
   def handle_call({:remove_player, player_id}, _from, %{players: players} = state) do
-    Logger.info("Player left queue (ID: #{player_id})")
+    Logger.info("Player left matchmaking queue")
     updated_players = Enum.reject(players, fn {_username, id} -> id == player_id end)
     {:reply, :ok, %{state | players: updated_players}}
   end
+
+  defp queue_admission_allowed?(nil), do: true
+  defp queue_admission_allowed?(remote_ip), do: RateLimiter.check_queue_join(remote_ip) == :ok
 end

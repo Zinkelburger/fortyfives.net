@@ -1,34 +1,33 @@
-FROM elixir:1.18-alpine
+FROM docker.io/library/elixir:1.18.4-otp-27-alpine@sha256:fc82bd1b1d3c2cc16bb8f944a0a28f0180682d0ae09406e880190df0986d0165
 
 # Install build dependencies
 RUN apk update && \
     apk upgrade --no-cache && \
     apk add --no-cache \
       build-base \
-      gcc \
       git \
-      make \
-      libc-dev \
       bash \
       inotify-tools \
-      postgresql-client \
-      erlang-dev
+      postgresql-client
+
+RUN addgroup -S app && adduser -S -G app -h /home/app app
 
 # Set the working directory inside the container
 WORKDIR /app
+RUN chown app:app /app
+USER app
 
 # Install hex, rebar, and the Phoenix framework itself
 RUN mix local.hex --force && \
-    mix local.rebar --force && \
-    mix archive.install hex phx_new 1.5.9 --force
+    mix local.rebar --force
 
 # Copy over all the necessary application files and directories
-COPY config/ config/
-COPY lib/ lib/
-COPY priv/ priv/
-COPY assets/ assets/
-COPY mix.exs .
-COPY mix.lock .
+COPY --chown=app:app config/ config/
+COPY --chown=app:app lib/ lib/
+COPY --chown=app:app priv/ priv/
+COPY --chown=app:app assets/ assets/
+COPY --chown=app:app mix.exs .
+COPY --chown=app:app mix.lock .
 
 # Fetch the application dependencies and compile the app
 RUN mix do deps.get, deps.compile, compile
@@ -37,7 +36,7 @@ RUN mix do deps.get, deps.compile, compile
 RUN mix phx.digest
 
 # Copy the entrypoint script to the container
-COPY entrypoint.sh /app/entrypoint.sh
+COPY --chown=app:app entrypoint.sh /app/entrypoint.sh
 
 # Make the script executable
 RUN chmod +x /app/entrypoint.sh

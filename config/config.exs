@@ -8,10 +8,17 @@
 import Config
 
 config :website_45s_v3,
-  ecto_repos: [Website45sV3.Repo]
+  ecto_repos: [Website45sV3.Repo],
+  security_rate_limits: [
+    login: [window_ms: 15 * 60 * 1000, max_ip: 30, max_account: 8],
+    queue: [window_ms: 60 * 60 * 1000, max_ip: 40, max_create_ip: 10],
+    registration: [window_ms: 60 * 60 * 1000, max_ip: 5],
+    email: [window_ms: 60 * 60 * 1000, max_ip: 20, max_address: 5]
+  ]
 
 # Configures the endpoint
 config :website_45s_v3, Website45sV3Web.Endpoint,
+  adapter: Bandit.PhoenixAdapter,
   url: [host: "fortyfives.net"],
   render_errors: [
     formats: [html: Website45sV3Web.ErrorHTML, json: Website45sV3Web.ErrorJSON],
@@ -31,7 +38,7 @@ config :website_45s_v3, Website45sV3.Mailer, adapter: Bamboo.LocalAdapter
 
 # Configure esbuild (the version is required)
 config :esbuild,
-  version: "0.17.11",
+  version: "0.25.9",
   default: [
     args:
       ~w(js/app.js --bundle --target=es2017 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
@@ -41,7 +48,7 @@ config :esbuild,
 
 # Configure tailwind (the version is required)
 config :tailwind,
-  version: "3.3.2",
+  version: "3.4.17",
   default: [
     args: ~w(
       --config=tailwind.config.js

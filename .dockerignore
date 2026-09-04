@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+_build
+deps
+assets/node_modules
+python
+test
+cover
+doc
+tmp

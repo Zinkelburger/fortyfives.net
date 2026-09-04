@@ -2,10 +2,11 @@ import Config
 
 # Configure your database
 config :website_45s_v3, Website45sV3.Repo,
-  username: "postgres",
-  password: "dataBaseWaterBottle",
-  hostname: "localhost",
-  database: "website_45s_v3_dev",
+  username: System.get_env("DATABASE_USER", "postgres"),
+  password: System.get_env("DATABASE_PASSWORD", "postgres"),
+  hostname: System.get_env("DATABASE_HOST", "localhost"),
+  port: String.to_integer(System.get_env("DATABASE_PORT", "5432")),
+  database: System.get_env("DATABASE_NAME", "website_45s_v3_dev"),
   stacktrace: true,
   show_sensitive_data_on_connection_error: false,
   pool_size: 10

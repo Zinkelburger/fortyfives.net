@@ -82,6 +82,22 @@ defmodule Website45sV3.AccountsTest do
       assert "should be at most 72 character(s)" in errors_on(changeset).password
     end
 
+    test "rejects control characters and whitespace in usernames" do
+      # "trailing\n" is the case the old `^…$` anchors let through: in PCRE `$`
+      # also matches immediately before a final newline.
+      for username <- [
+            "line\nbreak",
+            "tab\tname",
+            "space name",
+            "ansi\e[31m",
+            "trailing\n",
+            "\nleading"
+          ] do
+        {:error, changeset} = Accounts.register_user(valid_user_attributes(username: username))
+        assert errors_on(changeset).username != []
+      end
+    end
+
     test "validates email uniqueness" do
       %{email: email} = user_fixture()
 

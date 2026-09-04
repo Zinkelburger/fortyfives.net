@@ -1,8 +1,8 @@
 #!/bin/sh
 
 # Initialize variables
-host="localhost"
-port="5432"
+host="${DATABASE_HOST:-localhost}"
+port="${DATABASE_PORT:-5432}"
 max_attempts=15
 current_attempt=1
 

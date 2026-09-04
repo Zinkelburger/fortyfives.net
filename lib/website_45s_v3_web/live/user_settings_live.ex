@@ -19,7 +19,13 @@ defmodule Website45sV3Web.UserSettingsLive do
           phx-submit="update_email"
           phx-change="validate_email"
         >
-          <.input field={@email_form[:email]} type="email" label="New Email" required background_color="071f31"/>
+          <.input
+            field={@email_form[:email]}
+            type="email"
+            label="New Email"
+            required
+            background_color="071f31"
+          />
           <.input
             field={@email_form[:current_password]}
             name="current_password"
@@ -53,6 +59,7 @@ defmodule Website45sV3Web.UserSettingsLive do
           phx-submit="update_password"
           phx-trigger-action={@trigger_submit}
         >
+          <input type="hidden" name="post_auth_token" value={@post_auth_token} />
           <.input
             field={@password_form[:email]}
             type="hidden"
@@ -115,6 +122,7 @@ defmodule Website45sV3Web.UserSettingsLive do
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
       |> assign(:trigger_submit, false)
+      |> assign(:post_auth_token, nil)
 
     {:ok, socket}
   end
@@ -174,7 +182,14 @@ defmodule Website45sV3Web.UserSettingsLive do
           |> Accounts.change_user_password(user_params)
           |> to_form()
 
-        {:noreply, assign(socket, trigger_submit: true, password_form: password_form)}
+        post_auth_token = Phoenix.Token.sign(socket, "post-auth", {:password_updated, user.id})
+
+        {:noreply,
+         assign(socket,
+           trigger_submit: true,
+           password_form: password_form,
+           post_auth_token: post_auth_token
+         )}
 
       {:error, changeset} ->
         {:noreply, assign(socket, password_form: to_form(changeset))}

@@ -377,11 +377,15 @@ defmodule Website45sV3.Accounts do
           username = String.split(info.email, "@") |> hd()
 
           %User{}
-          |> User.registration_changeset(%{email: info.email, username: username, password: password})
+          |> User.registration_changeset(%{
+            email: info.email,
+            username: username,
+            password: password
+          })
           |> Ecto.Changeset.change(
-                      confirmed_at: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second),
-                      google_uid: uid
-                    )
+            confirmed_at: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second),
+            google_uid: uid
+          )
           |> Repo.insert()
 
         %User{} = user when is_nil(user.google_uid) ->

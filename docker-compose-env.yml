@@ -1,19 +1,17 @@
 services:
   web:
-    image: thwar/fortyfives.net:latest
+    image: ${APP_IMAGE:?Set APP_IMAGE to an immutable image digest}
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     depends_on:
       - db
     env_file:
       - .env
 
   db:
-    image: postgres:15
+    image: docker.io/library/postgres:15.18-alpine3.22@sha256:b829a702021452451951dbfb2def91e920f9182cf63ba8e74642e388ad35aef2
     volumes:
       - db_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     env_file:
       - .env
 

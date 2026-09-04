@@ -1,11 +1,16 @@
 defmodule Website45sV3.Game.QueueTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.BotSupervisor
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.QueueStarter
+  alias Website45sV3.Security.RateLimiter
+
+  setup do
+    :ok = RateLimiter.reset()
+  end
 
   defp from, do: {self(), make_ref()}
 
@@ -53,24 +58,162 @@ defmodule Website45sV3.Game.QueueTest do
   describe "PrivateQueueManager" do
     test "creating lobbies is rate limited per owner" do
       state = %{queues: %{}, last_created: %{}}
+      first_id = Ecto.UUID.generate()
+      second_id = Ecto.UUID.generate()
 
       {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:create_queue, "q1", "owner"}, from(), state)
+        PrivateQueueManager.handle_call({:create_queue, first_id, "owner"}, from(), state)
 
       {:reply, {:error, :too_soon}, _state} =
-        PrivateQueueManager.handle_call({:create_queue, "q2", "owner"}, from(), state)
+        PrivateQueueManager.handle_call({:create_queue, second_id, "owner"}, from(), state)
+    end
+
+    test "rotating session IDs cannot bypass the private-lobby network limit" do
+      previous = Application.get_env(:website_45s_v3, :security_rate_limits)
+
+      Application.put_env(:website_45s_v3, :security_rate_limits,
+        login: [window_ms: 60_000, max_ip: 100, max_account: 100],
+        queue: [window_ms: 60_000, max_ip: 100, max_create_ip: 1]
+      )
+
+      on_exit(fn ->
+        Application.put_env(:website_45s_v3, :security_rate_limits, previous)
+        RateLimiter.reset()
+      end)
+
+      state = %{queues: %{}, last_created: %{}}
+
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call(
+          {:create_queue, Ecto.UUID.generate(), "owner_1", "203.0.113.7"},
+          from(),
+          state
+        )
+
+      {:reply, {:error, :rate_limited}, _state} =
+        PrivateQueueManager.handle_call(
+          {:create_queue, Ecto.UUID.generate(), "owner_2", "203.0.113.7"},
+          from(),
+          state
+        )
+    end
+
+    test "an empty lobby survives an unmount so the share link keeps working" do
+      state = %{queues: %{}, last_created: %{}}
+      private_id = Ecto.UUID.generate()
+
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
+
+      # QueueLive.terminate/2 fires on every unmount of the lobby page —
+      # including a plain refresh by the owner, who has not joined yet.
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call({:remove_player, private_id, "owner"}, from(), state)
+
+      assert {:reply, true, state} =
+               PrivateQueueManager.handle_call({:queue_exists, private_id}, from(), state)
+
+      # ...and the owner can still join after coming back.
+      assert {:reply, :ok, _state} =
+               PrivateQueueManager.handle_call(
+                 {:add_player, private_id, {"Alice", "owner"}},
+                 from(),
+                 state
+               )
+    end
+
+    test "the last player can leave and rejoin their own lobby" do
+      state = %{queues: %{}, last_created: %{}}
+      private_id = Ecto.UUID.generate()
+
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
+
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call(
+          {:add_player, private_id, {"Alice", "user_1"}},
+          from(),
+          state
+        )
+
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call({:remove_player, private_id, "user_1"}, from(), state)
+
+      assert {:reply, :ok, state} =
+               PrivateQueueManager.handle_call(
+                 {:add_player, private_id, {"Alice", "user_1"}},
+                 from(),
+                 state
+               )
+
+      assert {:reply, [{"Alice", "user_1"}], _state} =
+               PrivateQueueManager.handle_call({:queue_players, private_id}, from(), state)
+    end
+
+    test "a lobby left empty is reaped by the sweeper well before the full TTL" do
+      long_ago = System.monotonic_time(:millisecond) - 30 * 60 * 1000
+
+      state = %{
+        queues: %{
+          "abandoned" => %{
+            players: [],
+            owner: nil,
+            created_at: System.monotonic_time(:millisecond),
+            empty_since: long_ago
+          },
+          "occupied" => %{
+            players: [{"Alice", "user_1"}],
+            owner: nil,
+            created_at: System.monotonic_time(:millisecond),
+            empty_since: nil
+          }
+        },
+        last_created: %{}
+      }
+
+      {:noreply, state} = PrivateQueueManager.handle_info(:sweep, state)
+
+      assert Map.keys(state.queues) == ["occupied"]
     end
 
     test "the same user cannot join a lobby twice" do
       state = %{queues: %{}, last_created: %{}}
+      private_id = Ecto.UUID.generate()
 
       {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:add_player, "q1", {"Alice", "user_1"}}, from(), state)
+        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
 
       {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:add_player, "q1", {"Alice", "user_1"}}, from(), state)
+        PrivateQueueManager.handle_call(
+          {:add_player, private_id, {"Alice", "user_1"}},
+          from(),
+          state
+        )
 
-      assert get_in(state.queues, ["q1", :players]) == [{"Alice", "user_1"}]
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call(
+          {:add_player, private_id, {"Alice", "user_1"}},
+          from(),
+          state
+        )
+
+      assert get_in(state.queues, [private_id, :players]) == [{"Alice", "user_1"}]
+    end
+
+    test "joining an unknown or malformed lobby never allocates it" do
+      state = %{queues: %{}, last_created: %{}}
+
+      {:reply, {:error, :queue_not_found}, state} =
+        PrivateQueueManager.handle_call(
+          {:add_player, Ecto.UUID.generate(), {"Alice", "user_1"}},
+          from(),
+          state
+        )
+
+      {:reply, {:error, :invalid_id}, state} =
+        PrivateQueueManager.handle_call({:create_queue, "not-a-uuid", "owner"}, from(), state)
+
+      assert state.queues == %{}
     end
 
     test "a player seated in a running game cannot join a lobby" do
@@ -78,20 +221,29 @@ defmodule Website45sV3.Game.QueueTest do
       seat_in_game(user_id)
 
       state = %{queues: %{}, last_created: %{}}
+      private_id = Ecto.UUID.generate()
+
+      {:reply, :ok, state} =
+        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
 
       {:reply, {:error, :already_in_game}, state} =
-        PrivateQueueManager.handle_call({:add_player, "q1", {"Alice", user_id}}, from(), state)
+        PrivateQueueManager.handle_call(
+          {:add_player, private_id, {"Alice", user_id}},
+          from(),
+          state
+        )
 
-      assert get_in(state.queues, ["q1", :players]) == nil
+      assert get_in(state.queues, [private_id, :players]) == []
     end
 
     test "a private lobby can be filled with bots and starts a game" do
       unique = Integer.to_string(System.unique_integer([:positive]))
-      private_id = "test_lobby_" <> unique
+      private_id = Ecto.UUID.generate()
       user_id = "lobby_human_" <> unique
 
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
 
+      :ok = PrivateQueueManager.create_queue(private_id, user_id)
       :ok = PrivateQueueManager.add_player(private_id, {"Host", user_id})
 
       bots =

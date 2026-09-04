@@ -5,14 +5,19 @@ defmodule Website45sV3Web.UserAuth do
   import Phoenix.Controller
 
   alias Website45sV3.Accounts
-  alias UUID
 
   # Make the remember me cookie valid for 60 days.
   # If you want bump or reduce this value, also change
   # the token expiry itself in UserToken.
   @max_age 60 * 60 * 24 * 60
   @remember_me_cookie "_website45s_v3_web_user_remember_me"
-  @remember_me_options [sign: true, max_age: @max_age, same_site: "Lax"]
+  @remember_me_options [
+    sign: true,
+    max_age: @max_age,
+    same_site: "Lax",
+    secure: Application.compile_env(:website_45s_v3, :secure_cookies, false),
+    http_only: true
+  ]
 
   @doc """
   Logs the user in.
@@ -264,7 +269,7 @@ defmodule Website45sV3Web.UserAuth do
     {user_token, conn} = ensure_user_token(conn)
     user = user_token && Accounts.get_user_by_session_token(user_token)
 
-    user_id = get_session(conn, :user_id) || UUID.uuid4()
+    user_id = get_session(conn, :user_id) || Ecto.UUID.generate()
 
     conn
     |> put_session(:user_id, user_id)

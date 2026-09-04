@@ -3,6 +3,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
 
   alias Website45sV3.Accounts
   alias Website45sV3.Accounts.User
+  alias Website45sV3.Security.RateLimiter
   alias Website45sV3.Turnstile
 
   def render(assigns) do
@@ -16,7 +17,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
           class="font-semibold link"
           style="font-weight: bold;"
         >
-        <span style="text-decoration: underline;">Sign in</span>
+          <span style="text-decoration: underline;">Sign in</span>
         </.link>
         to your account
       </:subtitle>
@@ -34,14 +35,29 @@ defmodule Website45sV3Web.UserRegistrationLive do
         action={~p"/users/log_in?_action=registered"}
         method="post"
       >
+        <input type="hidden" name="post_auth_token" value={@post_auth_token} />
         <.error :if={@check_errors}>
           Oops, something went wrong! Please check the errors below.
         </.error>
 
         <div style="padding-top:5px;">
-          <.input field={@form[:username]} type="text" label="Username" required phx-debounce="400" background_color="071f31"/>
+          <.input
+            field={@form[:username]}
+            type="text"
+            label="Username"
+            required
+            phx-debounce="400"
+            background_color="071f31"
+          />
         </div>
-        <.input field={@form[:email]} type="email" label="Email" required phx-debounce="400" background_color="071f31"/>
+        <.input
+          field={@form[:email]}
+          type="email"
+          label="Email"
+          required
+          phx-debounce="400"
+          background_color="071f31"
+        />
         <.input
           field={@form[:password]}
           type="password"
@@ -54,7 +70,11 @@ defmodule Website45sV3Web.UserRegistrationLive do
         <.turnstile id="registration-turnstile" />
 
         <:actions>
-          <.button phx-disable-with="Creating account..." class="w-full green-button" style="margin-bottom: 0; margin-top: 0;">
+          <.button
+            phx-disable-with="Creating account..."
+            class="w-full green-button"
+            style="margin-bottom: 0; margin-top: 0;"
+          >
             Create an account
           </.button>
         </:actions>
@@ -77,7 +97,12 @@ defmodule Website45sV3Web.UserRegistrationLive do
 
     socket =
       socket
-      |> assign(trigger_submit: false, check_errors: false, show_password: false)
+      |> assign(
+        trigger_submit: false,
+        check_errors: false,
+        show_password: false,
+        post_auth_token: nil
+      )
       |> assign(:client_ip, client_ip(socket))
       |> assign_form(changeset)
 
@@ -85,8 +110,17 @@ defmodule Website45sV3Web.UserRegistrationLive do
   end
 
   def handle_event("save", %{"user" => user_params} = params, socket) do
-    with :ok <- Turnstile.verify(params["cf-turnstile-response"], socket.assigns.client_ip),
+    client_ip = socket.assigns.client_ip
+
+    # Turnstile gates the attempt, then a per-network budget caps how many
+    # accounts (and therefore confirmation emails) one source can create. The
+    # budget is only *checked* here and charged after the account exists, so a
+    # rejected changeset costs the visitor nothing.
+    with :ok <- Turnstile.verify(params["cf-turnstile-response"], client_ip),
+         :ok <- registration_allowed(client_ip),
          {:ok, user} <- Accounts.register_user(user_params) do
+      RateLimiter.record_registration(client_ip)
+
       {:ok, _} =
         Accounts.deliver_user_confirmation_instructions(
           user,
@@ -94,12 +128,23 @@ defmodule Website45sV3Web.UserRegistrationLive do
         )
 
       changeset = Accounts.change_user_registration(user)
-      {:noreply, socket |> assign(trigger_submit: true) |> assign_form(changeset)}
+      post_auth_token = Phoenix.Token.sign(socket, "post-auth", {:registered, user.id})
+
+      {:noreply,
+       socket
+       |> assign(trigger_submit: true, post_auth_token: post_auth_token)
+       |> assign_form(changeset)}
     else
       {:error, :turnstile_failed} ->
         {:noreply,
          socket
          |> put_flash(:error, "Please complete the verification challenge and try again.")
+         |> push_event("turnstile:reset", %{})}
+
+      {:error, :rate_limited} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "Too many accounts created from your network. Please try later.")
          |> push_event("turnstile:reset", %{})}
 
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -120,6 +165,12 @@ defmodule Website45sV3Web.UserRegistrationLive do
 
   def handle_event("toggle_visibility", _value, socket) do
     {:noreply, assign(socket, show_password: not socket.assigns.show_password)}
+  end
+
+  defp registration_allowed(client_ip) do
+    if RateLimiter.registration_exhausted?(client_ip),
+      do: {:error, :rate_limited},
+      else: :ok
   end
 
   defp client_ip(socket) do

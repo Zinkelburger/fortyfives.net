@@ -61,6 +61,25 @@ Hooks.Turnstile = {
   },
 };
 
+Hooks.CopyShareLink = {
+  mounted() {
+    this.copy = () => {
+      const shareLink = document.getElementById("share_link")
+      if (!shareLink) return
+
+      navigator.clipboard.writeText(shareLink.textContent.trim()).then(() => {
+        this.el.classList.add("copied")
+        setTimeout(() => this.el.classList.remove("copied"), 1500)
+      })
+    }
+
+    this.el.addEventListener("click", this.copy)
+  },
+  destroyed() {
+    this.el.removeEventListener("click", this.copy)
+  },
+}
+
 Hooks.CardSelection = {
   mounted() {
     this.selectedCards = new Set();

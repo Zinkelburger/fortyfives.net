@@ -2,6 +2,10 @@ defmodule Website45sV3.Accounts.User do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @banned_words_path Application.app_dir(:website_45s_v3, "priv/banned_words.txt")
+  @external_resource @banned_words_path
+  @banned_words @banned_words_path |> File.read!() |> String.split("\n", trim: true)
+
   schema "users" do
     field :username, :string
     field :email, :string
@@ -45,15 +49,16 @@ defmodule Website45sV3.Accounts.User do
   end
 
   defp validate_username(changeset) do
-    banned_words_path = :code.priv_dir(:website_45s_v3) |> Path.join("banned_words.txt")
-    banned_words = File.read!(banned_words_path) |> String.split("\n")
-
     changeset
     |> validate_required([:username])
     |> validate_length(:username, min: 3)
     |> validate_length(:username, max: 30)
-    |> validate_banned_words(banned_words)
-    |> validate_format(:username, ~r/^[^@]*$/, message: "Must not contain the @ sign")
+    |> validate_banned_words(@banned_words)
+    # \A and \z, not ^ and $: `$` also matches before a trailing newline, so
+    # the line anchors would let "name\n" through the control-character screen.
+    |> validate_format(:username, ~r/\A[\p{L}\p{N}_.-]+\z/u,
+      message: "May only contain letters, numbers, periods, underscores, and hyphens"
+    )
     |> unsafe_validate_unique(:username, Website45sV3.Repo)
   end
 

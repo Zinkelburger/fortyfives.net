@@ -6,5 +6,8 @@ defmodule Website45sV3Web.PageControllerTest do
     response = html_response(conn, 200)
     assert response =~ "Forty Fives | Play the 45s Card Game Online Free"
     assert response =~ "Play"
+
+    assert get_resp_header(conn, "content-security-policy") |> List.first() =~
+             "object-src 'none'"
   end
 end

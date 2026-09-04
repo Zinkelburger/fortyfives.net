@@ -9,21 +9,46 @@ defmodule Website45sV3Web.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {Website45sV3Web.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+    # `put_content_security_policy/2` below replaces this header with the real
+    # nonce-bearing policy. The conservative default stays here anyway: it is
+    # what a browser would get if that plug were ever dropped or reordered out
+    # of the pipeline, and it is the form Sobelow's Config.CSP check reads.
+    plug :put_secure_browser_headers, %{"content-security-policy" => "default-src 'self'"}
+    plug :put_content_security_policy
     plug :fetch_current_user
     plug :potentially_anonymous_user
     plug :assign_canonical_path
   end
 
-  pipeline :api do
-    plug :accepts, ["json"]
-    plug :fetch_session
-  end
+  defp put_content_security_policy(conn, _opts) do
+    nonce = Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 
-  # Other scopes may use custom stacks.
-  # scope "/api", Website45sV3Web do
-  #   pipe_through :api
-  # end
+    policy =
+      [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'self'",
+        "form-action 'self'",
+        "script-src 'self' 'nonce-#{nonce}' 'strict-dynamic' https://challenges.cloudflare.com",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "connect-src 'self' wss://fortyfives.net wss://www.fortyfives.net wss://fortyfives.gigalixirapp.com wss://www.fortyfives.gigalixirapp.com https://challenges.cloudflare.com",
+        # 'self' keeps Phoenix LiveReload's iframe working in dev; an explicit
+        # frame-src is not backed by default-src, so omitting it blocked the
+        # reloader silently.
+        "frame-src 'self' https://challenges.cloudflare.com",
+        "worker-src 'self' blob:",
+        "manifest-src 'self'",
+        "upgrade-insecure-requests"
+      ]
+      |> Enum.join("; ")
+
+    conn
+    |> assign(:csp_nonce, nonce)
+    |> put_resp_header("content-security-policy", policy)
+  end
 
   #  Bamboo mailbox preview in development
   if Application.compile_env(:website_45s_v3, :dev_routes) do
@@ -47,7 +72,6 @@ defmodule Website45sV3Web.Router do
 
     get "/:provider", AuthController, :request
     get "/:provider/callback", AuthController, :callback
-    post "/:provider/callback", AuthController, :callback
   end
 
   ## Authentication routes

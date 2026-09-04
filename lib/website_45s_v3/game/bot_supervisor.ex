@@ -35,7 +35,19 @@ defmodule Website45sV3.Game.BotSupervisor do
     if at_capacity?() do
       {:error, :too_many_bots}
     else
-      DynamicSupervisor.start_child(__MODULE__, {Website45sV3.Game.BotPlayerServer, arg})
+      case DynamicSupervisor.start_child(__MODULE__, {Website45sV3.Game.BotPlayerServer, arg}) do
+        {:ok, pid} ->
+          {:ok, pid}
+
+        # The bot refused to start because the queue would not take it (the
+        # lobby is gone, or it is rate limited). Unwrap the supervisor's
+        # shutdown tuple so callers see the reason itself.
+        {:error, {:shutdown, reason}} ->
+          {:error, reason}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 end

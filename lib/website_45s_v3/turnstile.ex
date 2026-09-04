@@ -12,9 +12,8 @@ defmodule Website45sV3.Turnstile do
       disables both the widget and verification entirely (test env).
     * `:turnstile_secret` — siteverify secret. In production it comes from
       the `TURNSTILE_SECRET` environment variable via `config/runtime.exs`.
-      If the site key is set but the secret is missing, verification is
-      skipped with a warning so a misconfigured deploy doesn't lock every
-      user out of signup/login.
+      Production refuses to start without it. Verification fails closed if a
+      site key is configured without a secret in any other environment.
   """
 
   require Logger
@@ -28,8 +27,9 @@ defmodule Website45sV3.Turnstile do
   @doc """
   Verifies a Turnstile token against Cloudflare's siteverify endpoint.
 
-  Returns `:ok` when the token is accepted (or when Turnstile is not
-  configured), `{:error, :turnstile_failed}` otherwise.
+  Returns `:ok` when the token is accepted, or when Turnstile is explicitly
+  disabled by setting the site key to `nil`. Returns
+  `{:error, :turnstile_failed}` otherwise.
   """
   def verify(token, remote_ip \\ nil) do
     cond do
@@ -37,8 +37,8 @@ defmodule Website45sV3.Turnstile do
         :ok
 
       secret() in [nil, ""] ->
-        Logger.warning("TURNSTILE_SECRET is not set — skipping Turnstile verification")
-        :ok
+        Logger.error("TURNSTILE_SECRET is not set — rejecting Turnstile verification")
+        {:error, :turnstile_failed}
 
       true ->
         do_verify(token, remote_ip)
@@ -78,28 +78,56 @@ defmodule Website45sV3.Turnstile do
   end
 
   @doc """
-  Best-effort client IP for a Plug connection, preferring proxy headers.
+  Best-effort client IP for a Plug connection. Forwarded headers are accepted
+  only when the direct peer is a loopback or private-network proxy.
   """
   def client_ip(%Plug.Conn{} = conn) do
-    headers =
-      Enum.flat_map(["cf-connecting-ip", "x-forwarded-for"], fn name ->
-        Enum.map(Plug.Conn.get_req_header(conn, name), &{name, &1})
-      end)
+    peer = unmap(conn.remote_ip)
 
-    from_headers(headers) || format_ip(conn.remote_ip)
+    if trusted_proxy?(peer) do
+      headers =
+        Enum.flat_map(["cf-connecting-ip", "x-forwarded-for"], fn name ->
+          Enum.map(Plug.Conn.get_req_header(conn, name), &{name, &1})
+        end)
+
+      from_headers(headers) || format_ip(peer)
+    else
+      format_ip(peer)
+    end
   end
 
   @doc """
   Best-effort client IP from LiveView `connect_info` (`:x_headers` and
   `:peer_data`). Either argument may be `nil` during static render.
+
+  Note that Phoenix only puts `x-` prefixed headers in `:x_headers`, so on this
+  path only `x-forwarded-for` can ever match — `nginx.conf` must keep setting
+  it, not just `CF-Connecting-IP`.
   """
   def client_ip(x_headers, peer_data) do
-    from_headers(x_headers || []) ||
-      case peer_data do
-        %{address: address} -> format_ip(address)
-        _ -> nil
-      end
+    peer_address = if is_map(peer_data), do: unmap(Map.get(peer_data, :address))
+
+    if trusted_proxy?(peer_address) do
+      from_headers(x_headers || []) || format_ip(peer_address)
+    else
+      format_ip(peer_address)
+    end
   end
+
+  @doc """
+  Rewrites an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`) to its plain IPv4
+  tuple, and passes anything else through.
+
+  The production endpoint binds `::`, so a dual-stack listener hands us every
+  IPv4 peer — including the reverse proxy — in mapped form. Without this the
+  proxy is not recognised as trusted, forwarded headers are dropped, and every
+  visitor collapses onto a single rate-limit key.
+  """
+  def unmap({0, 0, 0, 0, 0, 0xFFFF, a, b}) do
+    {Bitwise.bsr(a, 8), Bitwise.band(a, 0xFF), Bitwise.bsr(b, 8), Bitwise.band(b, 0xFF)}
+  end
+
+  def unmap(address), do: address
 
   defp from_headers(headers) do
     Enum.find_value(["cf-connecting-ip", "x-forwarded-for"], fn name ->
@@ -118,4 +146,15 @@ defmodule Website45sV3.Turnstile do
   end
 
   defp format_ip(_), do: nil
+
+  defp trusted_proxy?({127, _, _, _}), do: true
+  defp trusted_proxy?({10, _, _, _}), do: true
+  defp trusted_proxy?({192, 168, _, _}), do: true
+  defp trusted_proxy?({172, second, _, _}) when second in 16..31, do: true
+  defp trusted_proxy?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
+
+  defp trusted_proxy?({first, _, _, _, _, _, _, _}) when Bitwise.band(first, 0xFE00) == 0xFC00,
+    do: true
+
+  defp trusted_proxy?(_), do: false
 end

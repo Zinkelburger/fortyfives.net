@@ -8,18 +8,18 @@ on:
 
 jobs:
   e2e-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Cache Docker layers
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -45,9 +45,9 @@ jobs:
           chromedriver --version
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
       - name: Create and activate virtual environment
         run: |
@@ -55,7 +55,7 @@ jobs:
           source venv/bin/activate
 
       - name: Cache Python dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -69,6 +69,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Generate ephemeral database credentials
+        run: echo "E2E_DATABASE_PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
       - name: Run tbot instances   
         run: |
           set -euo pipefail
@@ -76,15 +79,15 @@ jobs:
           docker rm -f postgres-db my-elixir-app-container 2>/dev/null || true
 
           docker run -d --name postgres-db --network host \
-            -e POSTGRES_PASSWORD=dataBaseWaterBottle \
+            -e POSTGRES_PASSWORD="$E2E_DATABASE_PASSWORD" \
             -e POSTGRES_DB=website_45s_v3_dev \
-            postgres:15
+            docker.io/library/postgres:15.18-alpine3.22@sha256:b829a702021452451951dbfb2def91e920f9182cf63ba8e74642e388ad35aef2
 
           docker run -d --name my-elixir-app-container --network host \
             -e DATABASE_HOST=localhost \
             -e DATABASE_PORT=5432 \
             -e DATABASE_USER=postgres \
-            -e DATABASE_PASSWORD=dataBaseWaterBottle \
+            -e DATABASE_PASSWORD="$E2E_DATABASE_PASSWORD" \
             -e DATABASE_NAME=website_45s_v3_dev \
             -p 4000:4000 \
             my-elixir-app:latest
@@ -135,7 +138,7 @@ jobs:
 
       - name: Upload Selenium artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: selenium-e2e-artifacts
           path: |

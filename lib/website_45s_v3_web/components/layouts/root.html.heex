@@ -13,7 +13,10 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png" />
     <meta
       name="description"
-      content={assigns[:meta_description] || "Play the 45s card game online for free. Forty Fives (45s) is a classic trick-taking card game. Create a table, invite friends, and play in your browser. No download needed."}
+      content={
+        assigns[:meta_description] ||
+          "Play the 45s card game online for free. Forty Fives (45s) is a classic trick-taking card game. Create a table, invite friends, and play in your browser. No download needed."
+      }
     />
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -40,19 +43,26 @@
     <meta name="twitter:image" content="https://fortyfives.net/images/og-card.png" />
     <link rel="canonical" href={"https://fortyfives.net#{assigns[:canonical_path] || "/"}"} />
     <.live_title>
-      <%= assigns[:page_title] || "Forty Fives | Play the 45s Card Game Online Free" %>
+      {assigns[:page_title] || "Forty Fives | Play the 45s Card Game Online Free"}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
-    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    <script
+      nonce={assigns[:csp_nonce]}
+      defer
+      phx-track-static
+      type="text/javascript"
+      src={~p"/assets/app.js"}
+    >
     </script>
     <script
       :if={Website45sV3.Turnstile.site_key()}
+      nonce={assigns[:csp_nonce]}
       src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
       async
       defer
     >
     </script>
-    <script type="application/ld+json">
+    <script nonce={assigns[:csp_nonce]} type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "WebApplication",
@@ -74,7 +84,7 @@
   </head>
   <body style="background: #041624;">
     <div class="content">
-      <%= @inner_content %>
+      {@inner_content}
     </div>
     <footer>
       <div class="container mx-auto text-center">

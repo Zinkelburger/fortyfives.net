@@ -1,19 +1,14 @@
 # Use the official Elixir image as the base image
-FROM elixir:1.18-alpine as build
+FROM docker.io/library/elixir:1.18.4-otp-27-alpine@sha256:fc82bd1b1d3c2cc16bb8f944a0a28f0180682d0ae09406e880190df0986d0165 AS build
 
 # Install build dependencies
 RUN apk update && \
     apk upgrade --no-cache && \
     apk add --no-cache \
       build-base \
-      gcc \
       git \
-      make \
-      libc-dev \
       bash \
-      inotify-tools \
-      postgresql-client \
-      erlang-dev
+      postgresql-client
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -37,15 +32,14 @@ COPY mix.lock .
 RUN mix deps.get --only prod && \
     mix deps.compile
 
-# Compile assets and digest them (assuming esbuild or another tool is configured in your mix.exs)
-RUN mix assets.deploy && \
-    mix phx.digest
+# Compile and digest static assets.
+RUN mix assets.deploy
 
 # Build the release
 RUN mix release
 
 # Start a new build stage to create a cleaner final image
-FROM alpine:3.22
+FROM docker.io/library/alpine:3.22.5@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
 # Install runtime dependencies
 RUN apk update && \
@@ -57,17 +51,21 @@ RUN apk update && \
       postgresql-client \
       libstdc++
 
+RUN addgroup -S app && adduser -S -G app -h /app app
+
 # Set the working directory inside the container
 WORKDIR /app
 
 # Copy the release from the build stage
-COPY --from=build /app/_build/prod/rel/website_45s_v3 ./
+COPY --from=build --chown=app:app /app/_build/prod/rel/website_45s_v3 ./
 
 # Copy the entrypoint script to the container
-COPY prod_entrypoint.sh /app/entrypoint.sh
+COPY --chown=app:app prod_entrypoint.sh /app/entrypoint.sh
 
 # Make the script executable
 RUN chmod +x /app/entrypoint.sh
+
+USER app
 
 # Expose port 4000 for the app
 EXPOSE 4000

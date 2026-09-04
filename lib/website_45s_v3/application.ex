@@ -19,6 +19,7 @@ defmodule Website45sV3.Application do
       Website45sV3Web.Presence,
       # Start Finch
       {Finch, name: Website45sV3.Finch},
+      Website45sV3.Security.RateLimiter,
       # Start the Endpoint (http/https)
       Website45sV3Web.Endpoint,
       Website45sV3.Game.ActiveGames,

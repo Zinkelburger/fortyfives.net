@@ -8,7 +8,9 @@ defmodule Website45sV3Web.Endpoint do
     store: :cookie,
     key: "_website_45s_v3_key",
     signing_salt: "HKncTFYb",
-    same_site: "Lax"
+    same_site: "Lax",
+    secure: Application.compile_env(:website_45s_v3, :secure_cookies, false),
+    http_only: true
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
@@ -41,7 +43,8 @@ defmodule Website45sV3Web.Endpoint do
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
+    parsers: [:urlencoded, :json],
+    length: 1_000_000,
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 

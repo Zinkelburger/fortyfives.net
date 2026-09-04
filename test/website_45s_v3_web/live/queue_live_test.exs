@@ -14,6 +14,12 @@ defmodule Website45sV3Web.QueueLiveTest do
 
   defp unique(prefix), do: prefix <> Integer.to_string(System.unique_integer([:positive]))
 
+  defp create_private_lobby(owner_id) do
+    private_id = Ecto.UUID.generate()
+    :ok = PrivateQueueManager.create_queue(private_id, owner_id)
+    private_id
+  end
+
   defp anon_conn(conn, user_id) do
     conn
     |> Phoenix.ConnTest.init_test_session(%{})
@@ -138,7 +144,7 @@ defmodule Website45sV3Web.QueueLiveTest do
     test "bots can be added back-to-back without a cooldown", %{conn: conn} do
       on_exit(&kill_all_bots/0)
       user = unique("qlt_user_")
-      private_id = unique("qlt_lobby_")
+      private_id = create_private_lobby(user)
 
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
 
@@ -152,7 +158,7 @@ defmodule Website45sV3Web.QueueLiveTest do
     test "one user can have at most 3 bots waiting in a queue", %{conn: conn} do
       on_exit(&kill_all_bots/0)
       user = unique("qlt_user_")
-      private_id = unique("qlt_lobby_")
+      private_id = create_private_lobby(user)
 
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
 
@@ -166,7 +172,7 @@ defmodule Website45sV3Web.QueueLiveTest do
     test "fill_bots starts a private game in one click", %{conn: conn} do
       on_exit(&kill_all_bots/0)
       user = unique("qlt_user_")
-      private_id = unique("qlt_lobby_")
+      private_id = create_private_lobby(user)
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user}")
 
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")

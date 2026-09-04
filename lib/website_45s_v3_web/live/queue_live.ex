@@ -6,7 +6,7 @@ defmodule Website45sV3Web.QueueLive do
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.QueueStarter
   alias Website45sV3.Game.PrivateQueueManager
-  alias UUID
+  alias Website45sV3.Turnstile
 
   # A player only ever needs 3 bots to fill their game, so that is the cap on
   # bots one session can have waiting in a queue. The global process cap
@@ -22,29 +22,48 @@ defmodule Website45sV3Web.QueueLive do
       end
 
     user_id = Map.get(session, "user_id", "default_id")
+    client_ip = client_ip(socket) || "session:#{user_id}"
     Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
 
     case socket.assigns.live_action do
       :private_game ->
         private_id = params["id"]
 
-        if connected?(socket) do
-          Phoenix.PubSub.subscribe(Website45sV3.PubSub, "private_queue:#{private_id}")
+        if PrivateQueueManager.queue_exists?(private_id) do
+          if connected?(socket) do
+            Phoenix.PubSub.subscribe(Website45sV3.PubSub, "private_queue:#{private_id}")
+          end
+
+          initial_queue = Presence.list("private_queue:#{private_id}")
+
+          {:ok,
+           socket
+           |> assign(
+             user_id: user_id,
+             display_name: display_name,
+             client_ip: client_ip,
+             queue: initial_queue,
+             in_queue: false,
+             private_id: private_id,
+             active_game: fetch_active_game(user_id),
+             page_title: "Private Game | Play 45s Online Free"
+           )}
+        else
+          # A connected mount that redirects still shuts the channel down
+          # through `terminate/2`, so the assigns it reads have to exist even
+          # on this path.
+          {:ok,
+           socket
+           |> assign(
+             user_id: user_id,
+             display_name: display_name,
+             client_ip: client_ip,
+             private_id: nil,
+             in_queue: false
+           )
+           |> put_flash(:error, "That private game link is invalid or has expired.")
+           |> redirect(to: ~p"/play")}
         end
-
-        initial_queue = Presence.list("private_queue:#{private_id}")
-
-        {:ok,
-         socket
-         |> assign(
-           user_id: user_id,
-           display_name: display_name,
-           queue: initial_queue,
-           in_queue: false,
-           private_id: private_id,
-           active_game: fetch_active_game(user_id),
-           page_title: "Private Game | Play 45s Online Free"
-         )}
 
       _ ->
         if connected?(socket) do
@@ -58,6 +77,7 @@ defmodule Website45sV3Web.QueueLive do
          |> assign(
            user_id: user_id,
            display_name: display_name,
+           client_ip: client_ip,
            queue: initial_queue,
            in_queue: false,
            tab: Map.get(params, "tab", "public"),
@@ -67,16 +87,28 @@ defmodule Website45sV3Web.QueueLive do
     end
   end
 
+  # `terminate/2` runs for aborted mounts too (an invalid private link redirects
+  # straight out of `mount/3`), so every clause tolerates missing assigns rather
+  # than raising a KeyError inside the shutting-down channel.
   def terminate(_reason, %{assigns: %{live_action: :private_game}} = socket) do
-    {_display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
-    private_id = socket.assigns.private_id
-    PrivateQueueManager.remove_player(private_id, user_id)
+    private_id = socket.assigns[:private_id]
+    user_id = socket.assigns[:user_id]
+
+    if is_binary(private_id) and not is_nil(user_id) do
+      PrivateQueueManager.remove_player(private_id, user_id)
+    end
+
     :ok
   end
 
   def terminate(_reason, socket) do
-    {display_name, user_id} = {socket.assigns.display_name, socket.assigns.user_id}
-    QueueStarter.remove_player({display_name, user_id})
+    display_name = socket.assigns[:display_name]
+    user_id = socket.assigns[:user_id]
+
+    if not is_nil(user_id) do
+      QueueStarter.remove_player({display_name, user_id})
+    end
+
     :ok
   end
 
@@ -110,14 +142,28 @@ defmodule Website45sV3Web.QueueLive do
 
       true ->
         # generate a random UUID for the private game
-        private_id = UUID.uuid4()
+        private_id = Ecto.UUID.generate()
 
-        case PrivateQueueManager.create_queue(private_id, socket.assigns.user_id) do
+        case PrivateQueueManager.create_queue(
+               private_id,
+               socket.assigns.user_id,
+               socket.assigns.client_ip
+             ) do
           :ok ->
             {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
 
           {:error, :too_soon} ->
             {:noreply, put_flash(socket, :error, "Please wait before creating another link")}
+
+          {:error, :too_many_lobbies} ->
+            {:noreply, put_flash(socket, :error, "Private games are temporarily at capacity")}
+
+          {:error, :rate_limited} ->
+            {:noreply,
+             put_flash(socket, :error, "Too many private games created from your network")}
+
+          {:error, :invalid_id} ->
+            {:noreply, put_flash(socket, :error, "Unable to create a private game")}
         end
     end
   end
@@ -248,10 +294,14 @@ defmodule Website45sV3Web.QueueLive do
     result =
       case socket.assigns.live_action do
         :private_game ->
-          PrivateQueueManager.add_player(socket.assigns.private_id, {display_name, user_id})
+          PrivateQueueManager.add_player(
+            socket.assigns.private_id,
+            {display_name, user_id},
+            socket.assigns.client_ip
+          )
 
         _ ->
-          QueueStarter.add_player({display_name, user_id})
+          QueueStarter.add_player({display_name, user_id}, socket.assigns.client_ip)
       end
 
     case result do
@@ -263,7 +313,26 @@ defmodule Website45sV3Web.QueueLive do
         socket
         |> assign(active_game: fetch_active_game(user_id))
         |> put_flash(:error, "You already have a game in progress.")
+
+      {:error, :rate_limited} ->
+        put_flash(
+          socket,
+          :error,
+          "Too many queue joins from your network. Please wait and try again."
+        )
+
+      {:error, :queue_not_found} ->
+        socket
+        |> put_flash(:error, "That private game link is invalid or has expired.")
+        |> push_navigate(to: ~p"/play")
     end
+  end
+
+  defp client_ip(socket) do
+    Turnstile.client_ip(
+      Phoenix.LiveView.get_connect_info(socket, :x_headers),
+      Phoenix.LiveView.get_connect_info(socket, :peer_data)
+    )
   end
 
   # Authoritative queue size (the assigns copy lags behind presence
@@ -315,6 +384,12 @@ defmodule Website45sV3Web.QueueLive do
         {:error, :too_many_bots} ->
           {:halt,
            put_flash(socket, :error, "Too many bots are playing right now. Try again soon.")}
+
+        {:error, :queue_not_found} ->
+          {:halt,
+           socket
+           |> put_flash(:error, "That private game link is invalid or has expired.")
+           |> push_navigate(to: ~p"/play")}
 
         {:error, _reason} ->
           {:halt, put_flash(socket, :error, "Could not add a bot. Try again.")}
@@ -407,14 +482,7 @@ defmodule Website45sV3Web.QueueLive do
             id="copy_button"
             type="button"
             class="share-link-copy"
-            onclick="
-              var url = document.getElementById('share_link').textContent.trim();
-              var btn = this;
-              navigator.clipboard.writeText(url).then(function() {
-                btn.classList.add('copied');
-                setTimeout(function() { btn.classList.remove('copied'); }, 1500);
-              });
-            "
+            phx-hook="CopyShareLink"
           >
             <svg
               class="copy-icon"

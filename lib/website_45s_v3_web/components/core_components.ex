@@ -48,7 +48,7 @@ defmodule Website45sV3Web.CoreComponents do
 
     ~H"""
     <div class="relative">
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}>{@label}</.label>
 
       <input
         type={@type}
@@ -87,7 +87,7 @@ defmodule Website45sV3Web.CoreComponents do
         <% end %>
       </button>
 
-      <.error :for={msg <- @errors}><%= msg %></.error>
+      <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
@@ -152,7 +152,7 @@ defmodule Website45sV3Web.CoreComponents do
                 </button>
               </div>
               <div id={"#{@id}-content"}>
-                <%= render_slot(@inner_block) %>
+                {render_slot(@inner_block)}
               </div>
             </.focus_wrap>
           </div>
@@ -180,10 +180,12 @@ defmodule Website45sV3Web.CoreComponents do
 
   def flash(assigns) do
     flash_msg = Phoenix.Flash.get(assigns.flash, assigns.kind)
+
     persistent_messages = [
       "You took too long. A bot is playing for you.",
       "Welcome back! A bot was playing for you when you left. Auto-play has been disabled."
     ]
+
     assigns = assign(assigns, :persistent_flash, flash_msg in persistent_messages)
 
     ~H"""
@@ -200,16 +202,18 @@ defmodule Website45sV3Web.CoreComponents do
       {@rest}
       phx-hook={unless @persistent_flash, do: "AutoDismissFlash"}
     >
-      <p :if={@title}
-         class="flex items-center gap-1.5 text-sm font-semibold leading-6"
-         style={if @kind == :info, do: "color: rgb(6, 95, 70);", else: "color: rgb(190, 18, 60);"}
+      <p
+        :if={@title}
+        class="flex items-center gap-1.5 text-sm font-semibold leading-6"
+        style={if @kind == :info, do: "color: rgb(6, 95, 70);", else: "color: rgb(190, 18, 60);"}
       >
         <.icon :if={@kind == :info} name="hero-information-circle-mini" class="h-4 w-4" />
         <.icon :if={@kind == :error} name="hero-exclamation-circle-mini" class="h-4 w-4" />
-        <%= @title %>
+        {@title}
       </p>
-      <p class="mt-2 text-sm leading-5"
-         style={if @kind == :info, do: "color: rgb(6, 95, 70);", else: "color: rgb(190, 18, 60);"}
+      <p
+        class="mt-2 text-sm leading-5"
+        style={if @kind == :info, do: "color: rgb(6, 95, 70);", else: "color: rgb(190, 18, 60);"}
       >
         {msg}
       </p>
@@ -224,12 +228,13 @@ defmodule Website45sV3Web.CoreComponents do
         />
       </button>
       <div
-      class="progress-bar"
-      style={
+        class="progress-bar"
+        style={
         "width: 100%; height: 4px; position: absolute; left: 0; right: 0; bottom: 0; background-color: " <>
         if(@kind == :info, do: "rgba(0, 255, 0, 0.5)", else: "rgba(255, 0, 0, 0.5)")
       }
-    ></div>
+      >
+      </div>
     </div>
     """
   end
@@ -300,9 +305,9 @@ defmodule Website45sV3Web.CoreComponents do
     ~H"""
     <.form :let={f} for={@for} as={@as} {@rest}>
       <div style={"background: ##{@background_color};"}>
-        <%= render_slot(@inner_block, f) %>
+        {render_slot(@inner_block, f)}
         <div :for={action <- @actions} class="mt-2 flex items-center justify-between gap-6">
-          <%= render_slot(action, f) %>
+          {render_slot(action, f)}
         </div>
       </div>
     </.form>
@@ -367,7 +372,7 @@ defmodule Website45sV3Web.CoreComponents do
       ]}
       {@rest}
     >
-      <%= render_slot(@inner_block) %>
+      {render_slot(@inner_block)}
     </button>
     """
   end
@@ -460,11 +465,11 @@ defmodule Website45sV3Web.CoreComponents do
         />
 
         <span class="relative -top-px">
-          <%= @label %>
+          {@label}
         </span>
       </label>
 
-      <.error :for={msg <- @errors}><%= msg %></.error>
+      <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
@@ -472,7 +477,7 @@ defmodule Website45sV3Web.CoreComponents do
   def input(%{type: "select"} = assigns) do
     ~H"""
     <div>
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}>{@label}</.label>
       <select
         id={@id}
         name={@name}
@@ -480,10 +485,10 @@ defmodule Website45sV3Web.CoreComponents do
         multiple={@multiple}
         {@rest}
       >
-        <option :if={@prompt} value=""><%= @prompt %></option>
-        <%= Phoenix.HTML.Form.options_for_select(@options, @value) %>
+        <option :if={@prompt} value="">{@prompt}</option>
+        {Phoenix.HTML.Form.options_for_select(@options, @value)}
       </select>
-      <.error :for={msg <- @errors}><%= msg %></.error>
+      <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
@@ -491,7 +496,7 @@ defmodule Website45sV3Web.CoreComponents do
   def input(%{type: "textarea"} = assigns) do
     ~H"""
     <div>
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}>{@label}</.label>
       <textarea
         id={@id}
         name={@name}
@@ -502,7 +507,7 @@ defmodule Website45sV3Web.CoreComponents do
         ]}
         {@rest}
       ><%= Phoenix.HTML.Form.normalize_value("textarea", @value) %></textarea>
-      <.error :for={msg <- @errors}><%= msg %></.error>
+      <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
@@ -510,7 +515,7 @@ defmodule Website45sV3Web.CoreComponents do
   def input(%{type: "password"} = assigns) do
     ~H"""
     <div style="background-color: #071f31; color: #d2e8f9;">
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}>{@label}</.label>
       <div class="relative">
         <input
           type={if @show_password, do: "password-text", else: "password"}
@@ -548,7 +553,7 @@ defmodule Website45sV3Web.CoreComponents do
         </button>
       </div>
       <div style="margin-top: -20px;">
-        <.error :for={msg <- @errors}><%= msg %></.error>
+        <.error :for={msg <- @errors}>{msg}</.error>
       </div>
     </div>
     """
@@ -558,7 +563,7 @@ defmodule Website45sV3Web.CoreComponents do
   def input(assigns) do
     ~H"""
     <div style={"background-color: ##{@background_color}; color: ##{@text_color};"}>
-      <.label for={@id}><%= @label %></.label>
+      <.label for={@id}>{@label}</.label>
       <input
         type={@type}
         name={@name}
@@ -573,7 +578,7 @@ defmodule Website45sV3Web.CoreComponents do
         {@rest}
       />
       <div style="margin-top: -20px;">
-        <.error :for={msg <- @errors}><%= msg %></.error>
+        <.error :for={msg <- @errors}>{msg}</.error>
       </div>
     </div>
     """
@@ -592,7 +597,7 @@ defmodule Website45sV3Web.CoreComponents do
       class="block text-sm font-semibold leading-6"
       style="color: #d2e8f9; margin-bottom: -8px;"
     >
-      <%= render_slot(@inner_block) %>
+      {render_slot(@inner_block)}
     </label>
     """
   end
@@ -606,7 +611,7 @@ defmodule Website45sV3Web.CoreComponents do
     ~H"""
     <p class="flex text-sm leading-6 text-rose-600">
       <.icon name="hero-exclamation-circle-mini" class="h-5 w-5 flex-none" />
-      <%= render_slot(@inner_block) %>
+      {render_slot(@inner_block)}
     </p>
     """
   end
@@ -628,13 +633,17 @@ defmodule Website45sV3Web.CoreComponents do
     >
       <div style="background-color: #071f31; padding-bottom:5px; border: 2px solid #d2e8f9; border-radius: 10px;">
         <h1 class="font-semibold leading-8 mt-3" style="color: #d2e8f9; font-size: 2rem; ">
-          <%= render_slot(@inner_block) %>
+          {render_slot(@inner_block)}
         </h1>
-        <p :if={@subtitle != []} class="text-xl leading-6" style="color: #d2e8f9; margin-top: -1.5rem; margin-bottom: 0.6rem;">
-          <%= render_slot(@subtitle) %>
+        <p
+          :if={@subtitle != []}
+          class="text-xl leading-6"
+          style="color: #d2e8f9; margin-top: -1.5rem; margin-bottom: 0.6rem;"
+        >
+          {render_slot(@subtitle)}
         </p>
       </div>
-      <div class="flex-none" style="background-color: #041624"><%= render_slot(@actions) %></div>
+      <div class="flex-none" style="background-color: #041624">{render_slot(@actions)}</div>
     </header>
     """
   end
@@ -675,8 +684,8 @@ defmodule Website45sV3Web.CoreComponents do
       <table class="w-[40rem] mt-11 sm:w-full">
         <thead class="text-sm text-left leading-6 text-zinc-500">
           <tr>
-            <th :for={col <- @col} class="p-0 pr-6 pb-4 font-normal"><%= col[:label] %></th>
-            <th class="relative p-0 pb-4"><span class="sr-only"><%= gettext("Actions") %></span></th>
+            <th :for={col <- @col} class="p-0 pr-6 pb-4 font-normal">{col[:label]}</th>
+            <th class="relative p-0 pb-4"><span class="sr-only">{gettext("Actions")}</span></th>
           </tr>
         </thead>
         <tbody
@@ -693,7 +702,7 @@ defmodule Website45sV3Web.CoreComponents do
               <div class="block py-4 pr-6">
                 <span class="absolute -inset-y-px right-0 -left-4 group-hover:bg-zinc-50 sm:rounded-l-xl" />
                 <span class={["relative", i == 0 && "font-semibold text-zinc-900"]}>
-                  <%= render_slot(col, @row_item.(row)) %>
+                  {render_slot(col, @row_item.(row))}
                 </span>
               </div>
             </td>
@@ -704,7 +713,7 @@ defmodule Website45sV3Web.CoreComponents do
                   :for={action <- @action}
                   class="relative ml-4 font-semibold leading-6 text-zinc-900 hover:text-zinc-700"
                 >
-                  <%= render_slot(action, @row_item.(row)) %>
+                  {render_slot(action, @row_item.(row))}
                 </span>
               </div>
             </td>
@@ -734,8 +743,8 @@ defmodule Website45sV3Web.CoreComponents do
     <div class="mt-14">
       <dl class="-my-4 divide-y divide-zinc-100">
         <div :for={item <- @item} class="flex gap-4 py-4 text-sm leading-6 sm:gap-8">
-          <dt class="w-1/4 flex-none text-zinc-500"><%= item.title %></dt>
-          <dd class="text-zinc-700"><%= render_slot(item) %></dd>
+          <dt class="w-1/4 flex-none text-zinc-500">{item.title}</dt>
+          <dd class="text-zinc-700">{render_slot(item)}</dd>
         </div>
       </dl>
     </div>
@@ -760,7 +769,7 @@ defmodule Website45sV3Web.CoreComponents do
         class="text-sm font-semibold leading-6 text-zinc-900 hover:text-zinc-700"
       >
         <.icon name="hero-arrow-left-solid" class="h-3 w-3" />
-        <%= render_slot(@inner_block) %>
+        {render_slot(@inner_block)}
       </.link>
     </div>
     """

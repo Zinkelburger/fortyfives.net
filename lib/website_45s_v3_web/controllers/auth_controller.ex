@@ -12,6 +12,7 @@ defmodule Website45sV3Web.AuthController do
     case Accounts.get_or_create_google_user(auth) do
       {:ok, user} ->
         UserAuth.log_in_user(conn, user)
+
       {:error, _reason} ->
         conn
         |> put_flash(:error, "Authentication failed")

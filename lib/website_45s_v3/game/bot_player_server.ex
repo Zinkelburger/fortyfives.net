@@ -44,33 +44,43 @@ defmodule Website45sV3.Game.BotPlayerServer do
   end
 
   defp init_bot(display_name, queue, queue_topic, requester) do
-    user_id = "bot_" <> UUID.uuid4()
+    user_id = "bot_" <> Ecto.UUID.generate()
 
-    Presence.track(self(), queue_topic, user_id, %{
-      display_name: display_name,
-      requester: requester
-    })
+    # Join the queue *before* tracking presence. A private lobby can be gone by
+    # now (it filled, was swept, or the link expired); tracking first would
+    # leave a bot showing in the lobby for the whole idle timeout without ever
+    # being in `queue.players`, which also makes `fill_bots` under-spawn.
+    result =
+      case queue do
+        :public ->
+          QueueStarter.add_player({display_name, user_id})
 
-    Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
+        {:private, private_id} ->
+          PrivateQueueManager.add_player(private_id, {display_name, user_id})
+      end
 
-    case queue do
-      :public ->
-        QueueStarter.add_player({display_name, user_id})
+    case result do
+      :ok ->
+        Presence.track(self(), queue_topic, user_id, %{
+          display_name: display_name,
+          requester: requester
+        })
 
-      {:private, private_id} ->
-        PrivateQueueManager.add_player(private_id, {display_name, user_id})
+        Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
+        Process.send_after(self(), :queue_idle_timeout, @queue_idle_timeout_ms)
+
+        {:ok,
+         %{
+           user_id: user_id,
+           display_name: display_name,
+           queue: queue,
+           queue_topic: queue_topic,
+           game: nil
+         }}
+
+      {:error, reason} ->
+        {:stop, {:shutdown, reason}}
     end
-
-    Process.send_after(self(), :queue_idle_timeout, @queue_idle_timeout_ms)
-
-    {:ok,
-     %{
-       user_id: user_id,
-       display_name: display_name,
-       queue: queue,
-       queue_topic: queue_topic,
-       game: nil
-     }}
   end
 
   @impl true

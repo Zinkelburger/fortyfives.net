@@ -1,5 +1,5 @@
 # Use the official Elixir image as the base image
-FROM docker.io/library/elixir:1.18.4-otp-27-alpine@sha256:fc82bd1b1d3c2cc16bb8f944a0a28f0180682d0ae09406e880190df0986d0165 AS build
+FROM docker.io/library/elixir:1.20.3-otp-29-alpine@sha256:8e4dcf7e98d3e06f4a6f56ed40e65b33b6bd84b0779698c8562d61d06218f314 AS build
 
 # Install build dependencies
 RUN apk update && \

@@ -4,7 +4,9 @@
 
 /* Site palette
    navy #041624 (page), #071f31 (panels), ice #d2e8f9 (text), sky #81cbf8
-   (links, primary buttons). Every text/background pair below is >= 4.5:1. */
+   (links, primary buttons). Body text pairs are >= 4.5:1; the large bold
+   green/red/blue action buttons keep their original brighter colours and
+   meet the 3:1 large-text threshold. */
 
 *, *:after, *:before {
         box-sizing: inherit
@@ -240,7 +242,7 @@ input[type='checkbox'], input[type='radio'] {
 
 .site-logo {
         display: block;
-        width: clamp(150px, 42vw, 440px);
+        width: 140px;
         height: auto;
         margin: 0;
 }
@@ -266,7 +268,7 @@ input[type='checkbox'], input[type='radio'] {
 
 .green-button {
         cursor: pointer;
-        background-color: #386636;
+        background-color: #5e905a;
         outline-color: transparent;
         border-color: transparent;
         color: #d2e8f9;
@@ -276,20 +278,20 @@ input[type='checkbox'], input[type='radio'] {
 }
 
 .green-button:hover {
-        background-color: #2f5c2d;
+        background-color: #52904f;
         transform: translateY(-1px);
         box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
 }
 
 .green-button:active {
-        background-color: #2b4f2a;
+        background-color: #457d44;
         transform: translateY(1px);
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
 .red-button {
         cursor: pointer;
-        background-color: #b8031d;
+        background-color: #d40422;
         outline-color: transparent;
         border-color: transparent;
         color: #d2e8f9;
@@ -299,7 +301,7 @@ input[type='checkbox'], input[type='radio'] {
 }
 
 .red-button:hover {
-        background-color: #9c0318;
+        background-color: #b9031c;
         transform: translateY(-1px);
         box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
 }
@@ -307,7 +309,7 @@ input[type='checkbox'], input[type='radio'] {
 /* Turns green while pressed so the swap to the green join button on the
    queue page reads as one motion. */
 .red-button:active {
-        background-color: #386636;
+        background-color: #5e905a;
         transform: translateY(1px);
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
@@ -542,29 +544,13 @@ input[type='checkbox'], input[type='radio'] {
 .request-bot-button {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        gap: 0.35rem;
-        height: 2.5rem;
-        padding: 0 0.9rem;
-        border-radius: 9999px;
-        background-color: #1d4ed8;
-        color: #fff;
-        border: none;
-        font-size: 0.9rem;
-        font-weight: 500;
+        gap: 0.4rem;
         white-space: nowrap;
-        cursor: pointer;
 }
 
-.request-bot-button:hover {
-        background-color: #1e40af;
-}
-
-/* One-click "Fill with Bots" — shaped like the queue's green/red buttons,
-   coloured like the bot button */
 .fill-bots-button {
         cursor: pointer;
-        background-color: #1d4ed8;
+        background-color: #2563eb;
         outline-color: transparent;
         border-color: transparent;
         color: #d2e8f9;
@@ -574,13 +560,13 @@ input[type='checkbox'], input[type='radio'] {
 }
 
 .fill-bots-button:hover {
-        background-color: #1e40af;
+        background-color: #1d4ed8;
         transform: translateY(-1px);
         box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
 }
 
 .fill-bots-button:active {
-        background-color: #1e3a8a;
+        background-color: #1e40af;
         transform: translateY(1px);
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }

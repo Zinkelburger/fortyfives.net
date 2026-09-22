@@ -567,7 +567,7 @@ defmodule Website45sV3Web.QueueLive do
     <button
       type="button"
       phx-click="request_bot"
-      class="request-bot-button"
+      class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 fill-bots-button request-bot-button"
       aria-label="Add a bot"
       title="Add a bot"
     >

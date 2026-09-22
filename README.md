@@ -55,6 +55,27 @@ a screenshot and page source to `artifacts/` (`TBOT_ARTIFACT_DIR`). The app
 rate-limits bot spawns per IP (6 per 10 minutes) and a run uses 5, so
 restart the server between back-to-back local runs.
 
+### UI check
+
+`.github/workflows/ui-check.yml` guards against accidental visual changes.
+On every push and PR it builds this commit and the one before it, then runs
+`python/ui_check.py` against both (key pages at desktop and 390px phone
+width):
+
+- **Layout invariants fail the build:** header height, logo size, no
+  sideways scrolling, queue buttons sharing one font and size, and the action
+  button colours. If you change one of these on purpose, update the
+  expected value in `ui_check.py` in the same commit.
+- **Screenshot diffs only warn:** `python/ui_diff.py` lists the pages that
+  look different in the job summary, and the `ui-screenshots` artifact has
+  before | after | changed-pixels images for each one.
+
+Locally, against a running server:
+
+```sh
+python python/ui_check.py --url http://localhost:4000 --out /tmp/ui/new --check
+```
+
 ## Quality checks
 
 CI runs these; run them locally before pushing:

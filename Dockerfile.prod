@@ -51,7 +51,7 @@ RUN mix release
 
 # Runtime stage. Alpine version/digest must match the builder image's
 # /etc/alpine-release (3.22.5) so the release's shared libraries line up.
-FROM docker.io/library/alpine:3.22.5@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+FROM docker.io/library/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 # Install runtime dependencies (busybox wget is used by the HEALTHCHECK)
 RUN apk update && \

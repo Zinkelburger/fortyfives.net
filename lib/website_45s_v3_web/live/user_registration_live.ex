@@ -1,6 +1,11 @@
 defmodule Website45sV3Web.UserRegistrationLive do
   use Website45sV3Web, :live_view
 
+  import Website45sV3Web.AuthLiveHelpers,
+    only: [client_ip: 1, password_field: 1, refuse_submit: 3]
+
+  require Logger
+
   alias Website45sV3.Accounts
   alias Website45sV3.Accounts.User
   alias Website45sV3.Security.RateLimiter
@@ -58,11 +63,10 @@ defmodule Website45sV3Web.UserRegistrationLive do
           phx-debounce="400"
           background_color="071f31"
         />
-        <.input
+        <.password_field
           field={@form[:password]}
-          type="password"
           label="Password"
-          show_password={@show_password}
+          autocomplete="new-password"
           required
           phx-debounce="400"
         />
@@ -97,12 +101,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
 
     socket =
       socket
-      |> assign(
-        trigger_submit: false,
-        check_errors: false,
-        show_password: false,
-        post_auth_token: nil
-      )
+      |> assign(trigger_submit: false, check_errors: false, post_auth_token: nil)
       |> assign(:client_ip, client_ip(socket))
       |> assign_form(changeset)
 
@@ -121,31 +120,30 @@ defmodule Website45sV3Web.UserRegistrationLive do
          {:ok, user} <- Accounts.register_user(user_params) do
       RateLimiter.record_registration(client_ip)
 
-      {:ok, _} =
-        Accounts.deliver_user_confirmation_instructions(
-          user,
-          &url(~p"/users/confirm/#{&1}")
-        )
+      # The account exists either way; a mail failure must not crash the
+      # sign-in that follows. The session controller turns the marker into a
+      # flash telling the user to request a new confirmation email.
+      payload =
+        case deliver_confirmation(user) do
+          :ok -> {:registered, user.id}
+          :error -> {:registered, user.id, :confirmation_email_failed}
+        end
 
       changeset = Accounts.change_user_registration(user)
-      post_auth_token = Phoenix.Token.sign(socket, "post-auth", {:registered, user.id})
+      post_auth_token = Phoenix.Token.sign(socket, "post-auth", payload)
 
       {:noreply,
        socket
        |> assign(trigger_submit: true, post_auth_token: post_auth_token)
        |> assign_form(changeset)}
     else
-      {:error, :turnstile_failed} ->
+      {:error, reason} when reason in [:turnstile_failed, :rate_limited] ->
         {:noreply,
-         socket
-         |> put_flash(:error, "Please complete the verification challenge and try again.")
-         |> push_event("turnstile:reset", %{})}
-
-      {:error, :rate_limited} ->
-        {:noreply,
-         socket
-         |> put_flash(:error, "Too many accounts created from your network. Please try later.")
-         |> push_event("turnstile:reset", %{})}
+         refuse_submit(
+           socket,
+           reason,
+           "Too many accounts created from your network. Please try later."
+         )}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         # The Turnstile token was consumed by the failed attempt; reset the
@@ -163,21 +161,21 @@ defmodule Website45sV3Web.UserRegistrationLive do
     {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
   end
 
-  def handle_event("toggle_visibility", _value, socket) do
-    {:noreply, assign(socket, show_password: not socket.assigns.show_password)}
+  defp deliver_confirmation(user) do
+    case Accounts.deliver_user_confirmation_instructions(user, &url(~p"/users/confirm/#{&1}")) do
+      {:ok, _email} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.error("Could not send confirmation email to user #{user.id}: #{inspect(reason)}")
+        :error
+    end
   end
 
   defp registration_allowed(client_ip) do
     if RateLimiter.registration_exhausted?(client_ip),
       do: {:error, :rate_limited},
       else: :ok
-  end
-
-  defp client_ip(socket) do
-    Turnstile.client_ip(
-      get_connect_info(socket, :x_headers),
-      get_connect_info(socket, :peer_data)
-    )
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

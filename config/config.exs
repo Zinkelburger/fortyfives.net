@@ -7,6 +7,10 @@
 # General application configuration
 import Config
 
+# `security_rate_limits` is the single source of truth for the rate limiter.
+# `Website45sV3.Security.RateLimiter` carries identical compile-time defaults
+# purely as a fallback when a key is absent; when changing a value here, keep
+# the module's @default_* attributes equal so both agree.
 config :website_45s_v3,
   ecto_repos: [Website45sV3.Repo],
   security_rate_limits: [
@@ -15,6 +19,18 @@ config :website_45s_v3,
     registration: [window_ms: 60 * 60 * 1000, max_ip: 5],
     email: [window_ms: 60 * 60 * 1000, max_ip: 20, max_address: 5]
   ]
+
+# Gameplay analytics retention (see Website45sV3.Analytics). Recording can
+# be switched off at runtime with REPLAY_RECORDING=false.
+config :website_45s_v3, Website45sV3.Analytics,
+  record_replays: true,
+  replay_days: 60,
+  replay_max_bytes: 2_000_000_000,
+  game_events_days: 365
+
+# Usernames allowed into /admin (replays, game logs). Set ADMIN_USERNAMES in
+# the environment; empty means nobody.
+config :website_45s_v3, :admin_usernames, []
 
 # Configures the endpoint
 config :website_45s_v3, Website45sV3Web.Endpoint,
@@ -41,7 +57,7 @@ config :esbuild,
   version: "0.25.9",
   default: [
     args:
-      ~w(js/app.js --bundle --target=es2017 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
+      ~w(js/app.js js/admin.js --bundle --target=es2017 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]

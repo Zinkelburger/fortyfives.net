@@ -1,12 +1,12 @@
-<div class="learn-container mx-auto px-3 bg-background text-text">
+<div class="learn-container mx-auto px-3">
   <section class="learn-hero pt-9 pb-5">
-    <h1 class="text-5xl font-bold text-primary mb-2">How to Play 45s</h1>
-    <div class="list-container">
+    <h1 class="text-5xl font-bold mb-2">How to Play 45s</h1>
+    <nav class="list-container" aria-label="On this page">
       <ul class="text-lg">
         <li class="mb-0"><a href="#rules">Rules</a></li>
         <li><a href="#ui">Playing Online</a></li>
       </ul>
-    </div>
+    </nav>
   </section>
 
   <section id="rules" class="rules">
@@ -34,17 +34,19 @@
       The game is played with a standard 52-card deck.
       Trump cards always beat offsuit cards, and the Ace of Hearts is always Trump. The full order is:
     </p>
+    <h4 class="text-xl font-semibold mb-2">Trump suits</h4>
     <ul class="text-lg mb-4">
-      <strong>Trump Suits:</strong>
       <li><strong>Hearts:</strong> 5, J, A, K, Q, 10, 9, 8, 7, 6, 4, 3, 2</li>
       <li><strong>Diamonds:</strong> 5, J, Ace of Hearts, A, K, Q, 10, 9, 8, 7, 6, 4, 3, 2</li>
       <li>
         <strong>Clubs & Spades:</strong> 5, J, Ace of Hearts, A, K, Q, 2, 3, 4, 6, 7, 8, 9, 10
       </li>
-      <strong>Off Suits:</strong>
-      <li>Hearts: K, Q, J, 10, 9, 8, 7, 6, 5, 4, 3, 2</li>
-      <li>Diamonds: K, Q, J, 10, 9, 8, 7, 6, 5, 4, 3, 2, A</li>
-      <li>Clubs & Spades: K, Q, J, A, 2, 3, 4, 5, 6, 7, 8, 9, 10</li>
+    </ul>
+    <h4 class="text-xl font-semibold mb-2">Off suits</h4>
+    <ul class="text-lg mb-4">
+      <li><strong>Hearts:</strong> K, Q, J, 10, 9, 8, 7, 6, 5, 4, 3, 2</li>
+      <li><strong>Diamonds:</strong> K, Q, J, 10, 9, 8, 7, 6, 5, 4, 3, 2, A</li>
+      <li><strong>Clubs & Spades:</strong> K, Q, J, A, 2, 3, 4, 5, 6, 7, 8, 9, 10</li>
     </ul>
 
     <hr class="my-6" />
@@ -60,6 +62,10 @@
       Bidding starts with the player to the left of the dealer and moves clockwise.
       Players can bid or pass, with bids starting at 15 points and increasing in multiples of 5 up to 30 points.
       Whoever had the highest bid names the trump suit. If no one bids, the dealer is "bagged" and must bid 15, choosing any suit as trump.
+    </p>
+    <p class="text-lg mb-4">
+      <strong>Holding:</strong> the dealer bids last and may <em>hold</em>, taking the bid at the
+      current high bid without raising it. A player who holds names trump just like any other bid winner.
     </p>
 
     <h3 class="text-2xl font-semibold mb-4">Discarding</h3>
@@ -97,7 +103,7 @@
       You can play 45s anonymously without logging in. Games are two-player teams.
     </p>
 
-    <h4 class="text-xl font-semibold mb-4">1. Start Playing</h4>
+    <h3 class="text-xl font-semibold mb-4">1. Start Playing</h3>
     <p class="text-lg mb-4">
       Click "Play" located in several places, such as the homepage or the top right corner.
     </p>
@@ -107,9 +113,12 @@
       class="w-3/4 my-4 mx-auto"
     />
 
-    <h4 class="text-xl font-semibold mb-4">2. Join the Queue</h4>
+    <h3 class="text-xl font-semibold mb-4">2. Join the Queue</h3>
     <p class="text-lg mb-4">
-      On the play page, join the queue and view other players in line. Once four players are in the queue, a game starts.
+      On the play page, join the queue and see who else is waiting. A game starts as soon as
+      four players are in. Don't want to wait? "Add a bot" fills one empty seat with a computer
+      player, and "Fill with Bots" fills every empty seat and starts the game right away.
+      To play with friends instead, open the "Play a Friend" tab and share the private link.
     </p>
     <img
       src="/images/learn/join_queue.gif"
@@ -117,7 +126,7 @@
       class="w-3/4 my-4 mx-auto"
     />
 
-    <h4 class="text-xl font-semibold mb-4">3. Bidding Phase</h4>
+    <h3 class="text-xl font-semibold mb-4">3. Bidding Phase</h3>
     <p class="text-lg mb-4">
       In the bidding phase, click the blue buttons to bid, then press "Bid" or "Pass." Remember, if no one bids, the dealer must bid.
     </p>
@@ -127,14 +136,14 @@
       class="w-3/4 my-4 mx-auto"
     />
 
-    <h4 class="text-xl font-semibold mb-4">4. Discarding Phase</h4>
+    <h3 class="text-xl font-semibold mb-4">4. Discarding Phase</h3>
     <p class="text-lg mb-4">
       Select the cards you want to keep, then press "Confirm Keep." Once all players have discarded, the game moves to the playing phase.
       Remember the game will force you to keep at least one card and no more than 5 cards.
     </p>
     <img src="/images/learn/discard.gif" alt="Discarding cards in 45s" class="w-3/4 my-4 mx-auto" />
 
-    <h4 class="text-xl font-semibold mb-4">5. Playing Phase</h4>
+    <h3 class="text-xl font-semibold mb-4">5. Playing Phase</h3>
     <p class="text-lg mb-4">
       The first player plays, and then play proceeds clockwise. Click the card you want to play and press "Play Card." Invalid cards are greyed out. Remember the player opposite you is your partner.
     </p>
@@ -144,9 +153,9 @@
       class="w-3/4 my-4 mx-auto"
     />
 
-    <h4 class="text-xl font-semibold mb-4">6. Scoring Phase</h4>
+    <h3 class="text-xl font-semibold mb-4">6. Scoring Phase</h3>
     <p class="text-lg mb-4">
-      The scoring phase shows results for both teams. The left column displays the total score, and the right column shows the change for this round. This screen is displayed for 8 seconds before the cycle restarts: Bidding -> Discarding -> Playing -> Scoring.
+      The scoring phase shows results for both teams. The left column displays the total score, and the right column shows the change for this round. This screen is displayed for a few seconds before the cycle restarts: Bidding -> Discarding -> Playing -> Scoring.
     </p>
     <img src="/images/learn/scoring.gif" alt="Scoring in forty fives" class="w-3/4 my-4 mx-auto" />
 

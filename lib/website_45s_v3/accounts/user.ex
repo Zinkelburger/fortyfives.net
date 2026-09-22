@@ -1,10 +1,81 @@
 defmodule Website45sV3.Accounts.User do
+  @moduledoc """
+  The user schema and its changesets.
+
+  Usernames are screened against `priv/banned_words.txt`. The screen is
+  deliberately narrow: a banned term only matches a *whole* username or a
+  whole separator-delimited word inside it (so "Cassidy", "Hancock" and
+  "Saturday" pass), but the name is first normalised — NFKC/NFKD folding,
+  diacritics stripped, common Unicode confusables and leet digits mapped back
+  to ASCII, separators removed — so "f.u.c.k", "ｆｕｃｋ", "fuсk" (Cyrillic с)
+  and "sh1t" all still match.
+  """
+
   use Ecto.Schema
   import Ecto.Changeset
 
   @banned_words_path Application.app_dir(:website_45s_v3, "priv/banned_words.txt")
   @external_resource @banned_words_path
-  @banned_words @banned_words_path |> File.read!() |> String.split("\n", trim: true)
+  @banned_words @banned_words_path
+                |> File.read!()
+                |> String.split("\n")
+                |> Enum.map(&String.trim/1)
+                |> Enum.reject(&(&1 == "" or String.starts_with?(&1, "#")))
+                |> Enum.map(&String.downcase/1)
+                |> MapSet.new()
+
+  # Look-alike characters folded to the ASCII letter they imitate. Cyrillic,
+  # Greek and a few Latin variants that render identically or near-identically
+  # in most fonts.
+  @confusables %{
+    # Cyrillic
+    "а" => "a",
+    "в" => "b",
+    "е" => "e",
+    "ё" => "e",
+    "з" => "3",
+    "і" => "i",
+    "ї" => "i",
+    "ј" => "j",
+    "к" => "k",
+    "м" => "m",
+    "н" => "h",
+    "о" => "o",
+    "р" => "p",
+    "с" => "c",
+    "т" => "t",
+    "у" => "y",
+    "х" => "x",
+    "ѕ" => "s",
+    "һ" => "h",
+    "ԁ" => "d",
+    "ѡ" => "w",
+    "ⅼ" => "l",
+    # Greek
+    "α" => "a",
+    "β" => "b",
+    "ε" => "e",
+    "η" => "n",
+    "ι" => "i",
+    "κ" => "k",
+    "ν" => "v",
+    "ο" => "o",
+    "ρ" => "p",
+    "τ" => "t",
+    "υ" => "u",
+    "χ" => "x",
+    # Latin variants
+    "ı" => "i",
+    "ł" => "l",
+    "ø" => "o",
+    "ß" => "ss",
+    "æ" => "ae",
+    "œ" => "oe"
+  }
+
+  @leet %{"0" => "o", "1" => "i", "3" => "e", "4" => "a", "5" => "s"}
+
+  @separators ~r/[._\-\s]+/u
 
   schema "users" do
     field :username, :string
@@ -39,49 +110,131 @@ defmodule Website45sV3.Accounts.User do
       using this changeset for validations on a LiveView form before
       submitting the form), this option can be set to `false`.
       Defaults to `true`.
+
+    * `:validate_username` - Same as `:validate_email`, for the username.
+      Defaults to `true`.
   """
   def registration_changeset(user, attrs, opts \\ []) do
     user
     |> cast(attrs, [:email, :password, :username])
     |> validate_email(opts)
     |> validate_password(opts)
-    |> validate_username()
+    |> validate_username(opts)
   end
 
-  defp validate_username(changeset) do
+  @doc """
+  Links a Google account to an existing user. Only ever applied to a
+  confirmed account (`Accounts.get_or_create_google_user/1` refuses
+  unconfirmed ones, since linking would let whoever holds the Google
+  account claim a username someone else registered), so it does not touch
+  `confirmed_at`.
+  """
+  def google_link_changeset(user, google_uid) when is_binary(google_uid) do
+    user
+    |> change(google_uid: google_uid)
+    |> unique_constraint(:google_uid)
+  end
+
+  @doc """
+  Reports whether `username` would pass every local (non-database) username
+  check: presence, length, character set and the banned-word screen.
+  """
+  def valid_username?(username) do
+    changeset =
+      %__MODULE__{}
+      |> cast(%{username: username}, [:username])
+      |> validate_username(validate_username: false)
+
+    changeset.valid?
+  end
+
+  @doc """
+  Reports whether `username` matches the banned-word screen described in the
+  module documentation.
+  """
+  def banned_username?(username) when is_binary(username) do
+    folded = fold(username)
+    whole = String.replace(folded, @separators, "")
+    words = String.split(folded, @separators, trim: true)
+
+    # A word such as "shit123" is caught by splitting on letter/digit
+    # boundaries, while "sh1t" is caught by leet folding; both are tried.
+    pieces =
+      Enum.flat_map(words, fn word ->
+        String.split(word, ~r/(?<=\p{L})(?=\p{N})|(?<=\p{N})(?=\p{L})/u, trim: true)
+      end)
+
+    ([whole, leet(whole)] ++ words ++ Enum.map(words, &leet/1) ++ pieces)
+    |> Enum.any?(&MapSet.member?(@banned_words, &1))
+  end
+
+  def banned_username?(_), do: false
+
+  defp fold(username) do
+    username
+    |> String.normalize(:nfkd)
+    |> String.replace(~r/\p{Mn}/u, "")
+    |> String.downcase()
+    |> String.graphemes()
+    |> Enum.map_join(&Map.get(@confusables, &1, &1))
+  end
+
+  defp leet(word) do
+    word
+    |> String.graphemes()
+    |> Enum.map_join(&Map.get(@leet, &1, &1))
+  end
+
+  defp validate_username(changeset, opts) do
     changeset
     |> validate_required([:username])
     |> validate_length(:username, min: 3)
     |> validate_length(:username, max: 30)
-    |> validate_banned_words(@banned_words)
+    |> validate_banned_words()
     # \A and \z, not ^ and $: `$` also matches before a trailing newline, so
     # the line anchors would let "name\n" through the control-character screen.
     |> validate_format(:username, ~r/\A[\p{L}\p{N}_.-]+\z/u,
       message: "May only contain letters, numbers, periods, underscores, and hyphens"
     )
-    |> unsafe_validate_unique(:username, Website45sV3.Repo)
+    |> maybe_validate_unique_username(opts)
   end
 
-  defp validate_banned_words(changeset, banned_words) do
-    username = Ecto.Changeset.get_field(changeset, :username)
+  defp validate_banned_words(changeset) do
+    username = get_field(changeset, :username)
 
-    if is_nil(username) do
-      changeset
+    if banned_username?(username) do
+      add_error(changeset, :username, "Contains a banned word")
     else
-      username = String.downcase(username)
-
-      if Enum.any?(banned_words, &String.contains?(username, &1)) do
-        Ecto.Changeset.add_error(changeset, :username, "Contains a banned word")
-      else
-        changeset
-      end
+      changeset
     end
   end
+
+  # The database constraint is always mapped to a form error; only the
+  # pre-insert lookup is optional, since it is what leaks on a live form.
+  defp maybe_validate_unique_username(changeset, opts) do
+    changeset
+    |> maybe_unsafe_validate_unique(:username, Keyword.get(opts, :validate_username, true))
+    |> unique_constraint(:username)
+  end
+
+  defp maybe_validate_unique_email(changeset, opts) do
+    changeset
+    |> maybe_unsafe_validate_unique(:email, Keyword.get(opts, :validate_email, true))
+    |> unique_constraint(:email)
+  end
+
+  defp maybe_unsafe_validate_unique(changeset, field, true) do
+    unsafe_validate_unique(changeset, field, Website45sV3.Repo)
+  end
+
+  defp maybe_unsafe_validate_unique(changeset, _field, false), do: changeset
 
   defp validate_email(changeset, opts) do
     changeset
     |> validate_required([:email])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "Must have the @ sign and no spaces")
+    |> validate_format(:email, ~r/\A[^\s]+@[^\s]+\z/,
+      message: "Must have the @ sign and no spaces"
+    )
     |> validate_length(:email, max: 160)
     |> maybe_validate_unique_email(opts)
   end
@@ -109,16 +262,6 @@ defmodule Website45sV3.Accounts.User do
       # would keep the database transaction open longer and hurt performance.
       |> put_change(:hashed_password, Bcrypt.hash_pwd_salt(password))
       |> delete_change(:password)
-    else
-      changeset
-    end
-  end
-
-  defp maybe_validate_unique_email(changeset, opts) do
-    if Keyword.get(opts, :validate_email, true) do
-      changeset
-      |> unsafe_validate_unique(:email, Website45sV3.Repo)
-      |> unique_constraint(:email)
     else
       changeset
     end

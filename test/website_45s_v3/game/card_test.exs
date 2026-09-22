@@ -95,7 +95,82 @@ defmodule Website45sV3.Game.CardTest do
     end
   end
 
+  describe "less_than/4 ace of hearts" do
+    test "when hearts are trump the ace of hearts sits below the jack and above the ace of trump" do
+      ace_hearts = %Card{value: 1, suit: :hearts}
+      jack = %Card{value: 11, suit: :hearts}
+      five = %Card{value: 5, suit: :hearts}
+      king = %Card{value: 13, suit: :hearts}
+
+      assert Card.less_than(ace_hearts, jack, :hearts, :hearts)
+      assert Card.less_than(ace_hearts, five, :hearts, :hearts)
+      assert Card.less_than(king, ace_hearts, :hearts, :hearts)
+      refute Card.less_than(ace_hearts, king, :hearts, :hearts)
+    end
+
+    test "the ace of hearts is a trump even when hearts are led and not trump" do
+      ace_hearts = %Card{value: 1, suit: :hearts}
+      king_hearts = %Card{value: 13, suit: :hearts}
+      two_trump = %Card{value: 2, suit: :clubs}
+
+      assert Card.less_than(king_hearts, ace_hearts, :hearts, :clubs)
+      assert Card.less_than(two_trump, ace_hearts, :hearts, :clubs)
+      assert Card.trump?(ace_hearts, :clubs)
+      refute Card.trump?(king_hearts, :clubs)
+    end
+  end
+
   describe "less_than/4 offsuit ordering" do
+    test "a black off-suit ace ranks between the jack and the 2" do
+      ace = %Card{value: 1, suit: :clubs}
+      jack = %Card{value: 11, suit: :clubs}
+      two = %Card{value: 2, suit: :clubs}
+
+      assert Card.less_than(ace, jack, :clubs, :hearts)
+      assert Card.less_than(two, ace, :clubs, :hearts)
+    end
+
+    test "a red off-suit ace is the lowest card of its suit" do
+      ace = %Card{value: 1, suit: :diamonds}
+      two = %Card{value: 2, suit: :diamonds}
+
+      assert Card.less_than(ace, two, :diamonds, :spades)
+      refute Card.less_than(two, ace, :diamonds, :spades)
+    end
+
+    test "cards that can neither win nor follow are still totally ordered" do
+      # Neither card is trump (spades) nor of the led suit (hearts).
+      king_clubs = %Card{value: 13, suit: :clubs}
+      two_diamonds = %Card{value: 2, suit: :diamonds}
+      two_clubs = %Card{value: 2, suit: :clubs}
+
+      assert Card.less_than(two_diamonds, king_clubs, :hearts, :spades)
+      refute Card.less_than(king_clubs, two_diamonds, :hearts, :spades)
+
+      # Equal off-suit ranks (2♦ counts 2, 9♣ counts 2) are broken by suit,
+      # never both ways.
+      nine_clubs = %Card{value: 9, suit: :clubs}
+      assert Card.less_than(two_diamonds, nine_clubs, :hearts, :spades)
+      refute Card.less_than(nine_clubs, two_diamonds, :hearts, :spades)
+
+      # and a card is never less than itself
+      refute Card.less_than(two_clubs, two_clubs, :hearts, :spades)
+    end
+
+    test "is antisymmetric over every pair of distinct cards, including when leading" do
+      cards =
+        for suit <- [:hearts, :diamonds, :clubs, :spades],
+            value <- 1..13,
+            do: Card.new(value, suit)
+
+      for suit_led <- [nil, :hearts, :clubs], trump <- [:spades, :hearts] do
+        for a <- cards, b <- cards, a != b do
+          assert Card.less_than(a, b, suit_led, trump) != Card.less_than(b, a, suit_led, trump),
+                 "#{Card.to_string(a)} vs #{Card.to_string(b)} (led #{suit_led}, trump #{trump})"
+        end
+      end
+    end
+
     test "the led suit beats offsuit junk" do
       led_card = %Card{value: 3, suit: :spades}
       offsuit = %Card{value: 13, suit: :clubs}
@@ -118,6 +193,20 @@ defmodule Website45sV3.Game.CardTest do
 
       assert Card.less_than(ten, two, :clubs, :hearts)
       assert Card.less_than(two, king, :clubs, :hearts)
+    end
+  end
+
+  describe "to_string/1 and ace_of_hearts?/1" do
+    test "names cards" do
+      assert Card.to_string(%Card{value: 5, suit: :hearts}) == "5 of Hearts"
+      assert Card.to_string(%Card{value: 1, suit: :spades}) == "Ace of Spades"
+      assert Card.to_string(%Card{value: 12, suit: :clubs}) == "Queen of Clubs"
+    end
+
+    test "recognises the ace of hearts in both shapes" do
+      assert Card.ace_of_hearts?(%Card{value: 1, suit: :hearts})
+      assert Card.ace_of_hearts?({:hearts, 1})
+      refute Card.ace_of_hearts?(%Card{value: 1, suit: :spades})
     end
   end
 

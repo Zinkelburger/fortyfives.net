@@ -14,15 +14,70 @@ defmodule Website45sV3.Turnstile do
       the `TURNSTILE_SECRET` environment variable via `config/runtime.exs`.
       Production refuses to start without it. Verification fails closed if a
       site key is configured without a secret in any other environment.
+    * `:turnstile_hostnames` — hostnames a token may have been solved on.
+      Defaults to `#{inspect(["fortyfives.net", "www.fortyfives.net", "localhost"])}`.
+      A token minted for any other site is refused even if Cloudflare accepts
+      it, so a leaked secret cannot be paired with a widget elsewhere.
+    * `:turnstile_http_client` — module implementing `post/4`; defaults to
+      `Website45sV3.Turnstile.FinchClient`. Tests swap in a stub.
+
+  Besides `success`, the siteverify response's `hostname` and `action` are
+  checked. Cloudflare's documented testing keys answer with
+  `hostname: "example.com"`, no `action`, and `metadata.result_with_testing_key`
+  set, so those two checks are skipped for such responses (dev only; a real
+  secret never produces that flag).
   """
 
   require Logger
 
   @siteverify_url "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
+  # Must match `data-action` on the widget in
+  # `Website45sV3Web.CoreComponents.turnstile/1`.
+  @expected_action "turnstile-spin-v2"
+
+  @default_hostnames ["fortyfives.net", "www.fortyfives.net", "localhost"]
+
+  @request_timeout_ms 5_000
+
+  defmodule FinchClient do
+    @moduledoc false
+
+    @doc """
+    POSTs a form body and returns `{:ok, status, body}` or `{:error, reason}`.
+    Both the pool checkout and the response wait are bounded so a slow
+    Cloudflare cannot hold a request process indefinitely.
+    """
+    def post(url, headers, body, timeout_ms) do
+      request = Finch.build(:post, url, headers, body)
+
+      case Finch.request(request, Website45sV3.Finch,
+             pool_timeout: timeout_ms,
+             receive_timeout: timeout_ms
+           ) do
+        {:ok, %Finch.Response{status: status, body: body}} -> {:ok, status, body}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
   def site_key, do: Application.get_env(:website_45s_v3, :turnstile_site_key)
 
+  @doc false
+  def expected_action, do: @expected_action
+
+  @doc """
+  Hostnames a Turnstile token may have been solved on.
+  """
+  def allowed_hostnames do
+    Application.get_env(:website_45s_v3, :turnstile_hostnames, @default_hostnames)
+  end
+
   defp secret, do: Application.get_env(:website_45s_v3, :turnstile_secret)
+
+  defp http_client do
+    Application.get_env(:website_45s_v3, :turnstile_http_client, FinchClient)
+  end
 
   @doc """
   Verifies a Turnstile token against Cloudflare's siteverify endpoint.
@@ -48,22 +103,30 @@ defmodule Website45sV3.Turnstile do
   defp do_verify(token, remote_ip) when is_binary(token) and token != "" do
     params = %{"secret" => secret(), "response" => token}
     params = if remote_ip, do: Map.put(params, "remoteip", remote_ip), else: params
+    headers = [{"content-type", "application/x-www-form-urlencoded"}]
 
-    request =
-      Finch.build(
-        :post,
-        @siteverify_url,
-        [{"content-type", "application/x-www-form-urlencoded"}],
-        URI.encode_query(params)
-      )
-
-    with {:ok, %Finch.Response{status: 200, body: body}} <-
-           Finch.request(request, Website45sV3.Finch),
-         {:ok, %{"success" => true}} <- Jason.decode(body) do
+    with {:ok, 200, body} <-
+           http_client().post(
+             @siteverify_url,
+             headers,
+             URI.encode_query(params),
+             @request_timeout_ms
+           ),
+         {:ok, %{"success" => true} = response} <- Jason.decode(body),
+         :ok <- check_hostname(response),
+         :ok <- check_action(response) do
       :ok
     else
       {:ok, %{"error-codes" => codes}} ->
         Logger.warning("Turnstile verification failed: #{inspect(codes)}")
+        {:error, :turnstile_failed}
+
+      {:error, {:unexpected_hostname, hostname}} ->
+        Logger.warning("Turnstile token was solved on unexpected host #{inspect(hostname)}")
+        {:error, :turnstile_failed}
+
+      {:error, {:unexpected_action, action}} ->
+        Logger.warning("Turnstile token carried unexpected action #{inspect(action)}")
         {:error, :turnstile_failed}
 
       other ->
@@ -75,6 +138,29 @@ defmodule Website45sV3.Turnstile do
   defp do_verify(_token, _remote_ip) do
     Logger.warning("Turnstile token missing from request")
     {:error, :turnstile_failed}
+  end
+
+  defp testing_key_response?(%{"metadata" => %{"result_with_testing_key" => true}}), do: true
+  defp testing_key_response?(_response), do: false
+
+  defp check_hostname(response) do
+    hostname = response["hostname"]
+
+    cond do
+      testing_key_response?(response) -> :ok
+      is_binary(hostname) and hostname in allowed_hostnames() -> :ok
+      true -> {:error, {:unexpected_hostname, hostname}}
+    end
+  end
+
+  defp check_action(response) do
+    action = response["action"]
+
+    cond do
+      testing_key_response?(response) -> :ok
+      action == @expected_action -> :ok
+      true -> {:error, {:unexpected_action, action}}
+    end
   end
 
   @doc """

@@ -35,13 +35,20 @@ website_45s_v3-*.tar
 npm-debug.log
 /assets/node_modules/
 
+# Environment files: the template (.env.example) is tracked; real ones are not.
 .env
 .env.*
 !.env.example
 venv
+
+# Local certbot webroot / state
+/certbot/
 
 ios
 node_modules
 __pycache__
 
 priv/static/images/cards-uncompressed
+
+# Claude Code agent worktrees
+/.claude/worktrees/

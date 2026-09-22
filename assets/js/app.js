@@ -1,19 +1,6 @@
-// If you want to use Phoenix channels, run `mix help phx.gen.channel`
-// to get started and then uncomment the line below.
-// import "./user_socket.js"
-
-// You can include dependencies in two ways.
-//
-// The simplest option is to put them in assets/vendor and
-// import them using relative paths:
-//
-//     import "../vendor/some-package.js"
-//
-// Alternatively, you can `npm install some-package --prefix assets` and import
-// them using a path starting with the package name:
-//
-//     import "some-package"
-//
+// Browser entry point: connects the LiveView socket and registers the
+// client-side hooks the game and lobby pages rely on (card selection,
+// Turnstile, the private-lobby share link, and flash auto-dismissal).
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
 import "phoenix_html"
@@ -21,6 +8,7 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
+import {record} from "../vendor/rrweb-record"
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
@@ -61,22 +49,58 @@ Hooks.Turnstile = {
   },
 };
 
+// Copies text to the clipboard. `navigator.clipboard` only exists in secure
+// contexts (https / localhost), so plain-http deployments fall back to the
+// legacy selection-based copy instead of throwing.
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text)
+  }
+
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement("textarea")
+    textarea.value = text
+    textarea.setAttribute("readonly", "")
+    textarea.style.position = "fixed"
+    textarea.style.opacity = "0"
+    document.body.appendChild(textarea)
+    textarea.select()
+    let copied = false
+    try {
+      copied = document.execCommand("copy")
+    } finally {
+      document.body.removeChild(textarea)
+    }
+    copied ? resolve() : reject(new Error("copy unsupported"))
+  })
+}
+
 Hooks.CopyShareLink = {
   mounted() {
     this.copy = () => {
       const shareLink = document.getElementById("share_link")
       if (!shareLink) return
 
-      navigator.clipboard.writeText(shareLink.textContent.trim()).then(() => {
-        this.el.classList.add("copied")
-        setTimeout(() => this.el.classList.remove("copied"), 1500)
-      })
+      copyText(shareLink.textContent.trim())
+        .then(() => {
+          this.el.classList.add("copied")
+          this.timeout = setTimeout(() => this.el.classList.remove("copied"), 1500)
+        })
+        .catch(() => {
+          // Leave the URL selectable so the user can copy it by hand.
+          const range = document.createRange()
+          range.selectNodeContents(shareLink)
+          const selection = window.getSelection()
+          selection.removeAllRanges()
+          selection.addRange(range)
+        })
     }
 
     this.el.addEventListener("click", this.copy)
   },
   destroyed() {
     this.el.removeEventListener("click", this.copy)
+    if (this.timeout) clearTimeout(this.timeout)
   },
 }
 
@@ -188,20 +212,32 @@ Hooks.CardSelection = {
   }
 };
 
+// Drains the progress bar of a flash message and then clicks it away. Only
+// real, visible flashes get this hook (see CoreComponents.flash/1); the
+// hidden connection-error flashes must not dismiss themselves.
 Hooks.AutoDismissFlash = {
-    mounted() {
-      let progressBar = this.el.querySelector('.progress-bar');
-      let width = 100;
-      let interval = setInterval(() => {
-        width -= 2;
-        progressBar.style.width = width + '%';
-        if (width <= 0) {
-          clearInterval(interval);
-          this.el.click();
-        }
-      }, 30);
+  mounted() {
+    const progressBar = this.el.querySelector('.progress-bar');
+    let width = 100;
+    this.interval = setInterval(() => {
+      width -= 2;
+      if (progressBar) progressBar.style.width = width + '%';
+      if (width <= 0) {
+        this.stop();
+        this.el.click();
+      }
+    }, 30);
+  },
+  destroyed() {
+    this.stop();
+  },
+  stop() {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
     }
-  };
+  }
+};
 
 Hooks.ScoringCountdown = {
   mounted() {
@@ -258,6 +294,121 @@ Hooks.ConfirmDiscardButton = {
   }
 }
 
+// Records the game page with rrweb (DOM, clicks, sampled mouse movement)
+// and ships the events to the server in batches over the LiveView socket,
+// where they are stored gzipped (see Website45sV3.Analytics). Only the game
+// page is recorded, inputs are masked, and the server can switch recording
+// off with data-record="false". Each click is also described (what was
+// clicked, did it do anything) and sent alongside the batch, which is what
+// the analysis reads: rrweb's own click events only carry node ids.
+Hooks.SessionRecorder = {
+  FLUSH_MS: 10000,
+  MAX_BUFFER: 400,
+
+  mounted() {
+    if (this.el.dataset.record !== "true") return
+    this.seq = 0
+    this.buffer = []
+    this.clicks = []
+    this.stopRecording = record({
+      emit: (event) => {
+        this.buffer.push(event)
+        if (this.buffer.length >= this.MAX_BUFFER) this.flush()
+      },
+      maskAllInputs: true,
+      slimDOMOptions: "all",
+      sampling: {mousemove: 50, mouseInteraction: true, scroll: 150, input: "last"},
+    })
+    this.onClick = (event) => this.logClick(event)
+    document.addEventListener("click", this.onClick, true)
+    this.onVisibility = () => {
+      if (document.visibilityState === "hidden") this.flush()
+    }
+    document.addEventListener("visibilitychange", this.onVisibility)
+    this.timer = setInterval(() => this.flush(), this.FLUSH_MS)
+  },
+
+  // The server sets data-record="false" once it stops accepting batches
+  // (the recording hit its cap, or storing it failed). Stop then, rather
+  // than recording on and shipping batches it will only discard.
+  updated() {
+    if (this.stopRecording && this.el.dataset.record !== "true") this.stop(false)
+  },
+
+  logClick(event) {
+    const target = event.target instanceof Element ? event.target : null
+    if (!target) return
+    const interactive = target.closest(
+      "button, a, input, select, label, [phx-click], [phx-hook], [role=button]"
+    )
+    const el = interactive || target
+    const phx = el.getAttribute("phx-click")
+    const card = target.closest("[data-card-value]")
+    const phase = this.el.dataset.phase
+    const auto = this.el.dataset.autoPlaying === "true"
+    // Cards only respond while discarding or playing and no bot has the
+    // seat (see CardSelection.updateLockState); a click on one at any other
+    // time is a dead click even though the card is a button.
+    const cardsLocked = auto || !["Discard", "Playing"].includes(phase)
+    const click = {
+      // What was clicked, as a short selector-ish label.
+      el: el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") +
+        (el.className && typeof el.className === "string"
+          ? "." + el.className.trim().split(/\s+/).slice(0, 2).join(".")
+          : ""),
+      phx: phx || null,
+      card: card ? card.dataset.cardValue : null,
+      text: interactive ? (interactive.textContent || "").trim().slice(0, 40) : null,
+      // A click that does nothing: the classic "I thought that did something".
+      dead: !interactive || (card !== null && cardsLocked),
+      phase,
+      turn: this.el.dataset.currentTurn === "true",
+      auto,
+    }
+    // In the recording for the player, and with the batch for the timeline.
+    record.addCustomEvent("click", click)
+    this.clicks.push({ts: Date.now(), ...click})
+  },
+
+  flush() {
+    if (!this.buffer || this.buffer.length === 0) return
+    const events = this.buffer
+    const clicks = this.clicks
+    this.buffer = []
+    this.clicks = []
+    // `now` lets the server put the click times on its own clock.
+    const payload = {seq: this.seq++, data: JSON.stringify(events), clicks, now: Date.now()}
+    if (payload.seq === 0) {
+      payload.device = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "mobile" : "desktop"
+      payload.w = window.innerWidth
+      payload.h = window.innerHeight
+    }
+    try {
+      this.pushEvent("replay_chunk", payload)
+    } catch (_error) {
+      // The view is gone (navigation, disconnect); the tail of the
+      // recording is lost, which is fine.
+    }
+  },
+
+  // Ends the recording; `flush` says whether to ship what is buffered
+  // (leaving the page) or drop it (the server stopped listening).
+  stop(flush) {
+    clearInterval(this.timer)
+    document.removeEventListener("click", this.onClick, true)
+    document.removeEventListener("visibilitychange", this.onVisibility)
+    if (flush) this.flush()
+    this.stopRecording()
+    this.stopRecording = null
+    this.buffer = []
+    this.clicks = []
+  },
+
+  destroyed() {
+    if (this.stopRecording) this.stop(true)
+  },
+}
+
 let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: Hooks})
 
 // Show progress bar on live navigation and form submits
@@ -273,23 +424,3 @@ liveSocket.connect()
 // >> liveSocket.enableLatencySim(1000)  // enabled for duration of browser session
 // >> liveSocket.disableLatencySim()
 window.liveSocket = liveSocket
-
-window.addEventListener("load", function() {
-        document.querySelectorAll(".password-visibility-button").forEach(function(button) {
-          button.addEventListener("click", function() {
-        var passwordInput = this.parentNode.querySelector("input[type='password'], input[type='password-text']");
-            var icon = this.querySelector("i");
-            if (passwordInput && icon) {
-              if (passwordInput.type === "password") {
-                passwordInput.type = "password-text";
-                icon.classList.remove("fa-eye");
-                icon.classList.add("fa-eye-slash");
-              } else {
-                passwordInput.type = "password";
-                icon.classList.remove("fa-eye-slash");
-                icon.classList.add("fa-eye");
-              }
-            }
-          });
-        });
-      });

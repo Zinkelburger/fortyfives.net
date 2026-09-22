@@ -1,16 +1,24 @@
 defmodule Website45sV3.MixProject do
   use Mix.Project
 
+  # Keep in sync with the newest release tag. Tags are
+  # `v<MAJOR>.<MINOR>.<PATCH>.<BUILD>` (currently v2.0.1.9) but Mix requires
+  # strict semver, so only the first three components are recorded here; the
+  # Docker image tag (github.ref_name) carries the full four-part tag.
+  @version "2.0.1"
+
   def project do
     [
       app: :website_45s_v3,
-      version: "0.1.0",
-      elixir: "~> 1.16",
+      version: @version,
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       listeners: [Phoenix.CodeReloader],
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      # Realistic floor for `mix test --cover`; raise as coverage grows.
+      test_coverage: [summary: [threshold: 60]]
     ]
   end
 
@@ -41,7 +49,6 @@ defmodule Website45sV3.MixProject do
       {:phoenix_html, "~> 4.3.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
       {:phoenix_live_view, "~> 1.2"},
-      {:floki, ">= 0.36.1", only: :test},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.9"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
@@ -50,7 +57,6 @@ defmodule Website45sV3.MixProject do
       {:bamboo_ses, "~> 0.5.0"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_google, "~> 0.11"},
-      {:swoosh, "~> 1.28"},
       {:finch, "~> 0.23"},
       {:telemetry_metrics, "~> 1.2"},
       {:telemetry_poller, "~> 1.3"},
@@ -58,7 +64,8 @@ defmodule Website45sV3.MixProject do
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.12"},
       {:sobelow, "~> 0.15", only: [:dev, :test], runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
     ]
   end
 

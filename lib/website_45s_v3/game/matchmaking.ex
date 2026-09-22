@@ -5,6 +5,8 @@ defmodule Website45sV3.Game.Matchmaking do
   """
   require Logger
 
+  alias Website45sV3.Game.GameController
+
   @doc """
   Assigns a display name to a joining player. Anonymous players get a unique
   `AnonymousN` name based on the players already in the queue.
@@ -44,7 +46,7 @@ defmodule Website45sV3.Game.Matchmaking do
   def start_game(players) do
     game_name = create_unique_game_name()
 
-    case Website45sV3.Game.GameController.start_game(game_name, players) do
+    case GameController.start_game(game_name, players) do
       {:ok, _pid} ->
         for {_name, user_id} <- players do
           Phoenix.PubSub.broadcast(

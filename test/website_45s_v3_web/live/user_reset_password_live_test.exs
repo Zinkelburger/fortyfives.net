@@ -66,6 +66,52 @@ defmodule Website45sV3Web.UserResetPasswordLiveTest do
       assert Accounts.get_user_by_email_and_password(user.email, "new valid password")
     end
 
+    test "refuses a token that expired after the page was opened",
+         %{conn: conn, token: token, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/reset_password/#{token}")
+
+      # The page is open; the token goes stale underneath it.
+      {1, nil} =
+        Website45sV3.Repo.update_all(Website45sV3.Accounts.UserToken,
+          set: [inserted_at: ~N[2020-01-01 00:00:00]]
+        )
+
+      {:ok, conn} =
+        lv
+        |> form("#reset_password_form",
+          user: %{
+            "password" => "new valid password",
+            "password_confirmation" => "new valid password"
+          }
+        )
+        |> render_submit()
+        |> follow_redirect(conn, ~p"/")
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~
+               "Reset password link is invalid or it has expired"
+
+      refute Accounts.get_user_by_email_and_password(user.email, "new valid password")
+    end
+
+    test "refuses a token invalidated by a completed reset elsewhere",
+         %{conn: conn, token: token, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/reset_password/#{token}")
+
+      # Resetting the password (from another tab, say) deletes every token.
+      {:ok, _} = Accounts.reset_user_password(user, %{password: "changed elsewhere"})
+
+      {:ok, conn} =
+        lv
+        |> form("#reset_password_form",
+          user: %{"password" => "attacker choice", "password_confirmation" => "attacker choice"}
+        )
+        |> render_submit()
+        |> follow_redirect(conn, ~p"/")
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "invalid or it has expired"
+      assert Accounts.get_user_by_email_and_password(user.email, "changed elsewhere")
+    end
+
     test "does not reset password on invalid data", %{conn: conn, token: token} do
       {:ok, lv, _html} = live(conn, ~p"/users/reset_password/#{token}")
 

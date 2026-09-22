@@ -1,18 +1,53 @@
+# Local / app-only stack: Phoenix bound to loopback plus Postgres. For the
+# public deployment (nginx + certbot) use docker-compose-nginx.yml.
+# Values such as ${POSTGRES_USER} are interpolated from ./.env by compose.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   web:
     image: ${APP_IMAGE:?Set APP_IMAGE to an immutable image digest}
+    restart: unless-stopped
     ports:
       - "127.0.0.1:4000:4000"
     env_file:
       - .env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging: *default-logging
+
   db:
-    image: docker.io/library/postgres:15.18-alpine3.22@sha256:b829a702021452451951dbfb2def91e920f9182cf63ba8e74642e388ad35aef2
+    image: docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    restart: unless-stopped
+    # Only the Postgres variables; the rest of .env (SECRET_KEY_BASE, AWS,
+    # Google, Turnstile) must not reach this container.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
     volumes:
       - db_data:/var/lib/postgresql/data
-    env_file:
-      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
 
 volumes:
   db_data:
+    # Deliberately not the production volume (fortyfives_db_data): this
+    # stack is for local testing and `down -v` must never touch real data.
+    name: fortyfives_db_data_local

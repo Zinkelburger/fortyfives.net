@@ -1,0 +1,59 @@
+<div class="admin">
+  <h1>Games</h1>
+  <p class="admin-muted">
+    {length(@games)} most recent games shown.
+    Replays: {length(@replays)} listed, {human_bytes(@replay_bytes)} stored in total.
+  </p>
+
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Players</th>
+        <th>Ended</th>
+        <th>Hands</th>
+        <th>Score</th>
+        <th>Length</th>
+        <th>Humans</th>
+        <th>Log</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={g <- @games}>
+        <td>{when_at(g.inserted_at)}</td>
+        <td>{Enum.join(g.player_usernames, ", ")}</td>
+        <td>{g.ended || "-"}</td>
+        <td>{g.hands || "-"}</td>
+        <td :if={g.team1_score}>{g.team1_score} : {g.team2_score}</td>
+        <td :if={!g.team1_score}>-</td>
+        <td>{duration(g.duration_ms)}</td>
+        <td>{g.human_count || "-"}</td>
+        <td><a href={~p"/admin/games/#{g.id}"}>view</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Recent replays</h2>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Player</th>
+        <th>Game</th>
+        <th>Device</th>
+        <th>Size</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={r <- @replays}>
+        <td>{when_at(r.inserted_at)}</td>
+        <td>{r.display_name}</td>
+        <td>{r.game_name}</td>
+        <td>{r.device} {r.viewport_w}x{r.viewport_h}</td>
+        <td>{human_bytes(r.bytes)}</td>
+        <td><a href={~p"/admin/replays/#{r.id}"}>watch</a></td>
+      </tr>
+    </tbody>
+  </table>
+</div>

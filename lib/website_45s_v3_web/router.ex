@@ -15,9 +15,16 @@ defmodule Website45sV3Web.Router do
     # of the pipeline, and it is the form Sobelow's Config.CSP check reads.
     plug :put_secure_browser_headers, %{"content-security-policy" => "default-src 'self'"}
     plug :put_content_security_policy
+    # Loads `current_user` and the anonymous player id in one pass.
     plug :fetch_current_user
-    plug :potentially_anonymous_user
     plug :assign_canonical_path
+  end
+
+  # Liveness/readiness probe for container healthchecks and uptime monitors.
+  # Outside `:browser` on purpose: no session, CSRF or CSP work, and no cookie
+  # churn from monitors that never send one back.
+  scope "/", Website45sV3Web do
+    get "/healthz", HealthController, :index
   end
 
   defp put_content_security_policy(conn, _opts) do
@@ -34,7 +41,7 @@ defmodule Website45sV3Web.Router do
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' data: https://fonts.gstatic.com",
         "img-src 'self' data:",
-        "connect-src 'self' wss://fortyfives.net wss://www.fortyfives.net wss://fortyfives.gigalixirapp.com wss://www.fortyfives.gigalixirapp.com https://challenges.cloudflare.com",
+        "connect-src 'self' wss://fortyfives.net wss://www.fortyfives.net https://challenges.cloudflare.com",
         # 'self' keeps Phoenix LiveReload's iframe working in dev; an explicit
         # frame-src is not backed by default-src, so omitting it blocked the
         # reloader silently.
@@ -105,7 +112,7 @@ defmodule Website45sV3Web.Router do
 
     # default session for “play”
     live_session :default,
-      on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}],
+      on_mount: [{Website45sV3Web.UserAuth, :mount_current_user}],
       root_layout: {Website45sV3Web.Layouts, :root} do
       live "/", HomeLive, :index
       live "/learn", LearnLive, :index
@@ -115,10 +122,23 @@ defmodule Website45sV3Web.Router do
 
     # separate session for “game” with its own root layout
     live_session :game,
-      on_mount: [{Website45sV3Web.UserAuth, :potentially_anonymous_user}],
+      on_mount: [{Website45sV3Web.UserAuth, :mount_current_user}],
       root_layout: {Website45sV3Web.Layouts, :game_root} do
       live "/game/:id", GameLive, :new
     end
+  end
+
+  # Gameplay analytics: game event logs and session replays. Plain
+  # controller pages; the replay player is a separate JS bundle loaded only
+  # here (see `require_admin/2` and the root layout).
+  scope "/admin", Website45sV3Web do
+    pipe_through [:browser, :require_authenticated_user, :require_admin]
+
+    get "/", AdminController, :index
+    get "/games/:id", AdminController, :game
+    get "/games/:id/events.json", AdminController, :game_events
+    get "/replays/:id", AdminController, :replay
+    get "/replays/:id/events.json", AdminController, :replay_events
   end
 
   scope "/", Website45sV3Web do

@@ -1,198 +1,58 @@
 defmodule Website45sV3Web.CoreComponents do
   @moduledoc """
-  Provides core UI components.
-
-  At the first glance, this module may seem daunting, but its goal is
-  to provide some core building blocks in your application, such as modals,
-  tables, and forms. The components are mostly markup and well documented
-  with doc strings and declarative assigns. You may customize and style
-  them in any way you want, based on your application growth and needs.
-
-  The default components use Tailwind CSS, a utility-first CSS framework.
-  See the [Tailwind CSS documentation](https://tailwindcss.com) to learn
-  how to customize them or feel free to swap in another framework altogether.
+  Core UI components: flash messages, forms and inputs, buttons, page headers
+  and the Cloudflare Turnstile widget, styled for the site's navy palette.
 
   Icons are provided by [heroicons](https://heroicons.com). See `icon/1` for usage.
   """
   use Phoenix.Component
-
-  alias Phoenix.LiveView.JS
   use Gettext, backend: Website45sV3Web.Gettext
 
-  @doc """
-  Renders a password input with a visibility toggle.
+  alias Phoenix.HTML.Form
+  alias Phoenix.LiveView.JS
 
-  ## Examples
-
-      <.password_input field={@form[:password]} value={@password_value} label="Password" required={true} type={@type} phx-change="input_changed" />
-
-  """
-  attr :field, :any, required: true
-  attr :label, :string, required: true
-  attr :required, :boolean, default: false
-  attr :value, :any, default: nil
-  attr :type, :string, default: "password"
-  attr :phx_change, :string, default: nil
-  attr :phx_debounce, :string, default: nil
-
-  def password_input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
-    assigns =
-      assigns
-      |> assign(:errors, Enum.map(field.errors, &translate_error(&1)))
-      |> assign(:name, field.name)
-      |> assign(:id, field.id)
-      |> assign(
-        :value,
-        Phoenix.HTML.Form.normalize_value(assigns.type, assigns.value || field.value)
-      )
-
-    ~H"""
-    <div class="relative">
-      <.label for={@id}>{@label}</.label>
-
-      <input
-        type={@type}
-        name={@name}
-        id={@id}
-        value={@value}
-        class={[
-          "pr-6 w-full rounded-m text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
-          @errors == [] && "border-zinc-300 focus:border-zinc-400",
-          @errors != [] && "border-rose-400 focus:border-rose-400"
-        ]}
-        style="background-color: #041624; color: #d2e8f9;"
-        phx-change={@phx_change}
-        phx-debounce={@phx_debounce}
-      />
-
-      <button
-        phx-click="toggle_visibility"
-        type="button"
-        class="absolute top-1/2 right-0 pr-4 transform"
-      >
-        <%= if @type == "password" do %>
-          <img
-            src="/images/fa-eye.svg"
-            alt="Show password"
-            style="width: 20px; height: 20px;"
-            class="filter-text"
-          />
-        <% else %>
-          <img
-            src="/images/fa-eye-slash.svg"
-            alt="Hide password"
-            style="width: 20px; height: 20px;"
-            class="filter-text"
-          />
-        <% end %>
-      </button>
-
-      <.error :for={msg <- @errors}>{msg}</.error>
-    </div>
-    """
-  end
-
-  @doc """
-  Renders a modal.
-
-  ## Examples
-
-      <.modal id="confirm-modal">
-        This is a modal.
-      </.modal>
-
-  JS commands may be passed to the `:on_cancel` to configure
-  the closing/cancel event, for example:
-
-      <.modal id="confirm" on_cancel={JS.navigate(~p"/posts")}>
-        This is another modal.
-      </.modal>
-
-  """
-  attr :id, :string, required: true
-  attr :show, :boolean, default: false
-  attr :on_cancel, JS, default: %JS{}
-  slot :inner_block, required: true
-
-  def modal(assigns) do
-    ~H"""
-    <div
-      id={@id}
-      phx-mounted={@show && show_modal(@id)}
-      phx-remove={hide_modal(@id)}
-      data-cancel={JS.exec(@on_cancel, "phx-remove")}
-      class="relative z-50 hidden"
-    >
-      <div id={"#{@id}-bg"} class="bg-zinc-50/90 fixed inset-0 transition-opacity" aria-hidden="true" />
-      <div
-        class="fixed inset-0 overflow-y-auto"
-        aria-labelledby={"#{@id}-title"}
-        aria-describedby={"#{@id}-description"}
-        role="dialog"
-        aria-modal="true"
-        tabindex="0"
-      >
-        <div class="flex min-h-full items-center justify-center">
-          <div class="w-full max-w-3xl p-4 sm:p-6 lg:py-8">
-            <.focus_wrap
-              id={"#{@id}-container"}
-              phx-window-keydown={JS.exec("data-cancel", to: "##{@id}")}
-              phx-key="escape"
-              phx-click-away={JS.exec("data-cancel", to: "##{@id}")}
-              class="shadow-zinc-700/10 ring-zinc-700/10 relative hidden rounded-2xl bg-white p-14 shadow-lg ring-1 transition"
-            >
-              <div class="absolute top-6 right-5">
-                <button
-                  phx-click={JS.exec("data-cancel", to: "##{@id}")}
-                  type="button"
-                  class="-m-3 flex-none p-3 opacity-20 hover:opacity-40"
-                  aria-label={gettext("close")}
-                >
-                  <.icon name="hero-x-mark-solid" class="h-5 w-5" />
-                </button>
-              </div>
-              <div id={"#{@id}-content"}>
-                {render_slot(@inner_block)}
-              </div>
-            </.focus_wrap>
-          </div>
-        </div>
-      </div>
-    </div>
-    """
-  end
+  # Flashes that must stay on screen until the player dismisses them.
+  @persistent_messages [
+    "You took too long. A bot is playing for you.",
+    "Welcome back! A bot was playing for you when you left. Auto-play has been disabled."
+  ]
 
   @doc """
   Renders flash notices.
 
+  Visible flashes drain a progress bar and dismiss themselves (see the
+  `AutoDismissFlash` hook) unless the message is one a player must act on.
+  Pass `auto_dismiss={false}` for flashes that are shown and hidden by other
+  means, such as the connection-lost notices in `flash_group/1`.
+
   ## Examples
 
       <.flash kind={:info} flash={@flash} />
-      <.flash kind={:info} phx-mounted={show("#flash")}>Welcome Back!</.flash>
+      <.flash kind={:info} phx-mounted={show("#flash-info")}>Welcome Back!</.flash>
   """
-  attr :id, :string, default: "flash", doc: "the optional id of flash container"
+  attr :id, :string, default: nil, doc: "the id of the flash container, defaults to flash-<kind>"
   attr :flash, :map, default: %{}, doc: "the map of flash messages to display"
   attr :title, :string, default: nil
   attr :kind, :atom, values: [:info, :error], doc: "used for styling and flash lookup"
+  attr :auto_dismiss, :boolean, default: true, doc: "dismiss the flash after a short delay"
   attr :rest, :global, doc: "the arbitrary HTML attributes to add to the flash container"
 
   slot :inner_block, doc: "the optional inner block that renders the flash message"
 
   def flash(assigns) do
-    flash_msg = Phoenix.Flash.get(assigns.flash, assigns.kind)
+    persistent? = Phoenix.Flash.get(assigns.flash, assigns.kind) in @persistent_messages
 
-    persistent_messages = [
-      "You took too long. A bot is playing for you.",
-      "Welcome back! A bot was playing for you when you left. Auto-play has been disabled."
-    ]
-
-    assigns = assign(assigns, :persistent_flash, flash_msg in persistent_messages)
+    assigns =
+      assigns
+      |> assign(:id, assigns.id || "flash-#{assigns.kind}")
+      |> assign(:auto_dismiss, assigns.auto_dismiss and not persistent?)
 
     ~H"""
     <div
       :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
+      phx-hook={@auto_dismiss && "AutoDismissFlash"}
       role="alert"
       class={[
         "fixed top-2 left-2 w-80 sm:w-96 z-50 rounded-lg p-3 ring-1",
@@ -200,7 +60,6 @@ defmodule Website45sV3Web.CoreComponents do
         @kind == :error && "bg-rose-50 shadow-md ring-rose-500 fill-rose-900"
       ]}
       {@rest}
-      phx-hook={unless @persistent_flash, do: "AutoDismissFlash"}
     >
       <p
         :if={@title}
@@ -219,20 +78,21 @@ defmodule Website45sV3Web.CoreComponents do
       </p>
       <button
         type="button"
-        class="group absolute top-1 right-1 p-2 border border-black-300 rounded"
+        class="group absolute top-1 right-1 p-2 border border-zinc-300 rounded"
         aria-label={gettext("close")}
       >
         <.icon
           name="hero-x-mark-solid"
-          class="h-5 w-5 opacity-40 text-black-500 group-hover:opacity-70"
+          class="h-5 w-5 opacity-40 text-zinc-500 group-hover:opacity-70"
         />
       </button>
       <div
+        :if={@auto_dismiss}
         class="progress-bar"
         style={
-        "width: 100%; height: 4px; position: absolute; left: 0; right: 0; bottom: 0; background-color: " <>
-        if(@kind == :info, do: "rgba(0, 255, 0, 0.5)", else: "rgba(255, 0, 0, 0.5)")
-      }
+          "width: 100%; height: 4px; position: absolute; left: 0; right: 0; bottom: 0; background-color: " <>
+            if(@kind == :info, do: "rgba(0, 255, 0, 0.5)", else: "rgba(255, 0, 0, 0.5)")
+        }
       >
       </div>
     </div>
@@ -250,14 +110,15 @@ defmodule Website45sV3Web.CoreComponents do
 
   def flash_group(assigns) do
     ~H"""
-    <.flash kind={:info} title="Success!" flash={@flash} />
-    <.flash kind={:error} title="Error!" flash={@flash} />
+    <.flash kind={:info} title="Success" flash={@flash} />
+    <.flash kind={:error} title="Error" flash={@flash} />
     <.flash
       id="client-error"
       kind={:error}
       title="We can't find the internet"
       phx-disconnected={show(".phx-client-error #client-error")}
       phx-connected={hide("#client-error")}
+      auto_dismiss={false}
       hidden
     >
       Attempting to reconnect <.icon name="hero-arrow-path" class="ml-1 h-3 w-3 animate-spin" />
@@ -266,9 +127,10 @@ defmodule Website45sV3Web.CoreComponents do
     <.flash
       id="server-error"
       kind={:error}
-      title="Something went wrong!"
+      title="Something went wrong"
       phx-disconnected={show(".phx-server-error #server-error")}
       phx-connected={hide("#server-error")}
+      auto_dismiss={false}
       hidden
     >
       Hang in there while we get back on track
@@ -407,8 +269,6 @@ defmodule Website45sV3Web.CoreComponents do
   attr :label, :string, default: nil
   attr :value, :any
 
-  attr :show_password, :boolean, default: false
-
   attr :type, :string,
     default: "text",
     values: ~w(checkbox color date datetime-local email file hidden month number password
@@ -443,7 +303,7 @@ defmodule Website45sV3Web.CoreComponents do
 
   def input(%{type: "checkbox", value: value} = assigns) do
     assigns =
-      assign_new(assigns, :checked, fn -> Phoenix.HTML.Form.normalize_value("checkbox", value) end)
+      assign_new(assigns, :checked, fn -> Form.normalize_value("checkbox", value) end)
 
     ~H"""
     <div class="mt-4">
@@ -486,7 +346,7 @@ defmodule Website45sV3Web.CoreComponents do
         {@rest}
       >
         <option :if={@prompt} value="">{@prompt}</option>
-        {Phoenix.HTML.Form.options_for_select(@options, @value)}
+        {Form.options_for_select(@options, @value)}
       </select>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
@@ -506,60 +366,13 @@ defmodule Website45sV3Web.CoreComponents do
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
         {@rest}
-      ><%= Phoenix.HTML.Form.normalize_value("textarea", @value) %></textarea>
+      ><%= Form.normalize_value("textarea", @value) %></textarea>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
     """
   end
 
-  def input(%{type: "password"} = assigns) do
-    ~H"""
-    <div style="background-color: #071f31; color: #d2e8f9;">
-      <.label for={@id}>{@label}</.label>
-      <div class="relative">
-        <input
-          type={if @show_password, do: "password-text", else: "password"}
-          name={@name}
-          id={@id}
-          value={Phoenix.HTML.Form.normalize_value("password", @value)}
-          class={[
-            "mt-2 block w-full rounded-m text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
-            @errors == [] && "border-zinc-300 focus:border-zinc-400",
-            @errors != [] && "border-rose-400 focus:border-rose-400"
-          ]}
-          style={"background-color: ##{@background_color}; color: ##{@text_color};"}
-          {@rest}
-        />
-        <button
-          phx-click="toggle_visibility"
-          type="button"
-          class="absolute top-1/2 right-0 pr-4 transform -translate-y-1/2"
-        >
-          <%= if @show_password do %>
-            <img
-              src="/images/fa-eye-slash.svg"
-              alt="Hide password"
-              style="width: 20px; height: 20px;"
-              class="filter-text"
-            />
-          <% else %>
-            <img
-              src="/images/fa-eye.svg"
-              alt="Show password"
-              style="width: 20px; height: 20px;"
-              class="filter-text"
-            />
-          <% end %>
-        </button>
-      </div>
-      <div style="margin-top: -20px;">
-        <.error :for={msg <- @errors}>{msg}</.error>
-      </div>
-    </div>
-    """
-  end
-
-  # All other inputs text, datetime-local, url, password, etc. are handled here...
+  # All other inputs text, datetime-local, url, etc. are handled here...
   def input(assigns) do
     ~H"""
     <div style={"background-color: ##{@background_color}; color: ##{@text_color};"}>
@@ -568,9 +381,9 @@ defmodule Website45sV3Web.CoreComponents do
         type={@type}
         name={@name}
         id={@id}
-        value={Phoenix.HTML.Form.normalize_value(@type, @value)}
+        value={Form.normalize_value(@type, @value)}
         class={[
-          "mt-2 block w-full rounded-m text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
+          "mt-2 block w-full rounded-md text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
           @errors == [] && "border-zinc-300 focus:border-zinc-400",
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
@@ -648,133 +461,6 @@ defmodule Website45sV3Web.CoreComponents do
     """
   end
 
-  @doc ~S"""
-  Renders a table with generic styling.
-
-  ## Examples
-
-      <.table id="users" rows={@users}>
-        <:col :let={user} label="id"><%= user.id %></:col>
-        <:col :let={user} label="username"><%= user.username %></:col>
-      </.table>
-  """
-  attr :id, :string, required: true
-  attr :rows, :list, required: true
-  attr :row_id, :any, default: nil, doc: "the function for generating the row id"
-  attr :row_click, :any, default: nil, doc: "the function for handling phx-click on each row"
-
-  attr :row_item, :any,
-    default: &Function.identity/1,
-    doc: "the function for mapping each row before calling the :col and :action slots"
-
-  slot :col, required: true do
-    attr :label, :string
-  end
-
-  slot :action, doc: "the slot for showing user actions in the last table column"
-
-  def table(assigns) do
-    assigns =
-      with %{rows: %Phoenix.LiveView.LiveStream{}} <- assigns do
-        assign(assigns, row_id: assigns.row_id || fn {id, _item} -> id end)
-      end
-
-    ~H"""
-    <div class="overflow-y-auto px-4 sm:overflow-visible sm:px-0">
-      <table class="w-[40rem] mt-11 sm:w-full">
-        <thead class="text-sm text-left leading-6 text-zinc-500">
-          <tr>
-            <th :for={col <- @col} class="p-0 pr-6 pb-4 font-normal">{col[:label]}</th>
-            <th class="relative p-0 pb-4"><span class="sr-only">{gettext("Actions")}</span></th>
-          </tr>
-        </thead>
-        <tbody
-          id={@id}
-          phx-update={match?(%Phoenix.LiveView.LiveStream{}, @rows) && "stream"}
-          class="relative divide-y divide-zinc-100 border-t border-zinc-200 text-sm leading-6 text-zinc-700"
-        >
-          <tr :for={row <- @rows} id={@row_id && @row_id.(row)} class="group hover:bg-zinc-50">
-            <td
-              :for={{col, i} <- Enum.with_index(@col)}
-              phx-click={@row_click && @row_click.(row)}
-              class={["relative p-0", @row_click && "hover:cursor-pointer"]}
-            >
-              <div class="block py-4 pr-6">
-                <span class="absolute -inset-y-px right-0 -left-4 group-hover:bg-zinc-50 sm:rounded-l-xl" />
-                <span class={["relative", i == 0 && "font-semibold text-zinc-900"]}>
-                  {render_slot(col, @row_item.(row))}
-                </span>
-              </div>
-            </td>
-            <td :if={@action != []} class="relative w-14 p-0">
-              <div class="relative whitespace-nowrap py-4 text-right text-sm font-medium">
-                <span class="absolute -inset-y-px -right-4 left-0 group-hover:bg-zinc-50 sm:rounded-r-xl" />
-                <span
-                  :for={action <- @action}
-                  class="relative ml-4 font-semibold leading-6 text-zinc-900 hover:text-zinc-700"
-                >
-                  {render_slot(action, @row_item.(row))}
-                </span>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    """
-  end
-
-  @doc """
-  Renders a data list.
-
-  ## Examples
-
-      <.list>
-        <:item title="Title"><%= @post.title %></:item>
-        <:item title="Views"><%= @post.views %></:item>
-      </.list>
-  """
-  slot :item, required: true do
-    attr :title, :string, required: true
-  end
-
-  def list(assigns) do
-    ~H"""
-    <div class="mt-14">
-      <dl class="-my-4 divide-y divide-zinc-100">
-        <div :for={item <- @item} class="flex gap-4 py-4 text-sm leading-6 sm:gap-8">
-          <dt class="w-1/4 flex-none text-zinc-500">{item.title}</dt>
-          <dd class="text-zinc-700">{render_slot(item)}</dd>
-        </div>
-      </dl>
-    </div>
-    """
-  end
-
-  @doc """
-  Renders a back navigation link.
-
-  ## Examples
-
-      <.back navigate={~p"/posts"}>Back to posts</.back>
-  """
-  attr :navigate, :any, required: true
-  slot :inner_block, required: true
-
-  def back(assigns) do
-    ~H"""
-    <div class="mt-16">
-      <.link
-        navigate={@navigate}
-        class="text-sm font-semibold leading-6 text-zinc-900 hover:text-zinc-700"
-      >
-        <.icon name="hero-arrow-left-solid" class="h-3 w-3" />
-        {render_slot(@inner_block)}
-      </.link>
-    </div>
-    """
-  end
-
   @doc """
   Renders a [Heroicon](https://heroicons.com).
 
@@ -825,30 +511,6 @@ defmodule Website45sV3Web.CoreComponents do
     )
   end
 
-  def show_modal(js \\ %JS{}, id) when is_binary(id) do
-    js
-    |> JS.show(to: "##{id}")
-    |> JS.show(
-      to: "##{id}-bg",
-      transition: {"transition-all transform ease-out duration-300", "opacity-0", "opacity-100"}
-    )
-    |> show("##{id}-container")
-    |> JS.add_class("overflow-hidden", to: "body")
-    |> JS.focus_first(to: "##{id}-content")
-  end
-
-  def hide_modal(js \\ %JS{}, id) do
-    js
-    |> JS.hide(
-      to: "##{id}-bg",
-      transition: {"transition-all transform ease-in duration-200", "opacity-100", "opacity-0"}
-    )
-    |> hide("##{id}-container")
-    |> JS.hide(to: "##{id}", transition: {"block", "block", "hidden"})
-    |> JS.remove_class("overflow-hidden", to: "body")
-    |> JS.pop_focus()
-  end
-
   @doc """
   Translates an error message using gettext.
   """
@@ -868,12 +530,5 @@ defmodule Website45sV3Web.CoreComponents do
     else
       Gettext.dgettext(Website45sV3Web.Gettext, "errors", msg, opts)
     end
-  end
-
-  @doc """
-  Translates the errors for a field from a keyword list of errors.
-  """
-  def translate_errors(errors, field) when is_list(errors) do
-    for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
   end
 end

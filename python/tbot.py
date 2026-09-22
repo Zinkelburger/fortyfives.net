@@ -281,12 +281,12 @@ class PhxWeb:
         if not self.is_auto_playing(soup):
             return False
 
-        buttons = self.driver.find_elements(By.ID, "resume-control-button")
+        buttons = self.driver.find_elements(By.ID, "resume-control-overlay")
         if not buttons:
             raise RuntimeError("Auto-play is on but resume button is missing.")
 
         WebDriverWait(self.driver, ACTION_TIMEOUT).until(
-            EC.element_to_be_clickable((By.ID, "resume-control-button"))
+            EC.element_to_be_clickable((By.ID, "resume-control-overlay"))
         ).click()
 
         self.wait_until(

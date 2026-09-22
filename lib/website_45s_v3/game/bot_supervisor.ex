@@ -1,7 +1,12 @@
 defmodule Website45sV3.Game.BotSupervisor do
+  @moduledoc """
+  Supervises `BotPlayerServer` processes. A global cap keeps the "add a bot"
+  buttons from spawning unbounded processes; the cap is enforced by the
+  supervisor itself (`max_children`) so that concurrent requests cannot
+  race past it.
+  """
   use DynamicSupervisor
 
-  # Global cap so the 🤖 button can't be used to spawn unbounded processes.
   @max_bots 12
 
   def start_link(_args) do
@@ -10,7 +15,7 @@ defmodule Website45sV3.Game.BotSupervisor do
 
   @impl true
   def init(:ok) do
-    DynamicSupervisor.init(strategy: :one_for_one)
+    DynamicSupervisor.init(strategy: :one_for_one, max_children: @max_bots)
   end
 
   # `requester` is the session user_id that asked for the bot; it is stored
@@ -32,22 +37,21 @@ defmodule Website45sV3.Game.BotSupervisor do
   end
 
   defp start_child(arg) do
-    if at_capacity?() do
-      {:error, :too_many_bots}
-    else
-      case DynamicSupervisor.start_child(__MODULE__, {Website45sV3.Game.BotPlayerServer, arg}) do
-        {:ok, pid} ->
-          {:ok, pid}
+    case DynamicSupervisor.start_child(__MODULE__, {Website45sV3.Game.BotPlayerServer, arg}) do
+      {:ok, pid} ->
+        {:ok, pid}
 
-        # The bot refused to start because the queue would not take it (the
-        # lobby is gone, or it is rate limited). Unwrap the supervisor's
-        # shutdown tuple so callers see the reason itself.
-        {:error, {:shutdown, reason}} ->
-          {:error, reason}
+      {:error, :max_children} ->
+        {:error, :too_many_bots}
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      # The bot refused to start because the queue would not take it (the
+      # lobby is gone, or it is rate limited). Unwrap the supervisor's
+      # shutdown tuple so callers see the reason itself.
+      {:error, {:shutdown, reason}} ->
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 end

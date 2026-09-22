@@ -1,11 +1,34 @@
+# VCS, CI, docs
 .git
+.github
+.claude
+docs
+*.md
+
+# Secrets and local env files
 .env
 .env.*
+
+# Build output and caches
 _build
 deps
-assets/node_modules
-python
-test
 cover
 doc
 tmp
+assets/node_modules
+node_modules
+erl_crash.dump
+
+# Locally generated bundles/digests; the image builds its own via
+# `mix assets.deploy`. A stale cache_manifest.json here would otherwise be
+# baked into the release.
+priv/static/assets
+priv/static/cache_manifest.json
+
+# Not part of the app
+python
+test
+venv
+certbot
+ios
+__pycache__

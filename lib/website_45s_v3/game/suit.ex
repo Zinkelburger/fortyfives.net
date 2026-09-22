@@ -1,4 +1,8 @@
 defmodule Website45sV3.Game.Suit do
+  @moduledoc """
+  The four suits and their display names.
+  """
+
   @type t :: :hearts | :diamonds | :clubs | :spades
 
   @suits %{

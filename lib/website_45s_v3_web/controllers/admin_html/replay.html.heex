@@ -1,0 +1,16 @@
+<div class="admin">
+  <p>
+    <a href={~p"/admin"}>&larr; All games</a>
+    <span :if={@game_log}>
+      &middot; <a href={~p"/admin/games/#{@game_log.id}"}>this game's timeline</a>
+    </span>
+  </p>
+  <h1>Replay {@replay.id}: {@replay.display_name}</h1>
+  <p class="admin-muted">
+    {when_at(@replay.inserted_at)} &middot; game {@replay.game_name} &middot; {@replay.device} {@replay.viewport_w}x{@replay.viewport_h} &middot; {@replay.chunk_count} chunks, {human_bytes(
+      @replay.bytes
+    )} compressed
+    &middot; <span id="replay-status">loading&hellip;</span>
+  </p>
+  <div id="replay-player" data-url={~p"/admin/replays/#{@replay.id}/events.json"}></div>
+</div>

@@ -1,4 +1,6 @@
 defmodule Website45sV3.Game.QueueTest do
+  # Exercises the globally named queue processes, so it must not run
+  # alongside other tests.
   use ExUnit.Case, async: false
 
   alias Website45sV3.Game.ActiveGames
@@ -7,12 +9,13 @@ defmodule Website45sV3.Game.QueueTest do
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.QueueStarter
   alias Website45sV3.Security.RateLimiter
+  alias Website45sV3Web.Presence
 
   setup do
     :ok = RateLimiter.reset()
   end
 
-  defp from, do: {self(), make_ref()}
+  defp unique(prefix), do: prefix <> Integer.to_string(System.unique_integer([:positive]))
 
   # Marks a user as seated in a running game, backed by a stub process so
   # ActiveGames' monitor cleanup works as in production.
@@ -25,47 +28,75 @@ defmodule Website45sV3.Game.QueueTest do
     game_name
   end
 
-  describe "QueueStarter dedup" do
+  # Creates a private lobby owned by a fresh user (lobby creation is rate
+  # limited per owner).
+  defp create_lobby do
+    private_id = Ecto.UUID.generate()
+    :ok = PrivateQueueManager.create_queue(private_id, unique("owner_"))
+    private_id
+  end
+
+  defp wait_until(fun, tries \\ 200) do
+    cond do
+      fun.() ->
+        :ok
+
+      tries == 0 ->
+        flunk("condition never became true")
+
+      true ->
+        Process.sleep(10)
+        wait_until(fun, tries - 1)
+    end
+  end
+
+  describe "QueueStarter" do
     test "the same user cannot occupy two queue slots" do
-      {:reply, :ok, state} =
-        QueueStarter.handle_call({:add_player, {"Alice", "user_1"}}, from(), %{players: []})
+      user_id = unique("queue_user_")
+      on_exit(fn -> QueueStarter.remove_player({"Alice", user_id}) end)
 
-      {:reply, :ok, state} =
-        QueueStarter.handle_call({:add_player, {"Alice (tab 2)", "user_1"}}, from(), state)
+      before = QueueStarter.player_count()
 
-      assert state.players == [{"Alice", "user_1"}]
+      :ok = QueueStarter.add_player({"Alice", user_id})
+      :ok = QueueStarter.add_player({"Alice (tab 2)", user_id})
+
+      assert QueueStarter.player_count() == before + 1
     end
 
     test "removing a player empties their slot" do
-      state = %{players: [{"Alice", "user_1"}, {"Bob", "user_2"}]}
+      user_id = unique("queue_user_")
+      before = QueueStarter.player_count()
 
-      {:reply, :ok, state} = QueueStarter.handle_call({:remove_player, "user_1"}, from(), state)
+      :ok = QueueStarter.add_player({"Alice", user_id})
+      assert QueueStarter.player_count() == before + 1
 
-      assert state.players == [{"Bob", "user_2"}]
+      :ok = QueueStarter.remove_player({"Alice", user_id})
+      assert QueueStarter.player_count() == before
     end
 
     test "a player seated in a running game cannot queue for another" do
-      user_id = "in_game_" <> Integer.to_string(System.unique_integer([:positive]))
+      user_id = unique("in_game_")
       seat_in_game(user_id)
+      before = QueueStarter.player_count()
 
-      {:reply, {:error, :already_in_game}, state} =
-        QueueStarter.handle_call({:add_player, {"Alice", user_id}}, from(), %{players: []})
-
-      assert state.players == []
+      assert {:error, :already_in_game} = QueueStarter.add_player({"Alice", user_id})
+      assert QueueStarter.player_count() == before
     end
   end
 
   describe "PrivateQueueManager" do
     test "creating lobbies is rate limited per owner" do
-      state = %{queues: %{}, last_created: %{}}
-      first_id = Ecto.UUID.generate()
-      second_id = Ecto.UUID.generate()
+      owner = unique("owner_")
 
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:create_queue, first_id, "owner"}, from(), state)
+      assert :ok = PrivateQueueManager.create_queue(Ecto.UUID.generate(), owner)
+      assert {:error, :too_soon} = PrivateQueueManager.create_queue(Ecto.UUID.generate(), owner)
+    end
 
-      {:reply, {:error, :too_soon}, _state} =
-        PrivateQueueManager.handle_call({:create_queue, second_id, "owner"}, from(), state)
+    test "a lobby id cannot be created twice" do
+      private_id = create_lobby()
+
+      assert {:error, :already_exists} =
+               PrivateQueueManager.create_queue(private_id, unique("owner_"))
     end
 
     test "rotating session IDs cannot bypass the private-lobby network limit" do
@@ -81,73 +112,38 @@ defmodule Website45sV3.Game.QueueTest do
         RateLimiter.reset()
       end)
 
-      state = %{queues: %{}, last_created: %{}}
+      ip = "203.0.113.7"
 
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call(
-          {:create_queue, Ecto.UUID.generate(), "owner_1", "203.0.113.7"},
-          from(),
-          state
-        )
+      assert :ok = PrivateQueueManager.create_queue(Ecto.UUID.generate(), unique("owner_"), ip)
 
-      {:reply, {:error, :rate_limited}, _state} =
-        PrivateQueueManager.handle_call(
-          {:create_queue, Ecto.UUID.generate(), "owner_2", "203.0.113.7"},
-          from(),
-          state
-        )
+      assert {:error, :rate_limited} =
+               PrivateQueueManager.create_queue(Ecto.UUID.generate(), unique("owner_"), ip)
     end
 
     test "an empty lobby survives an unmount so the share link keeps working" do
-      state = %{queues: %{}, last_created: %{}}
-      private_id = Ecto.UUID.generate()
-
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
+      private_id = create_lobby()
+      owner = unique("owner_")
 
       # QueueLive.terminate/2 fires on every unmount of the lobby page —
       # including a plain refresh by the owner, who has not joined yet.
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:remove_player, private_id, "owner"}, from(), state)
+      :ok = PrivateQueueManager.remove_player(private_id, owner)
 
-      assert {:reply, true, state} =
-               PrivateQueueManager.handle_call({:queue_exists, private_id}, from(), state)
+      assert PrivateQueueManager.queue_exists?(private_id)
 
       # ...and the owner can still join after coming back.
-      assert {:reply, :ok, _state} =
-               PrivateQueueManager.handle_call(
-                 {:add_player, private_id, {"Alice", "owner"}},
-                 from(),
-                 state
-               )
+      assert :ok = PrivateQueueManager.add_player(private_id, {"Alice", owner})
     end
 
     test "the last player can leave and rejoin their own lobby" do
-      state = %{queues: %{}, last_created: %{}}
-      private_id = Ecto.UUID.generate()
+      private_id = create_lobby()
+      user_id = unique("user_")
 
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
+      :ok = PrivateQueueManager.add_player(private_id, {"Alice", user_id})
+      :ok = PrivateQueueManager.remove_player(private_id, user_id)
+      assert PrivateQueueManager.queue_players(private_id) == []
 
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call(
-          {:add_player, private_id, {"Alice", "user_1"}},
-          from(),
-          state
-        )
-
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:remove_player, private_id, "user_1"}, from(), state)
-
-      assert {:reply, :ok, state} =
-               PrivateQueueManager.handle_call(
-                 {:add_player, private_id, {"Alice", "user_1"}},
-                 from(),
-                 state
-               )
-
-      assert {:reply, [{"Alice", "user_1"}], _state} =
-               PrivateQueueManager.handle_call({:queue_players, private_id}, from(), state)
+      assert :ok = PrivateQueueManager.add_player(private_id, {"Alice", user_id})
+      assert PrivateQueueManager.queue_players(private_id) == [{"Alice", user_id}]
     end
 
     test "a lobby left empty is reaped by the sweeper well before the full TTL" do
@@ -177,73 +173,46 @@ defmodule Website45sV3.Game.QueueTest do
     end
 
     test "the same user cannot join a lobby twice" do
-      state = %{queues: %{}, last_created: %{}}
-      private_id = Ecto.UUID.generate()
+      private_id = create_lobby()
+      user_id = unique("user_")
 
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
+      :ok = PrivateQueueManager.add_player(private_id, {"Alice", user_id})
+      :ok = PrivateQueueManager.add_player(private_id, {"Alice", user_id})
 
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call(
-          {:add_player, private_id, {"Alice", "user_1"}},
-          from(),
-          state
-        )
-
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call(
-          {:add_player, private_id, {"Alice", "user_1"}},
-          from(),
-          state
-        )
-
-      assert get_in(state.queues, [private_id, :players]) == [{"Alice", "user_1"}]
+      assert PrivateQueueManager.queue_players(private_id) == [{"Alice", user_id}]
     end
 
     test "joining an unknown or malformed lobby never allocates it" do
-      state = %{queues: %{}, last_created: %{}}
+      unknown = Ecto.UUID.generate()
 
-      {:reply, {:error, :queue_not_found}, state} =
-        PrivateQueueManager.handle_call(
-          {:add_player, Ecto.UUID.generate(), {"Alice", "user_1"}},
-          from(),
-          state
-        )
+      assert {:error, :queue_not_found} =
+               PrivateQueueManager.add_player(unknown, {"Alice", unique("user_")})
 
-      {:reply, {:error, :invalid_id}, state} =
-        PrivateQueueManager.handle_call({:create_queue, "not-a-uuid", "owner"}, from(), state)
+      refute PrivateQueueManager.queue_exists?(unknown)
 
-      assert state.queues == %{}
+      assert {:error, :invalid_id} =
+               PrivateQueueManager.create_queue("not-a-uuid", unique("owner_"))
+
+      refute PrivateQueueManager.queue_exists?("not-a-uuid")
     end
 
     test "a player seated in a running game cannot join a lobby" do
-      user_id = "in_game_" <> Integer.to_string(System.unique_integer([:positive]))
+      user_id = unique("in_game_")
       seat_in_game(user_id)
+      private_id = create_lobby()
 
-      state = %{queues: %{}, last_created: %{}}
-      private_id = Ecto.UUID.generate()
+      assert {:error, :already_in_game} =
+               PrivateQueueManager.add_player(private_id, {"Alice", user_id})
 
-      {:reply, :ok, state} =
-        PrivateQueueManager.handle_call({:create_queue, private_id, "owner"}, from(), state)
-
-      {:reply, {:error, :already_in_game}, state} =
-        PrivateQueueManager.handle_call(
-          {:add_player, private_id, {"Alice", user_id}},
-          from(),
-          state
-        )
-
-      assert get_in(state.queues, [private_id, :players]) == []
+      assert PrivateQueueManager.queue_players(private_id) == []
     end
 
     test "a private lobby can be filled with bots and starts a game" do
-      unique = Integer.to_string(System.unique_integer([:positive]))
-      private_id = Ecto.UUID.generate()
-      user_id = "lobby_human_" <> unique
+      private_id = create_lobby()
+      user_id = unique("lobby_human_")
 
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user_id}")
 
-      :ok = PrivateQueueManager.create_queue(private_id, user_id)
       :ok = PrivateQueueManager.add_player(private_id, {"Host", user_id})
 
       bots =
@@ -264,6 +233,15 @@ defmodule Website45sV3.Game.QueueTest do
         Process.exit(game_pid, :kill)
         Enum.each(bots, fn pid -> if Process.alive?(pid), do: Process.exit(pid, :kill) end)
       end)
+
+      # Every bot — including the one whose join started the game — heard
+      # about the redirect: they left the lobby and sit at the table.
+      wait_until(fn -> Presence.list("private_queue:#{private_id}") == %{} end)
+      wait_until(fn -> map_size(Presence.list(game_name)) == 3 end)
+
+      # Bots follow the game's life: a killed game must not leak them.
+      Process.exit(game_pid, :kill)
+      wait_until(fn -> Enum.all?(bots, &(not Process.alive?(&1))) end)
     end
 
     test "stale lobbies are swept and their players notified" do

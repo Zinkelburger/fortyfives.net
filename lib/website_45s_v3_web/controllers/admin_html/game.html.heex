@@ -1,0 +1,28 @@
+<div class="admin">
+  <p><a href={~p"/admin"}>&larr; All games</a></p>
+  <h1>Game {@log.id}</h1>
+  <p class="admin-muted">
+    {when_at(@log.inserted_at)} &middot; {Enum.join(@log.player_usernames, ", ")} &middot; {@log.ended ||
+      "unknown"}
+    <span :if={@log.team1_score}>&middot; {@log.team1_score} : {@log.team2_score}</span>
+    &middot; {duration(@log.duration_ms)}
+    <span :if={@log.events}>
+      &middot; <a href={~p"/admin/games/#{@log.id}/events.json"}>raw JSON</a>
+    </span>
+  </p>
+
+  <h2>Replays</h2>
+  <p :if={@replays == []} class="admin-muted">No browser recordings for this game.</p>
+  <ul>
+    <li :for={r <- @replays}>
+      <a href={~p"/admin/replays/#{r.id}"}>{r.display_name}</a>
+      &middot; {r.device} {r.viewport_w}x{r.viewport_h} &middot; {human_bytes(r.bytes)}
+    </li>
+  </ul>
+
+  <h2>Timeline</h2>
+  <p :if={is_nil(@timeline)} class="admin-muted">
+    No event log for this game (recorded before logging existed, or pruned).
+  </p>
+  <pre :if={@timeline} class="admin-timeline">{@timeline}</pre>
+</div>

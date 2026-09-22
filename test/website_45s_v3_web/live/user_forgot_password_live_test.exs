@@ -59,5 +59,62 @@ defmodule Website45sV3Web.UserForgotPasswordLiveTest do
       assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "If your email is in our system"
       assert Repo.all(Accounts.UserToken) == []
     end
+
+    test "refuses to send when the Turnstile challenge fails", %{conn: conn, user: user} do
+      Website45sV3.TurnstileStub.force_failure()
+      {:ok, lv, _html} = live(conn, ~p"/users/reset_password")
+
+      result =
+        lv
+        |> form("#reset_password_form", user: %{"email" => user.email})
+        |> render_submit()
+
+      assert result =~ "Please complete the verification challenge"
+      assert Repo.all(Accounts.UserToken) == []
+    end
+
+    test "refuses to send once the address has had its allowance", %{conn: conn, user: user} do
+      alias Website45sV3.Security.RateLimiter
+
+      previous = Application.get_env(:website_45s_v3, :security_rate_limits)
+      Application.put_env(:website_45s_v3, :security_rate_limits, email: [max_address: 1])
+
+      on_exit(fn ->
+        Application.put_env(:website_45s_v3, :security_rate_limits, previous)
+        RateLimiter.reset()
+      end)
+
+      RateLimiter.reset()
+      {:ok, lv, _html} = live(conn, ~p"/users/reset_password")
+
+      {:ok, _conn} =
+        lv
+        |> form("#reset_password_form", user: %{"email" => user.email})
+        |> render_submit()
+        |> follow_redirect(conn, "/")
+
+      {:ok, lv, _html} = live(conn, ~p"/users/reset_password")
+
+      result =
+        lv
+        |> form("#reset_password_form", user: %{"email" => user.email})
+        |> render_submit()
+
+      assert result =~ "Too many requests"
+      assert length(Repo.all(Accounts.UserToken)) == 1
+    end
+
+    test "does not reveal a delivery failure", %{conn: conn, user: user} do
+      Website45sV3.FailingMailAdapter.enable()
+      {:ok, lv, _html} = live(conn, ~p"/users/reset_password")
+
+      {:ok, conn} =
+        lv
+        |> form("#reset_password_form", user: %{"email" => user.email})
+        |> render_submit()
+        |> follow_redirect(conn, "/")
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "If your email is in our system"
+    end
   end
 end

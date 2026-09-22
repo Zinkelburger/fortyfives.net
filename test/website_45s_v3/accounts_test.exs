@@ -538,4 +538,325 @@ defmodule Website45sV3.AccountsTest do
       refute inspect(%User{password: "123456"}) =~ "password: \"123456\""
     end
   end
+
+  describe "username screening" do
+    test "rejects a trailing newline in the email" do
+      # `$` matched before a final newline; `\z` does not.
+      {:error, changeset} =
+        Accounts.register_user(valid_user_attributes(email: "user@example.com\n"))
+
+      assert "Must have the @ sign and no spaces" in errors_on(changeset).email
+    end
+
+    test "ordinary names that merely contain a banned substring are allowed" do
+      for username <- ~w(Cassidy Massachusetts Saturday cucumber Hancock Kumar translate
+                         badminton button raccoon assassin player1 Cummings analyst) do
+        refute User.banned_username?(username), "#{username} should be allowed"
+        assert User.valid_username?(username), "#{username} should be valid"
+      end
+    end
+
+    test "banned words are caught as whole names and whole words" do
+      for username <- ~w(fuck Fuck FUCK xx_fuck_xx fuck.you nigger-1 admin Admin admin_bob
+                         moderator fortyfives fuck123 ass a_s_s) do
+        assert User.banned_username?(username), "#{username} should be banned"
+      end
+    end
+
+    test "separator, confusable, fullwidth, diacritic and leet spellings are caught" do
+      for username <- [
+            "f.u.c.k",
+            "f-u-c-k",
+            "f_u_c_k",
+            # Cyrillic с and о
+            "fuсk",
+            "cоck",
+            # fullwidth
+            "ｆｕｃｋ",
+            "fück",
+            "sh1t",
+            "a55hole",
+            "nigg3r",
+            "n1gga",
+            "f4ggot"
+          ] do
+        assert User.banned_username?(username), "#{username} should be banned"
+      end
+    end
+
+    test "registration reports a banned word" do
+      {:error, changeset} = Accounts.register_user(valid_user_attributes(username: "f.u.c.k"))
+      assert "Contains a banned word" in errors_on(changeset).username
+    end
+
+    test "the reserved-name screen does not block names that only contain them" do
+      assert User.valid_username?("badminton")
+      assert User.valid_username?("nomads")
+      assert User.valid_username?("rootbeer")
+    end
+  end
+
+  describe "unique constraints" do
+    test "a username collision that slips past the pre-check is a form error, not a crash" do
+      %{username: username} = user_fixture()
+
+      {:error, changeset} =
+        %User{}
+        |> User.registration_changeset(
+          valid_user_attributes(username: username),
+          validate_username: false
+        )
+        |> Repo.insert()
+
+      assert "has already been taken" in errors_on(changeset).username
+    end
+
+    test "linking an already-linked Google account is a form error, not a crash" do
+      {:ok, first} = Accounts.get_or_create_google_user(google_auth(uid: "google-taken"))
+      assert first.google_uid == "google-taken"
+
+      {:error, changeset} =
+        user_fixture()
+        |> User.google_link_changeset("google-taken")
+        |> Repo.update()
+
+      assert "has already been taken" in errors_on(changeset).google_uid
+    end
+
+    test "linking a Google account never confirms the user" do
+      user = user_fixture()
+      Repo.update!(Ecto.Changeset.change(user, confirmed_at: nil))
+
+      {:ok, linked} = user |> User.google_link_changeset("google-unconfirmed") |> Repo.update()
+
+      assert linked.google_uid == "google-unconfirmed"
+      refute linked.confirmed_at
+      refute Repo.get!(User, user.id).confirmed_at
+    end
+  end
+
+  describe "generate_username/1" do
+    test "uses the email local part when it is a valid, free username" do
+      assert Accounts.generate_username("andrew.bernal@example.com") == "andrew.bernal"
+    end
+
+    test "drops characters usernames do not allow" do
+      assert Accounts.generate_username("me+tag@example.com") == "metag"
+    end
+
+    test "truncates a long local part to the maximum length" do
+      long = String.duplicate("a", 40)
+      username = Accounts.generate_username("#{long}@example.com")
+      assert String.length(username) == 30
+      assert User.valid_username?(username)
+    end
+
+    test "appends a numeric suffix when the name is taken" do
+      user_fixture(username: "taken")
+      assert Accounts.generate_username("taken@example.com") == "taken2"
+
+      user_fixture(username: "taken2")
+      assert Accounts.generate_username("taken@example.com") == "taken3"
+    end
+
+    test "keeps a suffixed name within the maximum length" do
+      long = String.duplicate("b", 30)
+      user_fixture(username: long)
+
+      username = Accounts.generate_username("#{long}@example.com")
+      assert username == String.duplicate("b", 29) <> "2"
+    end
+
+    test "falls back to a random player name when the local part is too short" do
+      assert "player_" <> _ = Accounts.generate_username("ab@example.com")
+    end
+
+    test "falls back to a random player name when the local part is a banned word" do
+      assert "player_" <> _ = Accounts.generate_username("admin@example.com")
+    end
+
+    test "falls back to a random player name when nothing usable is left" do
+      assert "player_" <> _ = Accounts.generate_username("+++@example.com")
+    end
+
+    test "random player names are valid usernames" do
+      username = Accounts.generate_username("+++@example.com")
+      assert User.valid_username?(username)
+      assert String.length(username) <= 30
+    end
+  end
+
+  describe "get_or_create_google_user/1" do
+    test "creates a confirmed user with a derived username for a new verified email" do
+      auth = google_auth(email: "newcomer@example.com", uid: "google-new")
+
+      assert {:ok, user} = Accounts.get_or_create_google_user(auth)
+      assert user.email == "newcomer@example.com"
+      assert user.username == "newcomer"
+      assert user.google_uid == "google-new"
+      assert user.confirmed_at
+      assert is_binary(user.hashed_password)
+    end
+
+    test "returns the already-linked user for a known uid" do
+      auth = google_auth(uid: "google-known")
+      {:ok, user} = Accounts.get_or_create_google_user(auth)
+
+      assert {:ok, %User{id: id}} = Accounts.get_or_create_google_user(auth)
+      assert id == user.id
+      assert Repo.aggregate(User, :count) == 1
+    end
+
+    test "links to a confirmed local account with the same email" do
+      user = confirmed_user_fixture()
+      auth = google_auth(email: user.email, uid: "google-link")
+
+      assert {:ok, linked} = Accounts.get_or_create_google_user(auth)
+      assert linked.id == user.id
+      assert linked.google_uid == "google-link"
+      assert Repo.aggregate(User, :count) == 1
+    end
+
+    test "matches the local email case-insensitively" do
+      user = confirmed_user_fixture(email: "Mixed.Case@example.com")
+      auth = google_auth(email: "mixed.case@example.com")
+
+      assert {:ok, linked} = Accounts.get_or_create_google_user(auth)
+      assert linked.id == user.id
+    end
+
+    test "refuses to link to an unconfirmed local account" do
+      user = user_fixture()
+      refute user.confirmed_at
+
+      auth = google_auth(email: user.email, uid: "google-squat")
+
+      assert {:error, :unconfirmed_account} = Accounts.get_or_create_google_user(auth)
+      assert Accounts.get_user!(user.id).google_uid == nil
+      refute Accounts.get_user_by_google_uid("google-squat")
+    end
+
+    test "refuses an email Google has not verified, even for a confirmed account" do
+      user = confirmed_user_fixture()
+      auth = google_auth(email: user.email, uid: "google-unverified", email_verified: false)
+
+      assert {:error, :email_unverified} = Accounts.get_or_create_google_user(auth)
+      assert Accounts.get_user!(user.id).google_uid == nil
+      assert Repo.aggregate(User, :count) == 1
+    end
+
+    test "refuses when the verified flag is absent from the raw profile" do
+      auth = google_auth(email: unique_user_email(), email_verified: nil)
+      assert {:error, :email_unverified} = Accounts.get_or_create_google_user(auth)
+      assert Repo.aggregate(User, :count) == 0
+    end
+
+    test "refuses when Google shares no email" do
+      auth = google_auth(email: nil)
+      assert {:error, :email_missing} = Accounts.get_or_create_google_user(auth)
+
+      auth = google_auth(email: "   ")
+      assert {:error, :email_missing} = Accounts.get_or_create_google_user(auth)
+
+      assert Repo.aggregate(User, :count) == 0
+    end
+
+    test "refuses when the email is already linked to a different Google account" do
+      user = confirmed_user_fixture()
+      {:ok, _} = Accounts.get_or_create_google_user(google_auth(email: user.email, uid: "g-one"))
+
+      assert {:error, :google_account_mismatch} =
+               Accounts.get_or_create_google_user(google_auth(email: user.email, uid: "g-two"))
+
+      assert Accounts.get_user!(user.id).google_uid == "g-one"
+    end
+
+    test "picks a free username when the derived one is taken" do
+      user_fixture(username: "popular")
+      auth = google_auth(email: "popular@example.com")
+
+      assert {:ok, user} = Accounts.get_or_create_google_user(auth)
+      assert user.username == "popular2"
+    end
+
+    test "still signs up when the derived username is unusable" do
+      auth = google_auth(email: "ab@example.com")
+
+      assert {:ok, user} = Accounts.get_or_create_google_user(auth)
+      assert "player_" <> _ = user.username
+    end
+  end
+
+  describe "purge_expired_tokens/0" do
+    setup do
+      %{user: user_fixture()}
+    end
+
+    defp age_tokens(days) do
+      Repo.update_all(UserToken,
+        set: [inserted_at: NaiveDateTime.add(NaiveDateTime.utc_now(), -days * 86_400, :second)]
+      )
+    end
+
+    test "deletes tokens past their context's validity and keeps the rest", %{user: user} do
+      # Every context, aged past its own limit.
+      _ = Accounts.generate_user_session_token(user)
+      {:ok, _} = Accounts.deliver_user_confirmation_instructions(user, & &1)
+      {:ok, _} = Accounts.deliver_user_reset_password_instructions(user, & &1)
+      {:ok, _} = Accounts.deliver_user_update_email_instructions(user, "old@example.com", & &1)
+      age_tokens(61)
+
+      # Fresh ones that must survive.
+      live_session = Accounts.generate_user_session_token(user)
+      {:ok, _} = Accounts.deliver_user_reset_password_instructions(user, & &1)
+
+      assert Accounts.purge_expired_tokens() == 4
+      assert Repo.aggregate(UserToken, :count) == 2
+      assert Accounts.get_user_by_session_token(live_session)
+    end
+
+    test "respects each context's own validity window", %{user: user} do
+      # 2 days: a reset-password token (1 day) has expired, a session (60 days)
+      # and a confirmation token (7 days) have not.
+      _ = Accounts.generate_user_session_token(user)
+      {:ok, _} = Accounts.deliver_user_confirmation_instructions(user, & &1)
+      {:ok, _} = Accounts.deliver_user_reset_password_instructions(user, & &1)
+      age_tokens(2)
+
+      assert Accounts.purge_expired_tokens() == 1
+      refute Repo.get_by(UserToken, context: "reset_password")
+      assert Repo.get_by(UserToken, context: "session")
+      assert Repo.get_by(UserToken, context: "confirm")
+    end
+
+    test "is a no-op with nothing expired", %{user: user} do
+      _ = Accounts.generate_user_session_token(user)
+      assert Accounts.purge_expired_tokens() == 0
+      assert Repo.aggregate(UserToken, :count) == 1
+    end
+  end
+
+  describe "TokenSweeper" do
+    alias Website45sV3.Accounts.TokenSweeper
+
+    test "purges on each sweep tick" do
+      user = user_fixture()
+      _ = Accounts.generate_user_session_token(user)
+      age_tokens(61)
+      _ = Accounts.generate_user_session_token(user)
+
+      pid =
+        start_supervised!(
+          {TokenSweeper, name: :test_token_sweeper, initial_delay_ms: :timer.hours(1)}
+        )
+
+      # Nothing has run yet.
+      assert TokenSweeper.last_purged(pid) == nil
+      assert Repo.aggregate(UserToken, :count) == 2
+
+      send(pid, :sweep)
+      assert TokenSweeper.last_purged(pid) == 1
+      assert Repo.aggregate(UserToken, :count) == 1
+    end
+  end
 end

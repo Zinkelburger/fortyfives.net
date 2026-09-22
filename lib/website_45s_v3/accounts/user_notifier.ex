@@ -1,4 +1,10 @@
 defmodule Website45sV3.Accounts.UserNotifier do
+  @moduledoc """
+  Builds and sends the account emails (confirmation, password reset, email
+  change). Every function returns the `Bamboo.Mailer.deliver_now/1` result,
+  `{:ok, email}` or `{:error, reason}`; callers must handle the error.
+  """
+
   import Bamboo.Email
   alias Website45sV3.Mailer
 
@@ -68,7 +74,7 @@ defmodule Website45sV3.Accounts.UserNotifier do
 
     #{url}
 
-    If you didn't create an account with us, please ignore this.
+    If you didn't create an account with us, please ignore this email.
     """
 
     html =
@@ -91,7 +97,7 @@ defmodule Website45sV3.Accounts.UserNotifier do
 
     #{url}
 
-    If you didn't request this change, please ignore this.
+    If you didn't request this change, please ignore this email.
     """
 
     html =
@@ -114,7 +120,7 @@ defmodule Website45sV3.Accounts.UserNotifier do
 
     #{url}
 
-    If you didn't request this change, please ignore this.
+    If you didn't request this change, please ignore this email.
     """
 
     html =

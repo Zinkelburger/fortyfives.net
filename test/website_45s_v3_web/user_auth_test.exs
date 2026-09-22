@@ -44,6 +44,36 @@ defmodule Website45sV3Web.UserAuthTest do
       assert signed_token != get_session(conn, :user_token)
       assert max_age == 5_184_000
     end
+
+    test "the remember-me cookie is HttpOnly, SameSite=Lax and follows the secure setting",
+         %{conn: conn, user: user} do
+      conn = conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => "true"})
+
+      assert %{http_only: true, same_site: "Lax", secure: secure} =
+               conn.resp_cookies[@remember_me_cookie]
+
+      assert secure == Application.get_env(:website_45s_v3, :secure_cookies, false)
+    end
+
+    test "does not write a cookie for a remember_me value other than \"true\"",
+         %{conn: conn, user: user} do
+      conn = conn |> fetch_cookies() |> UserAuth.log_in_user(user, %{"remember_me" => ["true"]})
+      refute conn.resp_cookies[@remember_me_cookie]
+    end
+
+    test "keeps the anonymous player id across the session renewal", %{conn: conn, user: user} do
+      # The queue/game seat is keyed on this id; losing it on login would eject
+      # the player from a game in progress.
+      conn =
+        conn
+        |> put_session(:user_id, "seat-123")
+        |> put_session(:to_be_removed, "value")
+        |> UserAuth.log_in_user(user)
+
+      assert get_session(conn, :user_id) == "seat-123"
+      refute get_session(conn, :to_be_removed)
+      assert get_session(conn, :user_token)
+    end
   end
 
   describe "logout_user/1" do
@@ -81,12 +111,52 @@ defmodule Website45sV3Web.UserAuthTest do
       assert %{max_age: 0} = conn.resp_cookies[@remember_me_cookie]
       assert redirected_to(conn) == ~p"/"
     end
+
+    test "keeps the anonymous player id across the session renewal", %{conn: conn, user: user} do
+      user_token = Accounts.generate_user_session_token(user)
+
+      conn =
+        conn
+        |> put_session(:user_token, user_token)
+        |> put_session(:user_id, "seat-123")
+        |> fetch_cookies()
+        |> UserAuth.log_out_user()
+
+      assert get_session(conn, :user_id) == "seat-123"
+      refute get_session(conn, :user_token)
+    end
   end
 
   describe "fetch_current_user/2" do
     test "authenticates user from session", %{conn: conn, user: user} do
       user_token = Accounts.generate_user_session_token(user)
       conn = conn |> put_session(:user_token, user_token) |> UserAuth.fetch_current_user([])
+      assert conn.assigns.current_user.id == user.id
+    end
+
+    test "mints an anonymous player id and stores it in the session", %{conn: conn} do
+      conn = UserAuth.fetch_current_user(conn, [])
+
+      assert {:ok, _} = Ecto.UUID.cast(conn.assigns.user_id)
+      assert get_session(conn, :user_id) == conn.assigns.user_id
+      refute conn.assigns.current_user
+    end
+
+    test "reuses an existing player id, for anonymous and signed-in visitors alike",
+         %{conn: conn, user: user} do
+      conn = conn |> put_session(:user_id, "seat-123") |> UserAuth.fetch_current_user([])
+      assert conn.assigns.user_id == "seat-123"
+      refute conn.assigns.current_user
+
+      user_token = Accounts.generate_user_session_token(user)
+
+      conn =
+        conn
+        |> put_session(:user_token, user_token)
+        |> put_session(:user_id, "seat-123")
+        |> UserAuth.fetch_current_user([])
+
+      assert conn.assigns.user_id == "seat-123"
       assert conn.assigns.current_user.id == user.id
     end
 
@@ -145,6 +215,54 @@ defmodule Website45sV3Web.UserAuthTest do
         UserAuth.on_mount(:mount_current_user, %{}, session, %LiveView.Socket{})
 
       assert updated_socket.assigns.current_user == nil
+    end
+
+    test "assigns the anonymous player id from the session", %{conn: conn, user: user} do
+      user_token = Accounts.generate_user_session_token(user)
+
+      session =
+        conn
+        |> put_session(:user_token, user_token)
+        |> put_session(:user_id, "seat-123")
+        |> get_session()
+
+      {:cont, updated_socket} =
+        UserAuth.on_mount(:mount_current_user, %{}, session, %LiveView.Socket{})
+
+      assert updated_socket.assigns.user_id == "seat-123"
+      assert updated_socket.assigns.current_user.id == user.id
+    end
+
+    test "assigns a nil player id when the session has none", %{conn: conn} do
+      session = conn |> get_session()
+
+      {:cont, updated_socket} =
+        UserAuth.on_mount(:mount_current_user, %{}, session, %LiveView.Socket{})
+
+      assert updated_socket.assigns.user_id == nil
+    end
+  end
+
+  describe "the browser pipeline" do
+    test "gives every visitor a player id once, and authenticates in the same pass",
+         %{user: user} do
+      conn = get(build_conn(), ~p"/")
+      assert {:ok, _} = Ecto.UUID.cast(conn.assigns.user_id)
+      assert get_session(conn, :user_id) == conn.assigns.user_id
+      refute conn.assigns.current_user
+
+      player_id = conn.assigns.user_id
+
+      conn =
+        build_conn()
+        |> Phoenix.ConnTest.init_test_session(%{
+          user_id: player_id,
+          user_token: Accounts.generate_user_session_token(user)
+        })
+        |> get(~p"/")
+
+      assert conn.assigns.user_id == player_id
+      assert conn.assigns.current_user.id == user.id
     end
   end
 

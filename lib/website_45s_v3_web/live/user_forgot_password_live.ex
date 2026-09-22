@@ -1,9 +1,12 @@
 defmodule Website45sV3Web.UserForgotPasswordLive do
   use Website45sV3Web, :live_view
 
+  import Website45sV3Web.AuthLiveHelpers,
+    only: [authorize_email_send: 3, client_ip: 1, refuse_submit: 3]
+
+  require Logger
+
   alias Website45sV3.Accounts
-  alias Website45sV3.Security.RateLimiter
-  alias Website45sV3.Turnstile
 
   def render(assigns) do
     ~H"""
@@ -62,45 +65,35 @@ defmodule Website45sV3Web.UserForgotPasswordLive do
   end
 
   def handle_event("send_email", %{"user" => %{"email" => email}} = params, socket) do
-    # Turnstile first, so an unsolved challenge cannot burn a victim's mail
-    # budget; the limiter then caps how much mail one network or one inbox can
-    # be made to receive. Both counters are charged on the submitted address
-    # whether or not it belongs to an account, so this leaks no membership.
-    with :ok <- Turnstile.verify(params["cf-turnstile-response"], socket.assigns.client_ip),
-         :ok <- RateLimiter.check_email_send(socket.assigns.client_ip, email) do
-      if user = Accounts.get_user_by_email(email) do
-        Accounts.deliver_user_reset_password_instructions(
-          user,
-          &url(~p"/users/reset_password/#{&1}")
-        )
-      end
+    case authorize_email_send(socket, params, email) do
+      :ok ->
+        if user = Accounts.get_user_by_email(email) do
+          user
+          |> Accounts.deliver_user_reset_password_instructions(
+            &url(~p"/users/reset_password/#{&1}")
+          )
+          |> log_delivery_failure(user)
+        end
 
-      info =
-        "If your email is in our system, you will receive instructions to reset your password shortly."
+        info =
+          "If your email is in our system, you will receive instructions to reset your password shortly."
 
-      {:noreply,
-       socket
-       |> put_flash(:info, info)
-       |> redirect(to: ~p"/")}
-    else
-      {:error, :turnstile_failed} ->
         {:noreply,
          socket
-         |> put_flash(:error, "Please complete the verification challenge and try again.")
-         |> push_event("turnstile:reset", %{})}
+         |> put_flash(:info, info)
+         |> redirect(to: ~p"/")}
 
-      {:error, :rate_limited} ->
+      {:error, reason} ->
         {:noreply,
-         socket
-         |> put_flash(:error, "Too many requests. Please wait a while and try again.")
-         |> push_event("turnstile:reset", %{})}
+         refuse_submit(socket, reason, "Too many requests. Please wait a while and try again.")}
     end
   end
 
-  defp client_ip(socket) do
-    Turnstile.client_ip(
-      get_connect_info(socket, :x_headers),
-      get_connect_info(socket, :peer_data)
-    )
+  # The response must not reveal whether the address is registered, so a
+  # delivery failure can only be logged, never shown.
+  defp log_delivery_failure({:ok, _email}, _user), do: :ok
+
+  defp log_delivery_failure({:error, reason}, user) do
+    Logger.error("Could not send password reset email to user #{user.id}: #{inspect(reason)}")
   end
 end

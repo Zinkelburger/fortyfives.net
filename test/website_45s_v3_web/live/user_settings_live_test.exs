@@ -80,6 +80,42 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
       assert result =~ "Did not change"
       assert result =~ "Is not valid"
     end
+
+    test "never echoes the current password back into the page", %{conn: conn, password: password} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> element("#email_form")
+        |> render_change(%{"current_password" => password, "user" => %{"email" => "x"}})
+
+      refute result =~ password
+
+      result =
+        lv
+        |> form("#email_form", %{"current_password" => password, "user" => %{"email" => "x"}})
+        |> render_submit()
+
+      refute result =~ password
+    end
+
+    test "tells the user when the confirmation email cannot be sent",
+         %{conn: conn, password: password, user: user} do
+      Website45sV3.FailingMailAdapter.enable()
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> form("#email_form", %{
+          "current_password" => password,
+          "user" => %{"email" => unique_user_email()}
+        })
+        |> render_submit()
+
+      assert result =~ "could not send a confirmation link"
+      refute result =~ "A link to confirm your email"
+      assert Accounts.get_user_by_email(user.email)
+    end
   end
 
   describe "update password form" do
@@ -155,6 +191,21 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
       assert result =~ "should be at least 8 character(s)"
       assert result =~ "Does not match password"
       assert result =~ "Is not valid"
+    end
+
+    test "never echoes typed passwords back into the page", %{conn: conn, password: password} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> element("#password_form")
+        |> render_change(%{
+          "current_password" => password,
+          "user" => %{"password" => "brand new secret", "password_confirmation" => "brand new"}
+        })
+
+      refute result =~ password
+      refute result =~ "brand new secret"
     end
   end
 

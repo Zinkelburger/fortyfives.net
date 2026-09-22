@@ -142,6 +142,61 @@ defmodule Website45sV3.Security.RateLimiterTest do
     end
   end
 
+  describe "unknown clients" do
+    test "a login with no determinable IP is refused outright" do
+      # Only one dimension to charge and it is missing: fail closed, so a
+      # client that hides its address cannot escape the per-IP budget.
+      assert {:error, :rate_limited} = RateLimiter.check_login_ip(nil)
+      assert {:error, :rate_limited} = RateLimiter.check_login_ip("")
+    end
+
+    test "queue joins with no determinable IP are refused outright" do
+      assert {:error, :rate_limited} = RateLimiter.check_queue_join(nil)
+    end
+
+    test "registration checks with no IP report exhausted-free but cannot be charged" do
+      # `registration_exhausted?` is a read; the charge happens later and is
+      # what fails closed.
+      refute RateLimiter.registration_exhausted?(nil)
+      assert {:error, :rate_limited} = RateLimiter.record_registration(nil)
+    end
+  end
+
+  describe "windows" do
+    test "a budget is restored when the window rolls over" do
+      put_limits(login: [window_ms: 50, max_ip: 1, max_account: 100])
+
+      assert :ok = RateLimiter.check_login_ip("203.0.113.1")
+      assert {:error, :rate_limited} = RateLimiter.check_login_ip("203.0.113.1")
+
+      # Well past the 50ms bucket boundary, whatever the phase we started at.
+      Process.sleep(110)
+      assert :ok = RateLimiter.check_login_ip("203.0.113.1")
+    end
+
+    test "the sweep drops rows whose bucket has expired and keeps live ones" do
+      put_limits(login: [window_ms: 50, max_ip: 5, max_account: 100])
+
+      :ok = RateLimiter.check_login_ip("203.0.113.1")
+      assert :ets.info(RateLimiter, :size) == 1
+
+      # A sweep now must not touch a row from the current bucket.
+      send(RateLimiter, :sweep)
+      :sys.get_state(RateLimiter)
+      assert :ets.info(RateLimiter, :size) == 1
+
+      Process.sleep(110)
+      :ok = RateLimiter.check_login_ip("203.0.113.2")
+      assert :ets.info(RateLimiter, :size) == 2
+
+      send(RateLimiter, :sweep)
+      :sys.get_state(RateLimiter)
+
+      assert [{{{:login_ip, {203, 0, 113, 2}}, _bucket}, 1, _expires_at}] =
+               :ets.tab2list(RateLimiter)
+    end
+  end
+
   describe "registration" do
     test "accounts created from one network are capped" do
       put_limits(registration: [window_ms: 60_000, max_ip: 2])

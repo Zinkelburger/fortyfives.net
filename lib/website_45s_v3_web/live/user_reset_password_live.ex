@@ -1,6 +1,8 @@
 defmodule Website45sV3Web.UserResetPasswordLive do
   use Website45sV3Web, :live_view
 
+  import Website45sV3Web.AuthLiveHelpers, only: [password_field: 1]
+
   alias Website45sV3.Accounts
 
   def render(assigns) do
@@ -18,11 +20,16 @@ defmodule Website45sV3Web.UserResetPasswordLive do
           Oops, something went wrong! Please check the errors below.
         </.error>
 
-        <.input field={@form[:password]} type="password" label="New password" required />
-        <.input
+        <.password_field
+          field={@form[:password]}
+          label="New password"
+          autocomplete="new-password"
+          required
+        />
+        <.password_field
           field={@form[:password_confirmation]}
-          type="password"
           label="Confirm new password"
+          autocomplete="new-password"
           required
         />
         <:actions>
@@ -55,16 +62,26 @@ defmodule Website45sV3Web.UserResetPasswordLive do
 
   # Do not log in the user after reset password to avoid a
   # leaked token giving the user access to the account.
+  #
+  # The token is checked again here, not just at mount: the page may have
+  # been left open past the token's lifetime, or the token invalidated in
+  # the meantime (a newer reset, a completed reset, an email change).
   def handle_event("reset_password", %{"user" => user_params}, socket) do
-    case Accounts.reset_user_password(socket.assigns.user, user_params) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Password reset successfully.")
-         |> redirect(to: ~p"/users/log_in")}
+    case Accounts.get_user_by_reset_password_token(socket.assigns.token) do
+      nil ->
+        {:noreply, expired_token(socket)}
 
-      {:error, changeset} ->
-        {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+      user ->
+        case Accounts.reset_user_password(user, user_params) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, "Password reset successfully.")
+             |> redirect(to: ~p"/users/log_in")}
+
+          {:error, changeset} ->
+            {:noreply, assign_form(socket, Map.put(changeset, :action, :insert))}
+        end
     end
   end
 
@@ -77,10 +94,14 @@ defmodule Website45sV3Web.UserResetPasswordLive do
     if user = Accounts.get_user_by_reset_password_token(token) do
       assign(socket, user: user, token: token)
     else
-      socket
-      |> put_flash(:error, "Reset password link is invalid or it has expired.")
-      |> redirect(to: ~p"/")
+      expired_token(socket)
     end
+  end
+
+  defp expired_token(socket) do
+    socket
+    |> put_flash(:error, "Reset password link is invalid or it has expired.")
+    |> redirect(to: ~p"/")
   end
 
   defp assign_form(socket, %{} = source) do

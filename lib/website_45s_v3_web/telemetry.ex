@@ -1,4 +1,13 @@
 defmodule Website45sV3Web.Telemetry do
+  @moduledoc """
+  Defines the application's telemetry metrics.
+
+  No reporter ships them anywhere: the only consumer is Phoenix LiveDashboard,
+  mounted at `/dev/dashboard` in development (see the router), which reads
+  `metrics/0`. The metrics cover the parts of the app that actually emit
+  events — Phoenix (HTTP and channels), LiveView, Ecto and the VM. The poller
+  is what produces the periodic `vm.*` measurements.
+  """
   use Supervisor
   import Telemetry.Metrics
 
@@ -9,11 +18,7 @@ defmodule Website45sV3Web.Telemetry do
   @impl true
   def init(_arg) do
     children = [
-      # Telemetry poller will execute the given period measurements
-      # every 10_000ms. Learn more here: https://hexdocs.pm/telemetry_metrics
-      {:telemetry_poller, measurements: periodic_measurements(), period: 10_000}
-      # Add reporters as children of your supervision tree.
-      # {Telemetry.Metrics.ConsoleReporter, metrics: metrics()}
+      {:telemetry_poller, measurements: [], period: 10_000}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
@@ -21,22 +26,15 @@ defmodule Website45sV3Web.Telemetry do
 
   def metrics do
     [
-      # Phoenix Metrics
-      summary("phoenix.endpoint.start.system_time",
-        unit: {:native, :millisecond}
-      ),
+      # Phoenix
       summary("phoenix.endpoint.stop.duration",
         unit: {:native, :millisecond}
       ),
-      summary("phoenix.router_dispatch.start.system_time",
+      summary("phoenix.router_dispatch.stop.duration",
         tags: [:route],
         unit: {:native, :millisecond}
       ),
       summary("phoenix.router_dispatch.exception.duration",
-        tags: [:route],
-        unit: {:native, :millisecond}
-      ),
-      summary("phoenix.router_dispatch.stop.duration",
         tags: [:route],
         unit: {:native, :millisecond}
       ),
@@ -51,7 +49,24 @@ defmodule Website45sV3Web.Telemetry do
         unit: {:native, :millisecond}
       ),
 
-      # Database Metrics
+      # LiveView
+      summary("phoenix.live_view.mount.stop.duration",
+        tags: [:view],
+        tag_values: &live_view_tags/1,
+        unit: {:native, :millisecond}
+      ),
+      summary("phoenix.live_view.handle_params.stop.duration",
+        tags: [:view],
+        tag_values: &live_view_tags/1,
+        unit: {:native, :millisecond}
+      ),
+      summary("phoenix.live_view.handle_event.stop.duration",
+        tags: [:view, :event],
+        tag_values: &live_view_tags/1,
+        unit: {:native, :millisecond}
+      ),
+
+      # Database
       summary("website_45s_v3.repo.query.total_time",
         unit: {:native, :millisecond},
         description: "The sum of the other measurements"
@@ -74,7 +89,7 @@ defmodule Website45sV3Web.Telemetry do
           "The time the connection spent waiting before being checked out for the query"
       ),
 
-      # VM Metrics
+      # VM
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),
       summary("vm.total_run_queue_lengths.cpu"),
@@ -82,11 +97,7 @@ defmodule Website45sV3Web.Telemetry do
     ]
   end
 
-  defp periodic_measurements do
-    [
-      # A module, function and arguments to be invoked periodically.
-      # This function must call :telemetry.execute/3 and a metric must be added above.
-      # {Website45sV3Web, :count_users, []}
-    ]
+  defp live_view_tags(%{socket: socket} = metadata) do
+    Map.put(metadata, :view, inspect(socket.view))
   end
 end

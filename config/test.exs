@@ -33,11 +33,16 @@ config :website_45s_v3, :game_timings,
   trick_transition: 10,
   scoring_display: 10
 
-# Disable swoosh api client as it is only required for production adapters.
-config :swoosh, :api_client, false
-
 # Disable Turnstile entirely in tests (no widget, no verification)
 config :website_45s_v3, :turnstile_site_key, nil
+
+# Keep the token sweeper from running inside a test run; its first sweep
+# would happen outside the Ecto sandbox.
+config :website_45s_v3, Website45sV3.Accounts.TokenSweeper, initial_delay_ms: :timer.hours(1)
+config :website_45s_v3, Website45sV3.Analytics.Pruner, initial_delay_ms: :timer.hours(1)
+
+# Tests that need an admin set the list themselves.
+config :website_45s_v3, :admin_usernames, []
 
 # Print only warnings and errors during test
 config :logger, level: :warning

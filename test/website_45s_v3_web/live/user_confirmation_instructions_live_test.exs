@@ -63,5 +63,57 @@ defmodule Website45sV3Web.UserConfirmationInstructionsLiveTest do
 
       assert Repo.all(Accounts.UserToken) == []
     end
+
+    test "refuses to send when the Turnstile challenge fails", %{conn: conn, user: user} do
+      Website45sV3.TurnstileStub.force_failure()
+      {:ok, lv, _html} = live(conn, ~p"/users/confirm")
+
+      result =
+        lv
+        |> form("#resend_confirmation_form", user: %{email: user.email})
+        |> render_submit()
+
+      assert result =~ "Please complete the verification challenge"
+      assert Repo.all(Accounts.UserToken) == []
+    end
+
+    test "refuses to send once the network has had its allowance", %{conn: conn, user: user} do
+      alias Website45sV3.Security.RateLimiter
+
+      previous = Application.get_env(:website_45s_v3, :security_rate_limits)
+      Application.put_env(:website_45s_v3, :security_rate_limits, email: [max_ip: 1])
+
+      on_exit(fn ->
+        Application.put_env(:website_45s_v3, :security_rate_limits, previous)
+        RateLimiter.reset()
+      end)
+
+      RateLimiter.reset()
+      # The test client connects from loopback; any address spends its budget.
+      :ok = RateLimiter.check_email_send("127.0.0.1", "someone-else@example.com")
+
+      {:ok, lv, _html} = live(conn, ~p"/users/confirm")
+
+      result =
+        lv
+        |> form("#resend_confirmation_form", user: %{email: user.email})
+        |> render_submit()
+
+      assert result =~ "Too many requests"
+      assert Repo.all(Accounts.UserToken) == []
+    end
+
+    test "does not reveal a delivery failure", %{conn: conn, user: user} do
+      Website45sV3.FailingMailAdapter.enable()
+      {:ok, lv, _html} = live(conn, ~p"/users/confirm")
+
+      {:ok, conn} =
+        lv
+        |> form("#resend_confirmation_form", user: %{email: user.email})
+        |> render_submit()
+        |> follow_redirect(conn, ~p"/")
+
+      assert Phoenix.Flash.get(conn.assigns.flash, :info) =~ "If your email is in our system"
+    end
   end
 end

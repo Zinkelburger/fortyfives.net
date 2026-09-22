@@ -1,34 +1,32 @@
 defmodule Website45sV3.Game.BotPlayer do
   @moduledoc """
-  Basic automated player used when a participant is idle.
-  The functions here return moves for the various phases of the game.
+  Basic automated player used for bot seats and for participants who are
+  idle. The functions here return moves for the various phases of the game
+  and are called by the game process with its full state.
   """
   alias Website45sV3.Game.Card
+  alias Website45sV3.Game.Rules
+
+  @suits [:hearts, :diamonds, :clubs, :spades]
+  @face_card_points %{5 => 12, 11 => 6, 1 => 4, 13 => 3, 12 => 2}
 
   @doc """
   Returns a bid value and suit based on the player's hand. The logic mirrors the
-  heuristics used by the selenium bot defined in `python/tbot.py`.
+  heuristics used by the selenium bot defined in `python/tbot.py`, plus the
+  dealer's option to hold at the current high bid.
   """
   def pick_bid(state, player_id) do
     hand = Map.get(state.hands, player_id, [])
-
     {bid, suit} = evaluate_hand_bid(hand)
     highest_bid = elem(state.winning_bid, 0)
+    dealer? = player_id == state.dealing_player_id
 
-    {bid, suit} =
-      cond do
-        state.bagged && player_id == state.current_player_id ->
-          {15, suit}
-
-        bid > highest_bid ->
-          {bid, suit}
-
-        true ->
-          {0, :pass}
-      end
-
-    bid_suit = if bid == 0, do: :pass, else: suit
-    {bid, bid_suit}
+    cond do
+      state.bagged and player_id == state.current_player_id -> {15, suit}
+      bid > highest_bid -> {bid, suit}
+      Rules.hold?(bid, highest_bid, dealer?) -> {bid, suit}
+      true -> {0, :pass}
+    end
   end
 
   @doc """
@@ -43,74 +41,45 @@ defmodule Website45sV3.Game.BotPlayer do
     hand = Map.get(state.hands, player_id, [])
     trump = state.trump
 
-    # 1) Filter for all trumps or kings
-    kept =
-      Enum.filter(hand, fn %Card{suit: suit, value: value} ->
-        suit == trump or value == 13
-      end)
-
-    # 2) If none, keep exactly the first card; otherwise keep the filtered ones
-    kept =
-      case kept do
-        # keep just one
-        [] -> [hd(hand)]
-        cards -> cards
-      end
-
-    # 3) Never keep more than five
-    kept = Enum.take(kept, 5)
-
-    # 4) Return just the kept cards encoded as strings
-    Enum.map(kept, &format_card/1)
-
-    # — or, if you did want to return both:
-    # {Enum.map(kept, &format_card/1), Enum.map(hand -- kept, &format_card/1)}
+    hand
+    |> Enum.filter(fn %Card{suit: suit, value: value} -> suit == trump or value == 13 end)
+    |> case do
+      [] -> Enum.take(hand, 1)
+      kept -> kept
+    end
+    |> Enum.take(5)
+    |> Enum.map(&Card.encode/1)
   end
 
   @doc """
-  Chooses a card to play from the player's legal moves. If no legal moves are
-  provided, the first card in their hand is selected.
+  Chooses a card to play from the player's legal moves. Returns `nil` when
+  the player has no cards.
   """
   def pick_card(state, player_id) do
     hand = Map.get(state.hands, player_id, [])
     legal = Map.get(state.legal_moves, player_id, hand)
     current_cards = Enum.map(state.played_cards, & &1.card)
 
-    evaluate_hand_play(
-      state.suit_led,
-      legal,
-      current_cards,
-      elem(state.winning_bid, 0),
-      state.trump
-    ) ||
+    evaluate_hand_play(state.suit_led, legal, current_cards, state.trump) ||
       List.first(legal) || List.first(hand)
-  end
-
-  defp format_card(%Card{value: value, suit: suit}) do
-    "#{value}_#{Atom.to_string(suit)}"
   end
 
   # --- Heuristic helpers ---
 
   defp evaluate_hand_bid(player_hand) do
-    suits = [:hearts, :diamonds, :clubs, :spades]
-
-    small_cards = Map.new(suits, fn s -> {s, 0} end)
-    sure_points = Map.new(suits, fn s -> {s, 0} end)
-
-    face_card_points = %{5 => 12, 11 => 6, 1 => 4, 13 => 3, 12 => 2}
+    empty = Map.new(@suits, fn s -> {s, 0} end)
 
     {small_cards, sure_points} =
-      Enum.reduce(player_hand, {small_cards, sure_points}, fn card, {sm, sp} ->
+      Enum.reduce(player_hand, {empty, empty}, fn card, {small, sure} ->
         cond do
-          Card.is_ace_of_hearts?(card) ->
-            {sm, Enum.reduce(suits, sp, fn suit, acc -> Map.update!(acc, suit, &(&1 + 5)) end)}
+          Card.ace_of_hearts?(card) ->
+            {small, Map.new(sure, fn {suit, points} -> {suit, points + 5} end)}
 
-          Map.has_key?(face_card_points, card.value) ->
-            {sm, Map.update!(sp, card.suit, &(&1 + face_card_points[card.value]))}
+          Map.has_key?(@face_card_points, card.value) ->
+            {small, Map.update!(sure, card.suit, &(&1 + @face_card_points[card.value]))}
 
           true ->
-            {Map.update!(sm, card.suit, &(&1 + 1)), sp}
+            {Map.update!(small, card.suit, &(&1 + 1)), sure}
         end
       end)
 
@@ -123,39 +92,31 @@ defmodule Website45sV3.Game.BotPlayer do
 
   defp get_max_card([], _suit_led, _trump), do: nil
 
-  defp get_max_card([card | rest], suit_led, trump) do
-    Enum.reduce(rest, card, fn c, acc ->
-      if Card.less_than(acc, c, suit_led, trump), do: c, else: acc
-    end)
+  defp get_max_card(cards, suit_led, trump) do
+    Enum.max_by(cards, & &1, &(not Card.less_than(&1, &2, suit_led, trump)))
   end
 
   defp get_min_card([], _suit_led, _trump), do: nil
 
-  defp get_min_card([card | rest], suit_led, trump) do
-    Enum.reduce(rest, card, fn c, acc ->
-      if Card.less_than(c, acc, suit_led, trump), do: c, else: acc
-    end)
+  defp get_min_card(cards, suit_led, trump) do
+    Enum.min_by(cards, & &1, &(not Card.less_than(&2, &1, suit_led, trump)))
   end
 
-  defp evaluate_hand_play(_suit_led, [], _current_cards, _bid_amount, _trump), do: nil
+  defp evaluate_hand_play(_suit_led, [], _current_cards, _trump), do: nil
 
-  defp evaluate_hand_play(suit_led, player_hand, current_cards, _bid_amount, trump) do
+  defp evaluate_hand_play(suit_led, player_hand, current_cards, trump) do
     max_card = get_max_card(current_cards, suit_led, trump)
     players_max_card = get_max_card(player_hand, suit_led, trump)
 
     players_lowest_offsuite =
       player_hand
-      |> Enum.filter(fn c -> c.suit != suit_led and c.suit != trump end)
+      |> Enum.reject(&(&1.suit == suit_led or Card.trump?(&1, trump)))
       |> get_min_card(suit_led, trump)
 
     players_worst_trump =
-      if Enum.any?(player_hand, fn c -> c.suit == trump end) do
-        player_hand
-        |> Enum.filter(&(&1.suit == trump))
-        |> get_min_card(suit_led, trump)
-      else
-        nil
-      end
+      player_hand
+      |> Enum.filter(&Card.trump?(&1, trump))
+      |> get_min_card(suit_led, trump)
 
     cond do
       max_card == nil -> players_max_card

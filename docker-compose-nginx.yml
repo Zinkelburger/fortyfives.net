@@ -1,3 +1,14 @@
+# Production stack: Phoenix release + Postgres + nginx (TLS termination) +
+# certbot (Let's Encrypt via Cloudflare DNS-01) + nightly pg_dump sidecar.
+# One-time bootstrap steps (volume creation, first certificate) are in
+# docs/deploy.md. Values such as ${POSTGRES_USER} are interpolated from ./.env.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   web:
     image: ${APP_IMAGE:?Set APP_IMAGE to an immutable image digest}
@@ -5,18 +16,63 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging: *default-logging
 
   db:
-    image: docker.io/library/postgres:15.18-alpine3.22@sha256:b829a702021452451951dbfb2def91e920f9182cf63ba8e74642e388ad35aef2
+    image: docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
     restart: unless-stopped
-    env_file:
-      - .env
+    # Only the Postgres variables; the rest of .env (SECRET_KEY_BASE, AWS,
+    # Google, Turnstile) must not reach this container.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  # Nightly logical backup: one custom-format pg_dump per day, 14 days kept.
+  # Restore with: pg_restore -d "$POSTGRES_DB" /backups/<file>.dump
+  db_backup:
+    image: docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+    volumes:
+      - db_backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        trap exit TERM
+        while :; do
+          pg_dump -Fc -f "/backups/$${PGDATABASE}-$$(date +%F-%H%M).dump" \
+            && find /backups -name '*.dump' -mtime +14 -delete
+          sleep 86400 & wait $${!}
+        done
+    logging: *default-logging
 
   nginx:
-    image: docker.io/library/nginx:1.29.3-alpine3.22@sha256:b3c656d55d7ad751196f21b7fd2e8d4da9cb430e32f646adcf92441b72f82b14
+    image: docker.io/library/nginx:1.31.5-alpine3.24@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
     restart: unless-stopped
     ports:
       - "80:80"
@@ -24,17 +80,54 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - ./certbot/www:/var/www/certbot:ro
+    # Reload daily so renewed certificates are picked up.
     command: "/bin/sh -c 'while :; do sleep 24h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
     depends_on:
-      - web
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--spider", "http://127.0.0.1:80/nginx-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
 
+  # Let's Encrypt via Cloudflare DNS-01, so a fresh host can obtain its first
+  # certificate before nginx (which needs the cert to start) is up. The
+  # credentials file is (re)written from CF_API_TOKEN on every start; the
+  # token needs Zone:DNS:Edit + Zone:Zone:Read on the fortyfives.net zone.
+  # First-run `certonly` command: see docs/deploy.md.
   certbot:
-    image: docker.io/certbot/certbot:v5.8.0@sha256:f70ad0adbb7e117f0fe42a63c553f28ea451edabc0148757b6efcd9735acaa20
+    image: docker.io/certbot/dns-cloudflare:v5.8.0@sha256:c45edb002b883da1a1235abb205dff474a7a1a459d878e8d5fdc7f9d83073aea
+    restart: unless-stopped
+    environment:
+      CF_API_TOKEN: ${CF_API_TOKEN:?Set CF_API_TOKEN in .env (Cloudflare DNS:Edit token for certbot)}
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;'"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        umask 077
+        printf 'dns_cloudflare_api_token = %s\n' "$$CF_API_TOKEN" > /etc/letsencrypt/cloudflare.ini
+        exec "$$@"
+      - --
+    command:
+      - /bin/sh
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --dns-cloudflare --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+          sleep 12h & wait $${!}
+        done
+    logging: *default-logging
 
 volumes:
-  db_data: {}
+  # Created once by hand (see docs/deploy.md) so `docker compose down -v`
+  # can never delete production data.
+  db_data:
+    external: true
+    name: fortyfives_db_data
+  db_backups:
+    name: fortyfives_db_backups

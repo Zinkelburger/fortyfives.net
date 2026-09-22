@@ -1,4 +1,9 @@
 defmodule Website45sV3.Game.PrivateQueueManager do
+  @moduledoc """
+  Private lobbies: invite-only queues identified by a UUID in a share link.
+  A lobby starts its game when four players are seated and is swept when it
+  expires or sits empty for too long.
+  """
   use GenServer
   require Logger
 
@@ -51,16 +56,8 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   end
 
   @impl true
-  def handle_call({:create_queue, id, owner_id}, _from, state) do
-    handle_create_queue(id, owner_id, nil, state)
-  end
-
   def handle_call({:create_queue, id, owner_id, remote_ip}, _from, state) do
     handle_create_queue(id, owner_id, remote_ip, state)
-  end
-
-  def handle_call({:add_player, id, {incoming_name, user_id}}, _from, state) do
-    handle_add_player(id, incoming_name, user_id, nil, state)
   end
 
   def handle_call({:add_player, id, {incoming_name, user_id}, remote_ip}, _from, state) do
@@ -103,6 +100,9 @@ defmodule Website45sV3.Game.PrivateQueueManager do
       not valid_queue_id?(id) ->
         {:reply, {:error, :invalid_id}, state}
 
+      Map.has_key?(state.queues, id) ->
+        {:reply, {:error, :already_exists}, state}
+
       map_size(state.queues) >= max_queues() ->
         {:reply, {:error, :too_many_lobbies}, state}
 
@@ -113,48 +113,51 @@ defmodule Website45sV3.Game.PrivateQueueManager do
         {:reply, {:error, :rate_limited}, state}
 
       true ->
-        queues = Map.put_new(state.queues, id, new_queue(owner_id))
+        queues = Map.put(state.queues, id, new_queue(owner_id))
         last_created = Map.put(state.last_created, owner_id, now)
         {:reply, :ok, %{state | queues: queues, last_created: last_created}}
     end
   end
 
   defp handle_add_player(id, incoming_name, user_id, remote_ip, state) do
-    with {:ok, queue} <- Map.fetch(state.queues, id) do
-      players = queue.players
-
-      cond do
-        Enum.any?(players, fn {_n, id2} -> id2 == user_id end) ->
-          {:reply, :ok, state}
-
-        ActiveGames.find_game(user_id) != nil ->
-          # One game per session: rejoin (or abandon) the running game first.
-          {:reply, {:error, :already_in_game}, state}
-
-        not queue_admission_allowed?(remote_ip) ->
-          {:reply, {:error, :rate_limited}, state}
-
-        true ->
-          assigned_name = Matchmaking.assign_display_name(incoming_name, players)
-          updated_players = players ++ [{assigned_name, user_id}]
-
-          if length(updated_players) >= 4 do
-            case Matchmaking.start_game(updated_players) do
-              :ok ->
-                {:reply, :ok, %{state | queues: Map.delete(state.queues, id)}}
-
-              {:error, _reason} ->
-                state = put_in(state.queues[id], mark_empty(queue, updated_players))
-                {:reply, :ok, state}
-            end
-          else
-            state = put_in(state.queues[id], mark_empty(queue, updated_players))
-            {:reply, :ok, state}
-          end
-      end
-    else
+    case Map.fetch(state.queues, id) do
+      {:ok, queue} -> admit_player(id, queue, incoming_name, user_id, remote_ip, state)
       :error -> {:reply, {:error, :queue_not_found}, state}
     end
+  end
+
+  defp admit_player(id, queue, incoming_name, user_id, remote_ip, state) do
+    players = queue.players
+
+    cond do
+      Enum.any?(players, fn {_n, id2} -> id2 == user_id end) ->
+        {:reply, :ok, state}
+
+      ActiveGames.find_game(user_id) != nil ->
+        # One game per session: rejoin (or abandon) the running game first.
+        {:reply, {:error, :already_in_game}, state}
+
+      not queue_admission_allowed?(remote_ip) ->
+        {:reply, {:error, :rate_limited}, state}
+
+      true ->
+        assigned_name = Matchmaking.assign_display_name(incoming_name, players)
+        updated_players = players ++ [{assigned_name, user_id}]
+        {:reply, :ok, seat_players(id, queue, updated_players, state)}
+    end
+  end
+
+  # Stores the updated seating, starting (and removing) the lobby once it is
+  # full. If the game could not start everyone stays seated for a retry.
+  defp seat_players(id, queue, players, state) when length(players) >= 4 do
+    case Matchmaking.start_game(players) do
+      :ok -> %{state | queues: Map.delete(state.queues, id)}
+      {:error, _reason} -> put_in(state.queues[id], mark_empty(queue, players))
+    end
+  end
+
+  defp seat_players(id, queue, players, state) do
+    put_in(state.queues[id], mark_empty(queue, players))
   end
 
   @impl true

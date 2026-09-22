@@ -34,17 +34,39 @@ defmodule Website45sV3.Game.Rules do
   def parse_bid(_bid, _suit), do: :error
 
   @doc """
-  Whether a bid is valid given the current highest bid and whether the dealer
-  is bagged (forced to bid because everyone else passed).
-  """
-  def valid_bid?(0, :pass, _highest_bid, bagged?), do: not bagged?
+  Whether a bid is valid given the current highest bid, whether the dealer
+  is bagged (forced to bid because everyone else passed) and whether the
+  bidder is the dealer.
 
-  def valid_bid?(bid, suit, highest_bid, _bagged?)
+  Everyone must outbid the current high bid, except the dealer who bids
+  last and may "hold": take the contract at the current high bid without
+  raising it.
+  """
+  def valid_bid?(bid, suit, highest_bid, bagged?, dealer? \\ false)
+
+  def valid_bid?(0, :pass, _highest_bid, bagged?, _dealer?), do: not bagged?
+
+  def valid_bid?(bid, suit, highest_bid, _bagged?, dealer?)
       when bid in @bid_values and suit in @suits do
-    bid > highest_bid
+    bid_allowed?(bid, highest_bid, dealer?)
   end
 
-  def valid_bid?(_bid, _suit, _highest_bid, _bagged?), do: false
+  def valid_bid?(_bid, _suit, _highest_bid, _bagged?, _dealer?), do: false
+
+  @doc """
+  Whether a real bid (not a pass) of `bid` may be made over `highest_bid`:
+  it must raise, or be the dealer holding. The single place the outbid/hold
+  rule lives; the bidding buttons in the table view ask this too, so what a
+  player can click is exactly what the game will accept.
+  """
+  def bid_allowed?(bid, highest_bid, dealer?) when is_integer(bid) do
+    bid > highest_bid or hold?(bid, highest_bid, dealer?)
+  end
+
+  @doc """
+  Whether the dealer may hold at `bid` given the current highest bid.
+  """
+  def hold?(bid, highest_bid, dealer?), do: dealer? and bid > 0 and bid == highest_bid
 
   @doc """
   Returns the cards from `hand` that may legally be played when `card_led`
@@ -52,52 +74,34 @@ defmodule Website45sV3.Game.Rules do
 
   Follows suit rules of 45s: you must follow the led suit or trump, the ace
   of hearts always counts as trump, and the top trumps (5, jack, ace of
-  hearts) may be reneged when a lower trump is led.
+  hearts) may be reneged when a lower trump is led. You are never forced to
+  trump: a player void in the led suit may play anything.
   """
   def legal_moves([], _card_led, _trump), do: []
 
   def legal_moves(hand, card_led, trump) do
-    # Determine the suit led (the ace of hearts always counts as trump)
-    suit_led =
-      if card_led == %Card{suit: :hearts, value: 1} do
-        trump
-      else
-        card_led.suit
-      end
+    suit_led = suit_led(card_led, trump)
+    following = Enum.filter(hand, &can_follow?(&1, suit_led, trump))
 
-    # Get all of the cards that are of suit led
-    legal_cards =
-      Enum.filter(hand, fn card ->
-        if suit_led == trump do
-          cond do
-            card.suit == trump -> true
-            card.suit == :hearts and card.value == 1 -> true
-            true -> false
-          end
-        else
-          cond do
-            card.suit == suit_led -> true
-            card.suit == trump -> true
-            card.suit == :hearts and card.value == 1 -> true
-            true -> false
-          end
-        end
-      end)
-
-    # Check if all legal cards are of trump suit and if the suit led is not trump
-    if Enum.all?(legal_cards, fn card -> card.suit == trump end) and suit_led != trump do
-      hand
-    else
-      # Check if all legal cards are renegable
-      if Enum.all?(legal_cards, &renegable?(&1, trump, card_led, suit_led)) do
-        hand
-      else
-        case legal_cards do
-          [] -> hand
-          _ -> legal_cards
-        end
-      end
+    cond do
+      following == [] -> hand
+      suit_led != trump and Enum.all?(following, &Card.trump?(&1, trump)) -> hand
+      Enum.all?(following, &renegable?(&1, trump, card_led, suit_led)) -> hand
+      true -> following
     end
+  end
+
+  @doc """
+  The suit a lead card establishes for the trick. The ace of hearts always
+  counts as a trump, so leading it leads trump.
+  """
+  def suit_led(card_led, trump) do
+    if Card.ace_of_hearts?(card_led), do: trump, else: card_led.suit
+  end
+
+  # A card follows the lead if it is of the led suit or is a trump.
+  defp can_follow?(card, suit_led, trump) do
+    card.suit == suit_led or Card.trump?(card, trump)
   end
 
   defp renegable?(card, trump, card_led, suit_led) do
@@ -107,12 +111,8 @@ defmodule Website45sV3.Game.Rules do
       %Card{suit: :hearts, value: 1}
     ]
 
-    # If it's not less_than the card_led and it's in the renegable_cards list,
-    # then it is renegable.
-    not Card.less_than(card, card_led, suit_led, trump) and
-      Enum.any?(renegable_cards, fn renegable_card ->
-        renegable_card.suit == card.suit and renegable_card.value == card.value
-      end)
+    # A top trump may be reneged only when it would beat the card led.
+    card in renegable_cards and not Card.less_than(card, card_led, suit_led, trump)
   end
 
   @doc """
@@ -122,6 +122,20 @@ defmodule Website45sV3.Game.Rules do
     Enum.reduce(entries, fn entry, best ->
       if Card.less_than(best.card, entry.card, suit_led, trump), do: entry, else: best
     end)
+  end
+
+  @doc """
+  Returns the entry holding the highest trump among `entries`, or `nil` if
+  no trump was played. Used for the "best trump" bonus at the end of a
+  hand, which only trumps can earn regardless of what suit was led.
+  """
+  def best_trump(entries, trump) do
+    entries
+    |> Enum.filter(&Card.trump?(&1.card, trump))
+    |> case do
+      [] -> nil
+      trumps -> trick_winner(trumps, trump, trump)
+    end
   end
 
   @doc """
@@ -144,7 +158,8 @@ defmodule Website45sV3.Game.Rules do
   The bidding team keeps its round points if it made the bid, otherwise it is
   set back by the bid amount. The other team always keeps its round points.
   Returns the score changes, the new totals, and the winning team if a team
-  reached #{@winning_score}.
+  reached #{@winning_score}. If both teams reach it in the same hand the
+  bidding team wins.
   """
   def score_round(round_scores, team_scores, {bid_amount, bid_player, _suit}, player_ids) do
     bid_team = team_for(player_ids, bid_player)
@@ -162,19 +177,21 @@ defmodule Website45sV3.Game.Rules do
       |> Map.update!(bid_team, &(&1 + bid_team_change))
       |> Map.update!(other_team, &(&1 + other_team_change))
 
-    winning_team =
-      cond do
-        new_team_scores.team1 >= @winning_score -> :team1
-        new_team_scores.team2 >= @winning_score -> :team2
-        true -> nil
-      end
-
     %{
       bid_team: bid_team,
       changes: %{bid_team => bid_team_change, other_team => other_team_change},
       team_scores: new_team_scores,
-      winning_team: winning_team
+      winning_team: winning_team(new_team_scores, bid_team)
     }
+  end
+
+  defp winning_team(%{team1: team1, team2: team2}, bid_team) do
+    cond do
+      team1 >= @winning_score and team2 >= @winning_score -> bid_team
+      team1 >= @winning_score -> :team1
+      team2 >= @winning_score -> :team2
+      true -> nil
+    end
   end
 
   @doc """

@@ -8,27 +8,20 @@
       rel="stylesheet"
     />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="/images/favicon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="/images/favicon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png" />
-    <meta
-      name="description"
-      content={
-        assigns[:meta_description] ||
-          "Play the 45s card game online for free. Forty Fives (45s) is a classic trick-taking card game. Create a table, invite friends, and play in your browser. No download needed."
-      }
-    />
+    <meta name="description" content={meta_description(assigns)} />
+    <meta :if={noindex?(assigns)} name="robots" content="noindex" />
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content={"https://fortyfives.net#{assigns[:canonical_path] || "/"}"} />
+    <meta property="og:url" content={canonical_url(assigns)} />
     <meta
       property="og:title"
       content={assigns[:page_title] || "Forty Fives | Play the 45s Card Game Online Free"}
     />
-    <meta
-      property="og:description"
-      content="Play the 45s card game online for free. Create a table, invite friends, and play Forty Fives in your browser. No download needed."
-    />
+    <meta property="og:description" content={meta_description(assigns)} />
     <meta property="og:image" content="https://fortyfives.net/images/og-card.png" />
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
@@ -36,12 +29,9 @@
       name="twitter:title"
       content={assigns[:page_title] || "Forty Fives | Play the 45s Card Game Online Free"}
     />
-    <meta
-      name="twitter:description"
-      content="Play the 45s card game online for free. Create a table, invite friends, and play Forty Fives in your browser. No download needed."
-    />
+    <meta name="twitter:description" content={meta_description(assigns)} />
     <meta name="twitter:image" content="https://fortyfives.net/images/og-card.png" />
-    <link rel="canonical" href={"https://fortyfives.net#{assigns[:canonical_path] || "/"}"} />
+    <link rel="canonical" href={canonical_url(assigns)} />
     <.live_title>
       {assigns[:page_title] || "Forty Fives | Play the 45s Card Game Online Free"}
     </.live_title>
@@ -54,6 +44,17 @@
       src={~p"/assets/app.js"}
     >
     </script>
+    <%= if assigns[:admin_assets] do %>
+      <link phx-track-static rel="stylesheet" href={~p"/assets/admin.css"} />
+      <script
+        nonce={assigns[:csp_nonce]}
+        defer
+        phx-track-static
+        type="text/javascript"
+        src={~p"/assets/admin.js"}
+      >
+      </script>
+    <% end %>
     <script
       :if={Website45sV3.Turnstile.site_key()}
       nonce={assigns[:csp_nonce]}

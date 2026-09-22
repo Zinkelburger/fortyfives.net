@@ -22,6 +22,28 @@ defmodule Website45sV3Web.UserLoginLiveTest do
 
       assert {:ok, _conn} = result
     end
+
+    test "tracks nothing live: no phx-change on the inputs, and the toggle is client-side",
+         %{conn: conn} do
+      {:ok, lv, html} = live(conn, ~p"/users/log_in")
+
+      refute html =~ ~s(phx-change=)
+      assert has_element?(lv, ~s(#user_password[type="password"]))
+      assert has_element?(lv, ~s(#user_password-container[phx-update="ignore"]))
+      # The eye button carries a JS command, not a server event name.
+      assert has_element?(lv, ~s(#user_password-container button[phx-click^="[["]))
+    end
+
+    test "prefills the identifier a failed attempt was made with", %{conn: conn} do
+      {:ok, _lv, html} =
+        conn
+        |> Phoenix.ConnTest.init_test_session(%{})
+        |> fetch_flash()
+        |> Phoenix.Controller.put_flash(:username_or_email, "someone")
+        |> live(~p"/users/log_in")
+
+      assert html =~ ~s(value="someone")
+    end
   end
 
   describe "user login" do

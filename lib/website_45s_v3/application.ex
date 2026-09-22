@@ -14,19 +14,27 @@ defmodule Website45sV3.Application do
       Website45sV3Web.Telemetry,
       # Start the Ecto repository
       Website45sV3.Repo,
+      # Sweeps expired session/email tokens so the users_tokens table stays bounded
+      {Website45sV3.Accounts.TokenSweeper,
+       Application.get_env(:website_45s_v3, Website45sV3.Accounts.TokenSweeper, [])},
+      # Deletes old session replays and game event logs (see Website45sV3.Analytics)
+      {Website45sV3.Analytics.Pruner,
+       Application.get_env(:website_45s_v3, Website45sV3.Analytics.Pruner, [])},
       # Start the PubSub system
       {Phoenix.PubSub, name: Website45sV3.PubSub},
       Website45sV3Web.Presence,
       # Start Finch
       {Finch, name: Website45sV3.Finch},
       Website45sV3.Security.RateLimiter,
-      # Start the Endpoint (http/https)
-      Website45sV3Web.Endpoint,
+      # Game processes must be up before the Endpoint accepts requests: the
+      # lobby and game LiveViews call into them on mount.
       Website45sV3.Game.ActiveGames,
       Website45sV3.Game.GameSupervisor,
       Website45sV3.Game.QueueStarter,
       Website45sV3.Game.PrivateQueueManager,
-      Website45sV3.Game.BotSupervisor
+      Website45sV3.Game.BotSupervisor,
+      # Start the Endpoint (http/https)
+      Website45sV3Web.Endpoint
       # Start a worker by calling: Website45sV3.Worker.start_link(arg)
       # {Website45sV3.Worker, arg}
     ]

@@ -1,4 +1,8 @@
 defmodule Website45sV3.Game.QueueStarter do
+  @moduledoc """
+  The public matchmaking queue. Players are seated in join order and a game
+  starts as soon as four are waiting.
+  """
   use GenServer
   require Logger
 
@@ -27,18 +31,12 @@ defmodule Website45sV3.Game.QueueStarter do
     GenServer.call(__MODULE__, :player_count)
   end
 
+  @impl true
   def init(state) do
     {:ok, state}
   end
 
-  def handle_call(
-        {:add_player, {incoming_player_name, player_id}},
-        from,
-        state
-      ) do
-    handle_call({:add_player, {incoming_player_name, player_id}, nil}, from, state)
-  end
-
+  @impl true
   def handle_call(
         {:add_player, {incoming_player_name, player_id}, remote_ip},
         _from,
@@ -63,21 +61,7 @@ defmodule Website45sV3.Game.QueueStarter do
         Logger.info("Player joined matchmaking queue")
 
         updated_players = players ++ [{assigned_player_name, player_id}]
-
-        if length(updated_players) >= 4 do
-          {game_players, remaining} = Enum.split(updated_players, 4)
-
-          case Matchmaking.start_game(game_players) do
-            :ok ->
-              {:reply, :ok, %{state | players: remaining}}
-
-            {:error, _reason} ->
-              # Keep everyone queued; the next join will retry.
-              {:reply, :ok, %{state | players: updated_players}}
-          end
-        else
-          {:reply, :ok, %{state | players: updated_players}}
-        end
+        {:reply, :ok, %{state | players: maybe_start_game(updated_players)}}
     end
   end
 
@@ -89,6 +73,20 @@ defmodule Website45sV3.Game.QueueStarter do
     Logger.info("Player left matchmaking queue")
     updated_players = Enum.reject(players, fn {_username, id} -> id == player_id end)
     {:reply, :ok, %{state | players: updated_players}}
+  end
+
+  # Starts a game with the first four players once enough are waiting and
+  # returns the players still queued. If the game could not start everyone
+  # stays queued; the next join retries.
+  defp maybe_start_game(players) when length(players) < 4, do: players
+
+  defp maybe_start_game(players) do
+    {game_players, remaining} = Enum.split(players, 4)
+
+    case Matchmaking.start_game(game_players) do
+      :ok -> remaining
+      {:error, _reason} -> players
+    end
   end
 
   defp queue_admission_allowed?(nil), do: true

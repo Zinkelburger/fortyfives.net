@@ -53,9 +53,15 @@ defmodule Website45sV3.Security.RateLimiter do
 
   @doc """
   Reports whether an account has spent its failed-attempt budget, *without*
-  consuming any of it. Callers must not use this to refuse a request that
-  carries correct credentials — see `Website45sV3Web.UserSessionController` —
-  or a third party can lock a known account out at will.
+  consuming any of it.
+
+  While exhausted the account refuses every sign-in, correct password
+  included (see `Website45sV3Web.UserSessionController`). That is a
+  deliberate trade-off: someone who knows a username can keep it locked by
+  burning `max_account` guesses per `window_ms`, but the windows are short
+  and fixed, so the worst case is a nuisance rather than a takeover, whereas
+  admitting a correct password during the lockout would let a guesser keep
+  trying at full speed from any number of addresses.
   """
   def login_account_exhausted?(identifier) do
     config = limits(:login)

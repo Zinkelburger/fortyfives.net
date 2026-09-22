@@ -1,5 +1,5 @@
-# Use the official Elixir image as the base image
-FROM docker.io/library/elixir:1.18.4-otp-27-alpine@sha256:fc82bd1b1d3c2cc16bb8f944a0a28f0180682d0ae09406e880190df0986d0165 AS build
+# Builder: the same Elixir/OTP as .tool-versions, on Alpine 3.22.5.
+FROM docker.io/library/elixir:1.19.5-otp-27-alpine@sha256:f84694e025dbbefdfe6ab77c65bf440543c81dc569340b5a4f626c91181b1189 AS build
 
 # Install build dependencies
 RUN apk update && \
@@ -20,28 +20,40 @@ RUN mix local.hex --force && \
 # Set environment to prod for building
 ENV MIX_ENV=prod
 
-# Copy over the necessary application files and directories
-COPY config/ config/
-COPY lib/ lib/
-COPY priv/ priv/
-COPY assets/ assets/
-COPY mix.exs .
-COPY mix.lock .
+# Fetch and compile dependencies first so the layer is cached until mix.lock
+# or compile-time config changes.
+COPY mix.exs mix.lock ./
+RUN mix deps.get --only prod
 
-# Fetch the application dependencies and compile the app
-RUN mix deps.get --only prod && \
-    mix deps.compile
+RUN mkdir config
+COPY config/config.exs config/prod.exs config/
+RUN mix deps.compile
 
-# Compile and digest static assets.
+# Application source and static inputs
+COPY priv priv
+COPY lib lib
+COPY assets assets
+
+# Compile and digest static assets (tailwind + esbuild + phx.digest)
 RUN mix assets.deploy
+
+# Compile the application
+RUN mix compile
+
+# Runtime config is read at boot, so it goes in after compilation.
+COPY config/runtime.exs config/
+
+# Release overlays (bin/migrate, bin/server) and VM args
+COPY rel rel
 
 # Build the release
 RUN mix release
 
-# Start a new build stage to create a cleaner final image
+# Runtime stage. Alpine version/digest must match the builder image's
+# /etc/alpine-release (3.22.5) so the release's shared libraries line up.
 FROM docker.io/library/alpine:3.22.5@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
-# Install runtime dependencies
+# Install runtime dependencies (busybox wget is used by the HEALTHCHECK)
 RUN apk update && \
     apk upgrade --no-cache && \
     apk add --no-cache \
@@ -67,8 +79,15 @@ RUN chmod +x /app/entrypoint.sh
 
 USER app
 
+ENV PHX_SERVER=true
+
 # Expose port 4000 for the app
 EXPOSE 4000
+
+# /healthz is served over plain HTTP; Plug.SSL excludes the 127.0.0.1 host
+# from the HTTPS redirect (see config/prod.exs).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:4000/healthz || exit 1
 
 # Use the entrypoint script to run migrations and then start the Phoenix server
 ENTRYPOINT ["/app/entrypoint.sh"]

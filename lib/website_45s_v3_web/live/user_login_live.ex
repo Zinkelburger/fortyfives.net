@@ -1,6 +1,8 @@
 defmodule Website45sV3Web.UserLoginLive do
   use Website45sV3Web, :live_view
 
+  import Website45sV3Web.AuthLiveHelpers, only: [password_field: 1]
+
   def render(assigns) do
     ~H"""
     <div class="mx-auto max-w-sm mt-3">
@@ -24,20 +26,15 @@ defmodule Website45sV3Web.UserLoginLive do
               field={@form[:username_or_email]}
               type="text"
               label="Username or email"
-              phx-change="update_form"
               required
-              phx-debounce="400"
               background_color="071f31"
             />
           </div>
-          <.input
+          <.password_field
             field={@form[:password]}
-            type="password"
             label="Password"
-            show_password={@show_password}
-            phx-change="update_form"
+            autocomplete="current-password"
             required
-            phx-debounce="400"
           />
           <.turnstile id="login-turnstile" />
           <:actions>
@@ -73,36 +70,12 @@ defmodule Website45sV3Web.UserLoginLive do
     """
   end
 
+  # The form posts straight to the session controller; nothing is tracked
+  # live, so the password never reaches this process.
   def mount(_params, _session, socket) do
     username_or_email = Phoenix.Flash.get(socket.assigns.flash, :username_or_email) || ""
+    form = to_form(%{"username_or_email" => username_or_email}, as: "user")
 
-    form_data = %{
-      "username_or_email" => username_or_email,
-      "password" => ""
-    }
-
-    socket =
-      socket
-      |> assign(:form_data, form_data)
-      |> assign_form(form_data)
-      |> assign(:show_password, false)
-
-    {:ok, socket}
-  end
-
-  def handle_event("toggle_visibility", _value, socket) do
-    socket = socket |> assign(show_password: not socket.assigns.show_password)
-    {:noreply, assign_form(socket, socket.assigns.form_data)}
-  end
-
-  def handle_event("update_form", %{"user" => new_form_data}, socket) do
-    updated_form_data = Map.merge(socket.assigns.form_data, new_form_data)
-    socket = socket |> assign(form_data: updated_form_data)
-    {:noreply, assign_form(socket, updated_form_data)}
-  end
-
-  defp assign_form(socket, form_data) do
-    form = to_form(form_data, as: "user")
-    assign(socket, form: form)
+    {:ok, assign(socket, form: form), temporary_assigns: [form: form]}
   end
 end

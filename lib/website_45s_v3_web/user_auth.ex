@@ -1,4 +1,16 @@
 defmodule Website45sV3Web.UserAuth do
+  @moduledoc """
+  Session handling for the web layer: logging users in and out, the plugs
+  that load `current_user` for controllers, and the `on_mount` hooks that do
+  the same for LiveViews.
+
+  Every browser session also carries an *anonymous player id* under the
+  `:user_id` session key. It is not a credential — it is the seat identity the
+  queue and game processes key on, for signed-in and anonymous visitors alike
+  — so it is minted once per browser and deliberately survives logging in
+  and out, which would otherwise pull a player out of a game in progress.
+  """
+
   use Website45sV3Web, :verified_routes
 
   import Plug.Conn
@@ -39,16 +51,7 @@ defmodule Website45sV3Web.UserAuth do
     |> renew_session()
     |> put_token_in_session(token)
     |> maybe_write_remember_me_cookie(token, params)
-    |> send_clear_anon_id_message()
     |> redirect(to: user_return_to || signed_in_path(conn))
-  end
-
-  defp send_clear_anon_id_message(conn) do
-    if live_socket_id = get_session(conn, :live_socket_id) do
-      Website45sV3Web.Endpoint.broadcast(live_socket_id, "clear_anon_id", %{})
-    end
-
-    conn
   end
 
   defp maybe_write_remember_me_cookie(conn, token, %{"remember_me" => "true"}) do
@@ -59,26 +62,21 @@ defmodule Website45sV3Web.UserAuth do
     conn
   end
 
-  # This function renews the session ID and erases the whole
-  # session to avoid fixation attacks. If there is any data
-  # in the session you may want to preserve after log in/log out,
-  # you must explicitly fetch the session data before clearing
-  # and then immediately set it after clearing, for example:
-  #
-  #     defp renew_session(conn) do
-  #       preferred_locale = get_session(conn, :preferred_locale)
-  #
-  #       conn
-  #       |> configure_session(renew: true)
-  #       |> clear_session()
-  #       |> put_session(:preferred_locale, preferred_locale)
-  #     end
-  #
+  # Renews the session ID and erases the whole session to avoid fixation
+  # attacks. The anonymous player id is the one value carried across: it is
+  # a seat identity, not a credential (see the module docs), and dropping it
+  # would eject the player from any game or queue they are in.
   defp renew_session(conn) do
+    player_id = get_session(conn, :user_id)
+
     conn
     |> configure_session(renew: true)
     |> clear_session()
+    |> put_player_id(player_id)
   end
+
+  defp put_player_id(conn, nil), do: conn
+  defp put_player_id(conn, player_id), do: put_session(conn, :user_id, player_id)
 
   @doc """
   Logs the user out.
@@ -100,13 +98,34 @@ defmodule Website45sV3Web.UserAuth do
   end
 
   @doc """
-  Authenticates the user by looking into the session
-  and remember me token.
+  Authenticates the user by looking into the session and remember me token,
+  assigning `:current_user` (or `nil`), and ensures the request has an
+  anonymous player id, assigned as `:user_id` and stored in the session.
+
+  One plug, one lookup: every browser request needs both values, and doing
+  them in separate plugs used to authenticate each request twice.
   """
   def fetch_current_user(conn, _opts) do
     {user_token, conn} = ensure_user_token(conn)
     user = user_token && Accounts.get_user_by_session_token(user_token)
-    assign(conn, :current_user, user)
+
+    conn
+    |> assign(:current_user, user)
+    |> ensure_player_id()
+  end
+
+  defp ensure_player_id(conn) do
+    case get_session(conn, :user_id) do
+      nil ->
+        player_id = Ecto.UUID.generate()
+
+        conn
+        |> put_session(:user_id, player_id)
+        |> assign(:user_id, player_id)
+
+      player_id ->
+        assign(conn, :user_id, player_id)
+    end
   end
 
   def assign_canonical_path(conn, _opts) do
@@ -134,7 +153,8 @@ defmodule Website45sV3Web.UserAuth do
 
     * `:mount_current_user` - Assigns current_user
       to socket assigns based on user_token, or nil if
-      there's no user_token or no matching user.
+      there's no user_token or no matching user. Also assigns
+      `:user_id`, the anonymous player id from the session.
 
     * `:ensure_authenticated` - Authenticates the user from the session,
       and assigns the current_user to socket assigns based
@@ -166,6 +186,7 @@ defmodule Website45sV3Web.UserAuth do
     socket =
       socket
       |> mount_current_user(session)
+      |> mount_player_id(session)
       |> attach_request_path_hook()
 
     {:cont, socket}
@@ -186,15 +207,6 @@ defmodule Website45sV3Web.UserAuth do
 
       {:halt, socket}
     end
-  end
-
-  def on_mount(:potentially_anonymous_user, _params, session, socket) do
-    socket =
-      socket
-      |> mount_current_user(session)
-      |> attach_request_path_hook()
-
-    {:cont, socket}
   end
 
   def on_mount(:redirect_if_user_is_authenticated, _params, session, socket) do
@@ -234,6 +246,10 @@ defmodule Website45sV3Web.UserAuth do
     end)
   end
 
+  defp mount_player_id(socket, session) do
+    Phoenix.Component.assign_new(socket, :user_id, fn -> session["user_id"] end)
+  end
+
   @doc """
   Used for routes that require the user to not be authenticated.
   """
@@ -265,16 +281,30 @@ defmodule Website45sV3Web.UserAuth do
     end
   end
 
-  def potentially_anonymous_user(conn, _opts) do
-    {user_token, conn} = ensure_user_token(conn)
-    user = user_token && Accounts.get_user_by_session_token(user_token)
+  @doc """
+  Whether the user may see `/admin`: their username is in the
+  `:admin_usernames` config (ADMIN_USERNAMES in the environment).
+  """
+  def admin?(%{username: username}) when is_binary(username) do
+    username in Application.get_env(:website_45s_v3, :admin_usernames, [])
+  end
 
-    user_id = get_session(conn, :user_id) || Ecto.UUID.generate()
+  def admin?(_user), do: false
 
-    conn
-    |> put_session(:user_id, user_id)
-    |> assign(:user_id, user_id)
-    |> assign(:current_user, user)
+  @doc """
+  Used for routes that require an admin. Non-admins (logged in or not) are
+  sent home; the section is not advertised to them.
+  """
+  def require_admin(conn, _opts) do
+    if admin?(conn.assigns[:current_user]) do
+      # The root layout loads the replay player bundle for admin pages only.
+      assign(conn, :admin_assets, true)
+    else
+      conn
+      |> put_flash(:error, "Page not found.")
+      |> redirect(to: ~p"/")
+      |> halt()
+    end
   end
 
   defp put_token_in_session(conn, token) do

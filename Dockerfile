@@ -1,4 +1,4 @@
-FROM docker.io/library/elixir:1.18.4-otp-27-alpine@sha256:fc82bd1b1d3c2cc16bb8f944a0a28f0180682d0ae09406e880190df0986d0165
+FROM docker.io/library/elixir:1.19.5-otp-27-alpine@sha256:f84694e025dbbefdfe6ab77c65bf440543c81dc569340b5a4f626c91181b1189
 
 # Install build dependencies
 RUN apk update && \

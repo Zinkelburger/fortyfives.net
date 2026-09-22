@@ -1,4 +1,8 @@
 defmodule Website45sV3.Game.Deck do
+  @moduledoc """
+  A 52 card deck: creation, shuffling and drawing.
+  """
+
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.Suit
 
@@ -7,33 +11,23 @@ defmodule Website45sV3.Game.Deck do
   defstruct cards: []
 
   @doc """
-  Creates a new deck of cards.
+  Creates a new, unshuffled deck of cards.
   """
   def new do
-    suits = Suit.all_suits()
-    values = 1..13
-
     cards =
-      for suit <- suits,
-          value <- values,
+      for suit <- Suit.all_suits(),
+          value <- 1..13,
           do: Card.new(value, suit)
 
     %__MODULE__{cards: cards}
   end
 
   @doc """
-  Shuffles the deck of cards.
+  Shuffles the deck. `Enum.shuffle/1` is a uniform shuffle, so a single
+  pass is all that is needed.
   """
   def shuffle(deck) do
     %{deck | cards: Enum.shuffle(deck.cards)}
-  end
-
-  @doc """
-  Shuffles the deck of cards a specified number of times.
-  """
-  def shuffle(deck, times) do
-    cards = Enum.reduce(1..times, deck.cards, fn _, acc -> Enum.shuffle(acc) end)
-    %{deck | cards: cards}
   end
 
   @doc """

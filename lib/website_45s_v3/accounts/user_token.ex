@@ -1,4 +1,8 @@
 defmodule Website45sV3.Accounts.UserToken do
+  @moduledoc """
+  Session and email tokens, with the queries that verify and expire them.
+  """
+
   use Ecto.Schema
   import Ecto.Query
   alias Website45sV3.Accounts.UserToken
@@ -157,6 +161,22 @@ defmodule Website45sV3.Accounts.UserToken do
       :error ->
         :error
     end
+  end
+
+  @doc """
+  Query for every token that has outlived the validity of its context. Rows
+  matched here can never verify again, so deleting them changes nothing except
+  table size.
+  """
+  def expired_query do
+    from t in UserToken,
+      where:
+        (t.context == "session" and t.inserted_at < ago(@session_validity_in_days, "day")) or
+          (t.context == "confirm" and t.inserted_at < ago(@confirm_validity_in_days, "day")) or
+          (t.context == "reset_password" and
+             t.inserted_at < ago(@reset_password_validity_in_days, "day")) or
+          (like(t.context, "change:%") and
+             t.inserted_at < ago(@change_email_validity_in_days, "day"))
   end
 
   @doc """

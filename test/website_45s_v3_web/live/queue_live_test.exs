@@ -11,6 +11,7 @@ defmodule Website45sV3Web.QueueLiveTest do
   alias Website45sV3.Game.GameSupervisor
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.QueueStarter
+  alias Website45sV3Web.Presence
 
   defp unique(prefix), do: prefix <> Integer.to_string(System.unique_integer([:positive]))
 
@@ -68,6 +69,163 @@ defmodule Website45sV3Web.QueueLiveTest do
       true ->
         Process.sleep(10)
         wait_until(fun, tries - 1)
+    end
+  end
+
+  # Shuts a LiveView down the way closing its browser tab does: the process
+  # exits and `terminate/2` runs.
+  defp close_tab(view) do
+    GenServer.stop(view.pid, :normal)
+    wait_until(fn -> not Process.alive?(view.pid) end)
+  end
+
+  defp queue_metas(topic, user_id) do
+    case Presence.get_by_key(topic, user_id) do
+      %{metas: metas} -> metas
+      [] -> []
+    end
+  end
+
+  defp player_cards(html) do
+    html
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query(".player-card")
+    |> Enum.map(&LazyHTML.text/1)
+  end
+
+  describe "session identity" do
+    test "mounting without a session user id fails instead of sharing an identity" do
+      conn = Phoenix.ConnTest.build_conn() |> Phoenix.ConnTest.init_test_session(%{})
+
+      assert_raise RuntimeError, ~r/user_id missing from the session/, fn ->
+        live_isolated(conn, Website45sV3Web.QueueLive, session: %{})
+      end
+    end
+  end
+
+  describe "tabs" do
+    test "the tab is chosen by the URL and unknown tabs fall back to the queue", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/play?tab=private")
+      assert html =~ "Create Private Game"
+      refute html =~ "Join Queue"
+
+      {:ok, _view, html} = live(conn, ~p"/play?tab=<script>")
+      assert html =~ "Join Queue"
+      refute html =~ "Create Private Game"
+    end
+
+    test "switching tabs patches the URL", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/play")
+
+      html = view |> element("a.tab", "Play a Friend") |> render_click()
+      assert_patch(view, ~p"/play?tab=private")
+      assert html =~ "Create Private Game"
+
+      view |> element("a.tab", "Public Queue") |> render_click()
+      assert_patch(view, ~p"/play")
+      assert render(view) =~ "Join Queue"
+    end
+  end
+
+  describe "two tabs of one session" do
+    setup do
+      # Stragglers from other tests leave the queue asynchronously.
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+      :ok
+    end
+
+    test "closing a tab that never joined keeps the other tab's queue entry", %{conn: conn} do
+      user = unique("qlt_user_")
+      {:ok, tab_a, _html} = conn |> anon_conn(user) |> live(~p"/play")
+      {:ok, tab_b, _html} = conn |> anon_conn(user) |> live(~p"/play")
+
+      assert render_click(tab_a, "join") =~ "You are in the queue"
+      assert QueueStarter.player_count() == 1
+
+      close_tab(tab_b)
+
+      assert QueueStarter.player_count() == 1
+      assert [_meta] = queue_metas("queue", user)
+      assert render(tab_a) =~ "You are in the queue"
+
+      close_tab(tab_a)
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+    end
+
+    test "a player queued from two tabs stays queued until the last tab closes", %{conn: conn} do
+      user = unique("qlt_user_")
+      {:ok, tab_a, _html} = conn |> anon_conn(user) |> live(~p"/play")
+      {:ok, tab_b, _html} = conn |> anon_conn(user) |> live(~p"/play")
+
+      render_click(tab_a, "join")
+      render_click(tab_b, "join")
+      assert QueueStarter.player_count() == 1
+      assert [_, _] = queue_metas("queue", user)
+
+      close_tab(tab_b)
+      assert QueueStarter.player_count() == 1
+      assert [_meta] = queue_metas("queue", user)
+
+      close_tab(tab_a)
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+      assert queue_metas("queue", user) == []
+    end
+
+    test "a player with two tabs is shown as one card", %{conn: conn} do
+      user = unique("qlt_user_")
+      {:ok, tab_a, _html} = conn |> anon_conn(user) |> live(~p"/play")
+      {:ok, tab_b, _html} = conn |> anon_conn(user) |> live(~p"/play")
+
+      render_click(tab_a, "join")
+      render_click(tab_b, "join")
+
+      # Wait for the second presence diff to reach tab A before rendering.
+      wait_until(fn ->
+        length(:sys.get_state(tab_a.pid).socket.assigns.queue[user].metas) == 2
+      end)
+
+      assert player_cards(render(tab_a)) == ["Anonymous"]
+      assert player_cards(render(tab_b)) == ["Anonymous"]
+
+      close_tab(tab_a)
+      close_tab(tab_b)
+    end
+
+    test "closing a private lobby tab that never joined keeps the lobby entry", %{conn: conn} do
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      path = ~p"/play/private/#{private_id}"
+
+      {:ok, tab_a, _html} = conn |> anon_conn(user) |> live(path)
+      {:ok, tab_b, _html} = conn |> anon_conn(user) |> live(path)
+
+      assert render_click(tab_a, "join") =~ "You are in the game lobby"
+      assert [{_name, ^user}] = PrivateQueueManager.queue_players(private_id)
+
+      close_tab(tab_b)
+
+      assert [{_name, ^user}] = PrivateQueueManager.queue_players(private_id)
+      assert render(tab_a) =~ "You are in the game lobby"
+
+      close_tab(tab_a)
+      wait_until(fn -> PrivateQueueManager.queue_players(private_id) == [] end)
+    end
+  end
+
+  describe "leaving" do
+    test "leaving removes the player and their card", %{conn: conn} do
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+      user = unique("qlt_user_")
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play")
+
+      render_click(view, "join")
+      assert QueueStarter.player_count() == 1
+
+      html = render_click(view, "leave")
+      assert html =~ "Join Queue"
+      assert player_cards(html) == []
+      assert QueueStarter.player_count() == 0
+      assert queue_metas("queue", user) == []
     end
   end
 
@@ -204,6 +362,10 @@ defmodule Website45sV3Web.QueueLiveTest do
 
       assert_receive {:redirect, "/game/" <> game_name}, 2_000
       on_exit(fn -> kill_game(game_name) end)
+
+      # The game page is in another live_session, so the lobby sends the
+      # browser there with a full redirect rather than a live navigation.
+      assert_redirect(view, "/game/#{game_name}")
 
       [{game_pid, _}] = Registry.lookup(Website45sV3.Registry, game_name)
       state = GameController.get_game_state(game_pid)

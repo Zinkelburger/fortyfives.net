@@ -33,6 +33,10 @@ if (mount) {
           skipInactive: true,
           showController: true,
           mouseTail: true,
+          // Recordings come from players' browsers. Keep the replay iframe
+          // sandboxed without scripts (rrweb's default), never the canvas
+          // mode that turns scripts on.
+          UNSAFE_replayCanvas: false,
         },
       })
     })

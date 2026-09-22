@@ -240,7 +240,13 @@ defmodule Website45sV3Web.GameLive do
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   # Rejections that mean no later batch can succeed either.
-  @replay_stoppers [:replay_too_large, :chunk_too_large, :replay_gone]
+  @replay_stoppers [
+    :replay_too_large,
+    :chunk_too_large,
+    :replay_gone,
+    :invalid_events,
+    :too_many_replays
+  ]
 
   # Analytics must never take the table down: whatever goes wrong while
   # storing a batch (a full recording, a pruned replay row, a database that

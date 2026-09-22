@@ -531,6 +531,33 @@ defmodule Website45sV3.AccountsTest do
       {:ok, _} = Accounts.reset_user_password(user, %{password: "new valid password"})
       refute Repo.get_by(UserToken, user_id: user.id)
     end
+
+    test "disconnects the LiveView sockets of every session", %{user: user} do
+      topic = user |> Accounts.generate_user_session_token() |> Accounts.live_socket_id()
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, topic)
+
+      {:ok, _} = Accounts.reset_user_password(user, %{password: "new valid password"})
+
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^topic, event: "disconnect"}
+    end
+  end
+
+  describe "update_user_username/2" do
+    test "changes the username with the registration checks" do
+      user = user_fixture()
+      taken = user_fixture()
+
+      assert {:ok, %{username: "brand_new_name"}} =
+               Accounts.update_user_username(user, %{username: "brand_new_name"})
+
+      assert {:error, changeset} =
+               Accounts.update_user_username(user, %{username: taken.username})
+
+      assert "has already been taken" in errors_on(changeset).username
+
+      assert {:error, changeset} = Accounts.update_user_username(user, %{username: "x"})
+      assert errors_on(changeset).username != []
+    end
   end
 
   describe "inspect/2 for the User module" do
@@ -635,64 +662,23 @@ defmodule Website45sV3.AccountsTest do
     end
   end
 
-  describe "generate_username/1" do
-    test "uses the email local part when it is a valid, free username" do
-      assert Accounts.generate_username("andrew.bernal@example.com") == "andrew.bernal"
-    end
-
-    test "drops characters usernames do not allow" do
-      assert Accounts.generate_username("me+tag@example.com") == "metag"
-    end
-
-    test "truncates a long local part to the maximum length" do
-      long = String.duplicate("a", 40)
-      username = Accounts.generate_username("#{long}@example.com")
-      assert String.length(username) == 30
-      assert User.valid_username?(username)
-    end
-
-    test "appends a numeric suffix when the name is taken" do
-      user_fixture(username: "taken")
-      assert Accounts.generate_username("taken@example.com") == "taken2"
-
-      user_fixture(username: "taken2")
-      assert Accounts.generate_username("taken@example.com") == "taken3"
-    end
-
-    test "keeps a suffixed name within the maximum length" do
-      long = String.duplicate("b", 30)
-      user_fixture(username: long)
-
-      username = Accounts.generate_username("#{long}@example.com")
-      assert username == String.duplicate("b", 29) <> "2"
-    end
-
-    test "falls back to a random player name when the local part is too short" do
-      assert "player_" <> _ = Accounts.generate_username("ab@example.com")
-    end
-
-    test "falls back to a random player name when the local part is a banned word" do
-      assert "player_" <> _ = Accounts.generate_username("admin@example.com")
-    end
-
-    test "falls back to a random player name when nothing usable is left" do
-      assert "player_" <> _ = Accounts.generate_username("+++@example.com")
-    end
-
-    test "random player names are valid usernames" do
-      username = Accounts.generate_username("+++@example.com")
+  describe "random_username/0" do
+    test "is a valid player name, unrelated to any email" do
+      username = Accounts.random_username()
+      assert "player_" <> _ = username
       assert User.valid_username?(username)
       assert String.length(username) <= 30
     end
   end
 
   describe "get_or_create_google_user/1" do
-    test "creates a confirmed user with a derived username for a new verified email" do
+    test "creates a confirmed user with a random username for a new verified email" do
       auth = google_auth(email: "newcomer@example.com", uid: "google-new")
 
       assert {:ok, user} = Accounts.get_or_create_google_user(auth)
       assert user.email == "newcomer@example.com"
-      assert user.username == "newcomer"
+      # Never the email's local part: usernames are public.
+      assert "player_" <> _ = user.username
       assert user.google_uid == "google-new"
       assert user.confirmed_at
       assert is_binary(user.hashed_password)
@@ -769,21 +755,6 @@ defmodule Website45sV3.AccountsTest do
                Accounts.get_or_create_google_user(google_auth(email: user.email, uid: "g-two"))
 
       assert Accounts.get_user!(user.id).google_uid == "g-one"
-    end
-
-    test "picks a free username when the derived one is taken" do
-      user_fixture(username: "popular")
-      auth = google_auth(email: "popular@example.com")
-
-      assert {:ok, user} = Accounts.get_or_create_google_user(auth)
-      assert user.username == "popular2"
-    end
-
-    test "still signs up when the derived username is unusable" do
-      auth = google_auth(email: "ab@example.com")
-
-      assert {:ok, user} = Accounts.get_or_create_google_user(auth)
-      assert "player_" <> _ = user.username
     end
   end
 

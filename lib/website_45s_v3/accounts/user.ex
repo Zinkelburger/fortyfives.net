@@ -123,6 +123,20 @@ defmodule Website45sV3.Accounts.User do
   end
 
   @doc """
+  A username change. Same checks as at registration; `:validate_username`
+  works the same way (pass `false` for per-keystroke validation).
+  """
+  def username_changeset(user, attrs, opts \\ []) do
+    user
+    |> cast(attrs, [:username])
+    |> validate_username(opts)
+    |> case do
+      %{changes: %{username: _}} = changeset -> changeset
+      %{} = changeset -> add_error(changeset, :username, "did not change")
+    end
+  end
+
+  @doc """
   Links a Google account to an existing user. Only ever applied to a
   confirmed account (`Accounts.get_or_create_google_user/1` refuses
   unconfirmed ones, since linking would let whoever holds the Google

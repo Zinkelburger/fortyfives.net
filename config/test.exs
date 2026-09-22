@@ -42,10 +42,14 @@ config :website_45s_v3, Website45sV3.Accounts.TokenSweeper, initial_delay_ms: :t
 config :website_45s_v3, Website45sV3.Analytics.Pruner, initial_delay_ms: :timer.hours(1)
 
 # Tests that need an admin set the list themselves.
-config :website_45s_v3, :admin_usernames, []
+config :website_45s_v3, :admin_user_ids, []
 
 # Print only warnings and errors during test
 config :logger, level: :warning
 
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
+
+# The suite adds far more bots from loopback than one visitor could; the
+# per-network bot budget has its own tests in rate_limiter_test.exs.
+config :website_45s_v3, :security_rate_limits, bots: [max_ip: 100_000]

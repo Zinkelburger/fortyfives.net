@@ -15,6 +15,7 @@ defmodule Website45sV3Web.QueueLive do
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.QueueStarter
+  alias Website45sV3.Security.RateLimiter
   alias Website45sV3.Turnstile
   alias Website45sV3Web.Presence
 
@@ -371,13 +372,21 @@ defmodule Website45sV3Web.QueueLive do
     names = socket |> queue_topic() |> Presence.list() |> next_bot_names(count)
 
     Enum.reduce_while(names, socket, fn name, socket ->
-      case start_bot(socket, name) do
+      case charge_and_start_bot(socket, name) do
         {:ok, _pid} ->
           {:cont, socket}
 
         {:error, :too_many_bots} ->
           {:halt,
            put_flash(socket, :error, "Too many bots are playing right now. Try again soon.")}
+
+        {:error, :rate_limited} ->
+          {:halt,
+           put_flash(
+             socket,
+             :error,
+             "You've added a lot of bots recently. Try again in a few minutes."
+           )}
 
         {:error, :queue_not_found} ->
           {:halt,
@@ -389,6 +398,14 @@ defmodule Website45sV3Web.QueueLive do
           {:halt, put_flash(socket, :error, "Could not add a bot. Try again.")}
       end
     end)
+  end
+
+  # The per-session cap resets with a fresh cookie; this per-network budget
+  # keeps a single client from taking the whole shared bot pool.
+  defp charge_and_start_bot(socket, name) do
+    with :ok <- RateLimiter.check_bot_spawn(socket.assigns.client_ip) do
+      start_bot(socket, name)
+    end
   end
 
   defp start_bot(%{assigns: %{live_action: :private_game} = assigns}, name) do
@@ -668,6 +685,7 @@ defmodule Website45sV3Web.QueueLive do
         <.active_game_card :if={@active_game} game={@active_game} />
         <button
           :if={!@active_game}
+          id="create-private-button"
           type="button"
           phx-click="create_private"
           class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 green-button"

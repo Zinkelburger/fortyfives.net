@@ -4,6 +4,14 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
   import Phoenix.LiveViewTest
   import Website45sV3.AccountsFixtures
 
+  alias Website45sV3.Security.RateLimiter
+
+  # Every submit that reaches the database is charged to loopback's budget.
+  setup do
+    RateLimiter.reset()
+    :ok
+  end
+
   describe "Registration page" do
     test "renders registration page", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/users/register")
@@ -79,6 +87,42 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
       assert result =~ "has already been taken"
     end
 
+    test "probing for taken emails spends the network budget; local typos do not",
+         %{conn: conn} do
+      previous = Application.get_env(:website_45s_v3, :security_rate_limits)
+      Application.put_env(:website_45s_v3, :security_rate_limits, registration: [max_ip: 1])
+      on_exit(fn -> Application.put_env(:website_45s_v3, :security_rate_limits, previous) end)
+
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
+      user = user_fixture()
+
+      submit = fn attrs ->
+        lv |> form("#registration_form", user: attrs) |> render_submit()
+      end
+
+      # Too short a password never reaches the database, so it is free.
+      assert submit.(%{
+               "username" => unique_username(),
+               "email" => unique_user_email(),
+               "password" => "short"
+             }) =~
+               "should be at least 8"
+
+      assert submit.(%{
+               "username" => unique_username(),
+               "email" => user.email,
+               "password" => "valid_password"
+             }) =~
+               "has already been taken"
+
+      assert submit.(%{
+               "username" => unique_username(),
+               "email" => unique_user_email(),
+               "password" => "valid_password"
+             }) =~
+               "Too many accounts created from your network"
+    end
+
     test "renders errors for a duplicated username on submit", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/register")
       user = user_fixture()
@@ -149,8 +193,6 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
     end
 
     test "refuses to register once the network has created its allowance", %{conn: conn} do
-      alias Website45sV3.Security.RateLimiter
-
       previous = Application.get_env(:website_45s_v3, :security_rate_limits)
       Application.put_env(:website_45s_v3, :security_rate_limits, registration: [max_ip: 1])
 
@@ -161,7 +203,7 @@ defmodule Website45sV3Web.UserRegistrationLiveTest do
 
       RateLimiter.reset()
       # The test client connects from loopback.
-      RateLimiter.record_registration("127.0.0.1")
+      RateLimiter.check_registration("127.0.0.1")
 
       {:ok, lv, _html} = live(conn, ~p"/users/register")
       email = unique_user_email()

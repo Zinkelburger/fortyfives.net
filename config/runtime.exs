@@ -20,11 +20,17 @@ if System.get_env("PHX_SERVER") do
   config :website_45s_v3, Website45sV3Web.Endpoint, server: true
 end
 
-# Comma-separated usernames allowed into /admin; unset means nobody.
-if admins = System.get_env("ADMIN_USERNAMES") do
+# Comma-separated user ids (users.id) allowed into /admin; unset means
+# nobody. A value that is not an integer stops the boot rather than being
+# silently ignored.
+if admins = System.get_env("ADMIN_USER_IDS") do
   config :website_45s_v3,
-         :admin_usernames,
-         admins |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+         :admin_user_ids,
+         admins
+         |> String.split(",")
+         |> Enum.map(&String.trim/1)
+         |> Enum.reject(&(&1 == ""))
+         |> Enum.map(&String.to_integer/1)
 end
 
 if System.get_env("REPLAY_RECORDING") in ["false", "0", "off"] do

@@ -9,8 +9,8 @@ defmodule Website45sV3Web.AdminControllerTest do
   setup :register_and_log_in_user
 
   defp make_admin(user) do
-    Application.put_env(:website_45s_v3, :admin_usernames, [user.username])
-    on_exit(fn -> Application.put_env(:website_45s_v3, :admin_usernames, []) end)
+    Application.put_env(:website_45s_v3, :admin_user_ids, [user.id])
+    on_exit(fn -> Application.put_env(:website_45s_v3, :admin_user_ids, []) end)
   end
 
   defp finished_game! do

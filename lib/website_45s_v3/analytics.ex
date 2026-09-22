@@ -31,11 +31,23 @@ defmodule Website45sV3.Analytics do
   alias Website45sV3.Repo
 
   # Caps on what one browser may send, to keep a misbehaving (or hostile)
-  # client from filling the disk: one batch, one whole recording, and the
-  # clicks reported with one batch.
+  # client from filling the disk or the admin's memory: one batch, one whole
+  # recording (stored bytes, clicks included, and decoded bytes, which is
+  # what the player has to hold), the clicks reported with one batch, and
+  # the recordings one seat may open at one table (each reconnect opens a
+  # new one).
   @max_chunk_bytes 1_000_000
-  @max_replay_bytes 25_000_000
+  @max_replay_bytes 10_000_000
+  @max_replay_raw_bytes 50_000_000
   @max_clicks_per_chunk 500
+  @max_replays_per_seat 5
+
+  # Stored size charged per click row on top of its data: the row's id,
+  # foreign key, timestamp and tuple overhead.
+  @click_row_overhead 64
+
+  # rrweb's EventType values (DomContentLoaded .. Plugin).
+  @rrweb_event_types 0..6
 
   # What a reported click may carry (see SessionRecorder.logClick in
   # assets/js/app.js); anything else is dropped, strings are cut short.
@@ -66,11 +78,37 @@ defmodule Website45sV3.Analytics do
 
   @doc """
   Opens a recording for one seat at one table.
+
+  Refused with `{:error, :too_many_replays}` once the seat has opened
+  `#{@max_replays_per_seat}` recordings at that table, so reconnecting in a
+  loop cannot mint fresh per-recording budgets. When total replay storage is
+  already over the cap, the oldest recordings are deleted first rather than
+  waiting for the daily pruner.
   """
   def start_replay(attrs) do
-    %Replay{}
-    |> Replay.changeset(attrs)
-    |> Repo.insert()
+    changeset = Replay.changeset(%Replay{}, attrs)
+
+    cond do
+      not changeset.valid? ->
+        {:error, changeset}
+
+      seat_replay_count(changeset) >= @max_replays_per_seat ->
+        {:error, :too_many_replays}
+
+      true ->
+        prune_replays_over_cap()
+        Repo.insert(changeset)
+    end
+  end
+
+  defp seat_replay_count(changeset) do
+    game_name = Ecto.Changeset.get_field(changeset, :game_name)
+    player_id = Ecto.Changeset.get_field(changeset, :player_id)
+
+    Repo.aggregate(
+      from(r in Replay, where: r.game_name == ^game_name and r.player_id == ^player_id),
+      :count
+    )
   end
 
   @doc """
@@ -124,6 +162,11 @@ defmodule Website45sV3.Analytics do
   client) as chunk `seq` of the replay, with the `clicks` reported alongside
   it (see `clicks_from_client/3`).
 
+  `json` must be an array of rrweb events (objects with an integer `type`
+  and `timestamp`): the admin replay page splices chunks together and hands
+  them to the player, so anything else is refused with `:invalid_events`
+  rather than stored.
+
   Batches beyond the size caps, replayed sequence numbers, and batches for a
   replay that has since been pruned are refused with `{:error, reason}`.
   Never raises for a well-formed call; the game view relies on that.
@@ -132,24 +175,54 @@ defmodule Website45sV3.Analytics do
 
   def append_chunk(%Replay{} = replay, seq, json, clicks)
       when is_integer(seq) and seq >= 0 and is_binary(json) and is_list(clicks) do
-    data = :zlib.gzip(json)
-    size = byte_size(data)
-
     cond do
       byte_size(json) > @max_chunk_bytes ->
         {:error, :chunk_too_large}
 
-      replay.bytes + size > @max_replay_bytes ->
+      replay.raw_bytes + byte_size(json) > @max_replay_raw_bytes ->
         {:error, :replay_too_large}
 
+      not rrweb_events?(json) ->
+        {:error, :invalid_events}
+
       true ->
-        Repo.transaction(fn -> insert_chunk(replay, seq, data, clicks) end)
+        store_chunk(replay, seq, json, clicks)
     end
   end
 
   def append_chunk(_replay, _seq, _json, _clicks), do: {:error, :invalid}
 
-  defp insert_chunk(replay, seq, data, clicks) do
+  defp store_chunk(replay, seq, json, clicks) do
+    data = :zlib.gzip(json)
+    stored = byte_size(data) + clicks_bytes(clicks)
+
+    if replay.bytes + stored > @max_replay_bytes,
+      do: {:error, :replay_too_large},
+      else: Repo.transaction(fn -> insert_chunk(replay, seq, json, data, stored, clicks) end)
+  end
+
+  defp rrweb_events?(json) do
+    case Jason.decode(json) do
+      {:ok, events} when is_list(events) -> Enum.all?(events, &rrweb_event?/1)
+      _ -> false
+    end
+  end
+
+  defp rrweb_event?(%{"type" => type, "timestamp" => ts})
+       when type in @rrweb_event_types and is_integer(ts),
+       do: true
+
+  defp rrweb_event?(_event), do: false
+
+  # What the click rows will occupy, so they count against the same caps as
+  # the recording itself.
+  defp clicks_bytes(clicks) do
+    Enum.reduce(clicks, 0, fn click, acc ->
+      acc + @click_row_overhead + byte_size(Jason.encode!(click.data))
+    end)
+  end
+
+  defp insert_chunk(replay, seq, json, data, stored, clicks) do
     %ReplayChunk{replay_id: replay.id, seq: seq, data: data}
     |> Ecto.Changeset.change()
     |> Ecto.Changeset.unique_constraint([:replay_id, :seq])
@@ -162,7 +235,7 @@ defmodule Website45sV3.Analytics do
         {1, [updated]} =
           Repo.update_all(
             from(r in Replay, where: r.id == ^replay.id, select: r),
-            inc: [bytes: byte_size(data), chunk_count: 1],
+            inc: [bytes: stored, raw_bytes: byte_size(json), chunk_count: 1],
             set: [updated_at: DateTime.utc_now(:second)]
           )
 

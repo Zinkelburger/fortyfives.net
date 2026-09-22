@@ -1,8 +1,25 @@
+"""Selenium player bot for the end-to-end CI run.
+
+Each process drives one headless Chrome through a full game. TBOT_SCENARIO
+picks how it gets into a game and what it checks along the way:
+
+  public         join the public queue and play to Final Scoring (default)
+  private-host   create a private lobby, publish its URL to TBOT_LOBBY_FILE,
+                 wait for TBOT_WAIT_FOR_PLAYERS players, fill the rest with
+                 server bots and play to Final Scoring
+  private-guest  join the lobby from TBOT_LOBBY_FILE and play to Final
+                 Scoring; with TBOT_REJOIN=1, leave for the lobby after the
+                 first card and come back through "Rejoin Game"
+  abandon        create a private lobby, fill it with bots, play one card,
+                 then abandon from the lobby and check the seat is released
+"""
+
 import json
 import os
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 from card import Suit, Card, less_than, is_ace_of_hearts
@@ -15,6 +32,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 ACTION_TIMEOUT = 20
+# How long to wait for the server to acknowledge a click before sending it
+# again. A click can be lost if it lands while LiveView is still wiring up
+# the page; that single lost Join click failed a whole CI run once.
+CLICK_ACK_TIMEOUT = 5
+CLICK_ATTEMPTS = 4
 JOIN_TIMEOUT = 120
 MATCH_TIMEOUT = 180
 PHASE_TIMEOUT = 180
@@ -31,12 +53,28 @@ def get_driver() -> webdriver.Chrome:
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--headless=new")
 
-    chromedriver_path = "/usr/local/bin/chromedriver"
-    if os.path.exists(chromedriver_path):
+    # Without an explicit driver, Selenium Manager finds (or fetches) the
+    # chromedriver that matches the installed Chrome.
+    chromedriver_path = os.getenv("CHROMEDRIVER")
+    if chromedriver_path:
         service = Service(executable_path=chromedriver_path)
         return webdriver.Chrome(service=service, options=chrome_options)
 
     return webdriver.Chrome(options=chrome_options)
+
+
+def live_socket_connected(driver: webdriver.Chrome) -> bool:
+    return bool(
+        driver.execute_script(
+            """
+            return Boolean(
+                window.liveSocket &&
+                typeof window.liveSocket.isConnected === "function" &&
+                window.liveSocket.isConnected()
+            )
+            """
+        )
+    )
 
 
 def evaluate_hand_bid(player_hand: list[Card]) -> tuple[int, Suit]:
@@ -121,10 +159,18 @@ def evaluate_hand_play(
 
 
 class PhxWeb:
-    def __init__(self, url: str) -> None:
-        self.url = url
+    def __init__(self, base_url: str) -> None:
+        parts = urlsplit(base_url)
+        self.origin = f"{parts.scheme}://{parts.netloc}"
+        self.url = base_url
         self.driver = get_driver()
         self.instance = os.getenv("TBOT_INSTANCE", str(os.getpid()))
+        self.scenario = os.getenv("TBOT_SCENARIO", "public")
+        self.lobby_file = Path(os.getenv("TBOT_LOBBY_FILE", "artifacts/private_lobby_url"))
+        self.wait_for_players = int(os.getenv("TBOT_WAIT_FOR_PLAYERS", "1"))
+        self.rejoin_pending = os.getenv("TBOT_REJOIN") == "1"
+        self.cards_played = 0
+        self.finished = False
 
     def log(self, msg: str) -> None:
         print(f"[tbot {self.instance}] {msg}", flush=True)
@@ -185,17 +231,7 @@ class PhxWeb:
         return False
 
     def live_socket_connected(self) -> bool:
-        return bool(
-            self.driver.execute_script(
-                """
-                return Boolean(
-                    window.liveSocket &&
-                    typeof window.liveSocket.isConnected === "function" &&
-                    window.liveSocket.isConnected()
-                )
-                """
-            )
-        )
+        return live_socket_connected(self.driver)
 
     def wait_until(self, predicate, timeout: int, description: str) -> None:
         deadline = time.time() + timeout
@@ -212,39 +248,203 @@ class PhxWeb:
             msg += f" (last error: {type(last_exc).__name__}: {last_exc})"
         raise TimeoutException(msg)
 
-    # ── Join queue and wait for game ────────────────────────────────
+    # ── Lobby: join a queue and wait for the game ─────────────────────
 
-    def click_join_queue(self) -> None:
-        self.driver.get(self.url)
+    def open_lobby(self, url: str) -> None:
+        self.driver.get(url)
+        self.wait_for_lobby()
+
+    def wait_for_lobby(self) -> None:
         WebDriverWait(self.driver, JOIN_TIMEOUT).until(
             EC.presence_of_element_located((By.ID, "queue-root"))
         )
         self.wait_until(self.live_socket_connected, ACTION_TIMEOUT, "LiveView connection")
-        self.log("Queue LiveView is connected.")
+        self.log(f"Lobby LiveView is connected at {self.driver.current_url}.")
 
-        WebDriverWait(self.driver, ACTION_TIMEOUT).until(
-            EC.element_to_be_clickable((By.ID, "join-queue-button"))
-        ).click()
+    def in_game(self) -> bool:
+        return "/game/" in self.driver.current_url
 
-        self.wait_until(
-            lambda: "/game/" in self.driver.current_url
+    def click_until(
+        self,
+        element_id: str,
+        acknowledged,
+        description: str,
+        ack_timeout: float = CLICK_ACK_TIMEOUT,
+    ) -> None:
+        """Click `element_id` until `acknowledged()` holds.
+
+        Only safe for events the server treats as idempotent (join, fill
+        bots, resume). The button may vanish once the first click lands, so
+        its absence is not an error as long as the acknowledgement follows.
+        """
+        for attempt in range(1, CLICK_ATTEMPTS + 1):
+            try:
+                if acknowledged():
+                    return
+            except WebDriverException:
+                pass
+            buttons = self.driver.find_elements(By.ID, element_id)
+            if buttons:
+                try:
+                    buttons[0].click()
+                except WebDriverException as error:
+                    self.log(f"Click on #{element_id} failed: {type(error).__name__}")
+            try:
+                self.wait_until(acknowledged, ack_timeout, description)
+                return
+            except TimeoutException:
+                self.log(f"No {description} after click {attempt}/{CLICK_ATTEMPTS}; retrying.")
+        self.wait_until(acknowledged, ACTION_TIMEOUT, description)
+
+    def join_queue(self) -> None:
+        self.click_until(
+            "join-queue-button",
+            lambda: self.in_game()
             or len(self.driver.find_elements(By.ID, "leave-queue-button")) == 1,
-            ACTION_TIMEOUT,
             "queue join acknowledgement",
         )
-        self.wait_until(
-            lambda: "/game/" in self.driver.current_url,
-            MATCH_TIMEOUT,
-            "matchmaking redirect",
-        )
+        self.log("Joined the queue.")
+
+    def wait_for_game(self) -> None:
+        self.wait_until(self.in_game, MATCH_TIMEOUT, "matchmaking redirect")
         self.wait_until(
             lambda: len(self.driver.find_elements(By.ID, "game-container")) == 1,
             ACTION_TIMEOUT,
             "game page load",
         )
-
+        self.wait_until(self.live_socket_connected, ACTION_TIMEOUT, "game LiveView connection")
         self.url = self.driver.current_url
         self.log(f"Redirected to {self.url}")
+
+    def create_private_lobby(self) -> None:
+        # The "Play a Friend" tab has no #queue-root, only the create button.
+        self.driver.get(f"{self.origin}/play?tab=private")
+        WebDriverWait(self.driver, JOIN_TIMEOUT).until(
+            EC.presence_of_element_located((By.ID, "create-private-button"))
+        )
+        self.wait_until(self.live_socket_connected, ACTION_TIMEOUT, "LiveView connection")
+        WebDriverWait(self.driver, ACTION_TIMEOUT).until(
+            EC.element_to_be_clickable((By.ID, "create-private-button"))
+        ).click()
+        self.wait_until(
+            lambda: "/play/private/" in self.driver.current_url,
+            ACTION_TIMEOUT,
+            "private lobby navigation",
+        )
+        self.wait_for_lobby()
+        self.log(f"Created private lobby {self.driver.current_url}")
+
+    def publish_lobby_url(self) -> None:
+        # Use the lobby's own URL: the rendered share link carries the
+        # production host from the endpoint config.
+        self.lobby_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.lobby_file.with_suffix(".tmp")
+        tmp.write_text(self.driver.current_url, encoding="utf-8")
+        tmp.replace(self.lobby_file)
+
+    def read_lobby_url(self) -> str:
+        self.wait_until(self.lobby_file.exists, JOIN_TIMEOUT, "private lobby URL from the host")
+        return self.lobby_file.read_text(encoding="utf-8").strip()
+
+    def player_cards(self) -> int:
+        return len(self.driver.find_elements(By.CSS_SELECTOR, ".queue-cards .player-card"))
+
+    def fill_with_bots(self) -> None:
+        self.wait_until(
+            lambda: self.in_game() or self.player_cards() >= self.wait_for_players,
+            MATCH_TIMEOUT,
+            f"{self.wait_for_players} players in the lobby",
+        )
+        self.log(f"{self.player_cards()} player(s) in the lobby; filling with bots.")
+        # Each bot costs per-network budget, so give the redirect a full
+        # action timeout before clicking again.
+        self.click_until(
+            "fill-bots-button",
+            self.in_game,
+            "game start after Fill with Bots",
+            ack_timeout=ACTION_TIMEOUT,
+        )
+
+    def enter_game(self) -> None:
+        if self.scenario == "public":
+            self.open_lobby(self.url)
+            self.join_queue()
+        elif self.scenario in ("private-host", "abandon"):
+            self.create_private_lobby()
+            self.join_queue()
+            if self.scenario == "private-host":
+                self.publish_lobby_url()
+            self.fill_with_bots()
+        elif self.scenario == "private-guest":
+            self.open_lobby(self.read_lobby_url())
+            self.join_queue()
+        else:
+            raise RuntimeError(f"Unknown TBOT_SCENARIO: {self.scenario!r}")
+        self.wait_for_game()
+
+    # ── Mid-game detours: rejoin and abandon ────────────────────────
+
+    def go_to_lobby_with_active_game(self) -> None:
+        self.open_lobby(f"{self.origin}/play")
+        WebDriverWait(self.driver, ACTION_TIMEOUT).until(
+            EC.presence_of_element_located((By.ID, "rejoin-game-button"))
+        )
+        self.log("Lobby shows the game in progress.")
+
+    def leave_and_rejoin(self) -> None:
+        game_url = self.url
+        self.go_to_lobby_with_active_game()
+        # Stay away long enough for the game to register the departure.
+        time.sleep(3)
+        WebDriverWait(self.driver, ACTION_TIMEOUT).until(
+            EC.element_to_be_clickable((By.ID, "rejoin-game-button"))
+        ).click()
+        self.wait_until(
+            lambda: self.driver.current_url == game_url,
+            ACTION_TIMEOUT,
+            "navigation back to the game",
+        )
+        self.wait_until(
+            lambda: len(self.driver.find_elements(By.ID, "game-container")) == 1,
+            ACTION_TIMEOUT,
+            "game page reload",
+        )
+        self.wait_until(self.live_socket_connected, ACTION_TIMEOUT, "game LiveView connection")
+        self.log("Rejoined the game from the lobby.")
+
+    def abandon_game(self) -> None:
+        game_url = self.url
+        self.go_to_lobby_with_active_game()
+        # The Abandon button asks for confirmation through window.confirm.
+        self.driver.execute_script("window.confirm = () => true;")
+        WebDriverWait(self.driver, ACTION_TIMEOUT).until(
+            EC.element_to_be_clickable((By.ID, "abandon-game-button"))
+        ).click()
+        self.wait_until(
+            lambda: not self.driver.find_elements(By.ID, "rejoin-game-button")
+            and len(self.driver.find_elements(By.ID, "join-queue-button")) == 1,
+            ACTION_TIMEOUT,
+            "lobby to release the abandoned seat",
+        )
+        self.log("Abandoned the game; the lobby offers Join Queue again.")
+
+        # An abandoned seat can't be retaken: the game page sends us back.
+        self.driver.get(game_url)
+        self.wait_until(
+            lambda: urlsplit(self.driver.current_url).path == "/play",
+            ACTION_TIMEOUT,
+            "redirect away from the abandoned game",
+        )
+        self.log("Abandon scenario complete: old game URL redirects to the lobby.")
+        self.finished = True
+
+    def after_card_played(self) -> None:
+        self.cards_played += 1
+        if self.rejoin_pending:
+            self.rejoin_pending = False
+            self.leave_and_rejoin()
+        elif self.scenario == "abandon":
+            self.abandon_game()
 
     # ── Snapshot-based hand extraction ──────────────────────────────
 
@@ -285,13 +485,9 @@ class PhxWeb:
         if not buttons:
             raise RuntimeError("Auto-play is on but resume button is missing.")
 
-        WebDriverWait(self.driver, ACTION_TIMEOUT).until(
-            EC.element_to_be_clickable((By.ID, "resume-control-overlay"))
-        ).click()
-
-        self.wait_until(
+        self.click_until(
+            "resume-control-overlay",
             lambda: not self.is_auto_playing(self.snapshot()),
-            ACTION_TIMEOUT,
             "manual control resume",
         )
         self.log("Resumed manual control.")
@@ -494,6 +690,9 @@ class PhxWeb:
                 ACTION_TIMEOUT,
                 "played card acceptance",
             )
+            self.after_card_played()
+            if self.finished:
+                return
 
         raise TimeoutException("Playing phase timed out.")
 
@@ -548,10 +747,13 @@ class PhxWeb:
     # ── Main loop ───────────────────────────────────────────────────
 
     def run(self) -> None:
-        self.click_join_queue()
+        self.log(f"Scenario: {self.scenario}")
+        self.enter_game()
         start_time = time.time()
 
         while time.time() - start_time < TOTAL_RUNTIME_TIMEOUT:
+            if self.finished:
+                return
             soup = self.snapshot()
             phase = self.get_phase(soup)
 
@@ -575,8 +777,9 @@ def main() -> None:
     phx_web = PhxWeb(os.getenv("APP_BASE_URL", "http://localhost:4000/play"))
     try:
         phx_web.run()
+        phx_web.log("Scenario passed.")
     except Exception as error:
-        phx_web.log(f"Run failed: {error!r}")
+        phx_web.log(f"Run failed: {type(error).__name__}: {error}".rstrip())
         phx_web.capture_failure_artifacts()
         raise
     finally:

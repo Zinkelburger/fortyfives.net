@@ -7,6 +7,9 @@ defmodule Website45sV3.AnalyticsTest do
   alias Website45sV3.Game.GameEvents
   alias Website45sV3.Game.GameLog
 
+  # A minimal valid rrweb batch.
+  @batch ~s([{"type":3,"timestamp":1}])
+
   defp start_replay!(attrs \\ %{}) do
     {:ok, replay} =
       Analytics.start_replay(
@@ -28,21 +31,95 @@ defmodule Website45sV3.AnalyticsTest do
     test "chunks are stored gzipped, counted, and played back as one array" do
       replay = start_replay!()
 
-      {:ok, replay} = Analytics.append_chunk(replay, 0, ~s([{"type":4},{"type":2}]))
+      {:ok, replay} =
+        Analytics.append_chunk(replay, 0, ~s([{"type":4,"timestamp":1},{"type":2,"timestamp":2}]))
+
       {:ok, replay} = Analytics.append_chunk(replay, 1, "[]")
-      {:ok, replay} = Analytics.append_chunk(replay, 2, ~s([{"type":3}]))
+      {:ok, replay} = Analytics.append_chunk(replay, 2, ~s([{"type":3,"timestamp":3}]))
 
       assert replay.chunk_count == 3
       assert replay.bytes > 0
+      assert replay.raw_bytes > 0
 
       assert Jason.decode!(Analytics.replay_events_json(replay)) ==
-               [%{"type" => 4}, %{"type" => 2}, %{"type" => 3}]
+               [
+                 %{"type" => 4, "timestamp" => 1},
+                 %{"type" => 2, "timestamp" => 2},
+                 %{"type" => 3, "timestamp" => 3}
+               ]
+    end
+
+    test "anything but an array of rrweb events is refused" do
+      replay = start_replay!()
+
+      for json <- [
+            "[1]",
+            "{}",
+            "not json",
+            ~s([{"type":3}]),
+            ~s([{"type":99,"timestamp":1}]),
+            ~s([{"type":3,"timestamp":1}]"<script>")
+          ] do
+        assert {:error, :invalid_events} = Analytics.append_chunk(replay, 0, json)
+      end
+
+      assert Analytics.get_replay!(replay.id).chunk_count == 0
+    end
+
+    test "decoded size is capped, however well the batches compress" do
+      replay = start_replay!()
+      # ~1 MB of padding that gzips to a few KB.
+      padding = String.duplicate(" ", 999_000)
+      batch = "[" <> padding <> ~s({"type":3,"timestamp":1}])
+
+      replay =
+        Enum.reduce_while(0..60, replay, fn seq, replay ->
+          case Analytics.append_chunk(replay, seq, batch) do
+            {:ok, replay} -> {:cont, replay}
+            {:error, :replay_too_large} -> {:halt, replay}
+          end
+        end)
+
+      assert replay.raw_bytes <= 50_000_000
+      assert replay.chunk_count < 60
+    end
+
+    test "click rows count toward the stored size" do
+      replay = start_replay!()
+      {:ok, without} = Analytics.append_chunk(replay, 0, @batch)
+
+      clicks = for i <- 1..100, do: %{at_ms: i, data: %{"el" => String.duplicate("x", 120)}}
+      {:ok, with_clicks} = Analytics.append_chunk(without, 1, @batch, clicks)
+
+      assert with_clicks.bytes - without.bytes > 100 * 120
+    end
+
+    test "a seat can only open so many recordings at one table" do
+      for _ <- 1..5, do: start_replay!()
+
+      assert {:error, :too_many_replays} =
+               Analytics.start_replay(%{game_name: "G1", player_id: "p1", device: "desktop"})
+
+      assert {:ok, _} =
+               Analytics.start_replay(%{game_name: "G1", player_id: "p2", device: "desktop"})
+    end
+
+    test "opening a recording while storage is over the cap deletes the oldest first" do
+      oldest = start_replay!(%{player_id: "old"})
+      {:ok, oldest} = Analytics.append_chunk(oldest, 0, @batch)
+      backdate(Replay, oldest.id, 1)
+
+      Application.put_env(:website_45s_v3, Website45sV3.Analytics, replay_max_bytes: 1)
+      on_exit(fn -> Application.delete_env(:website_45s_v3, Website45sV3.Analytics) end)
+
+      assert {:ok, _} = Analytics.start_replay(%{game_name: "G1", player_id: "new"})
+      assert Repo.get(Replay, oldest.id) == nil
     end
 
     test "a duplicate sequence number is refused" do
       replay = start_replay!()
-      {:ok, replay} = Analytics.append_chunk(replay, 0, "[1]")
-      assert {:error, :duplicate_seq} = Analytics.append_chunk(replay, 0, "[2]")
+      {:ok, replay} = Analytics.append_chunk(replay, 0, @batch)
+      assert {:error, :duplicate_seq} = Analytics.append_chunk(replay, 0, @batch)
       assert Analytics.get_replay!(replay.id).chunk_count == 1
     end
 
@@ -63,7 +140,7 @@ defmodule Website45sV3.AnalyticsTest do
       replay = start_replay!()
       Repo.delete!(replay)
 
-      assert {:error, :replay_gone} = Analytics.append_chunk(replay, 0, "[1]")
+      assert {:error, :replay_gone} = Analytics.append_chunk(replay, 0, @batch)
     end
 
     test "clicks are stored with the batch and listed per game, oldest first" do
@@ -71,9 +148,9 @@ defmodule Website45sV3.AnalyticsTest do
       bob = start_replay!(%{player_id: "p2", display_name: "Bob"})
       other = start_replay!(%{game_name: "G2", player_id: "p3", display_name: "Zed"})
 
-      {:ok, _} = Analytics.append_chunk(ann, 0, "[1]", [%{at_ms: 2_000, data: %{"el" => "a"}}])
-      {:ok, _} = Analytics.append_chunk(bob, 0, "[1]", [%{at_ms: 1_000, data: %{"el" => "b"}}])
-      {:ok, _} = Analytics.append_chunk(other, 0, "[1]", [%{at_ms: 500, data: %{"el" => "z"}}])
+      {:ok, _} = Analytics.append_chunk(ann, 0, @batch, [%{at_ms: 2_000, data: %{"el" => "a"}}])
+      {:ok, _} = Analytics.append_chunk(bob, 0, @batch, [%{at_ms: 1_000, data: %{"el" => "b"}}])
+      {:ok, _} = Analytics.append_chunk(other, 0, @batch, [%{at_ms: 500, data: %{"el" => "z"}}])
 
       assert Analytics.list_clicks("G1") == [
                {"Bob", %{"el" => "b"}, 1_000},
@@ -84,7 +161,7 @@ defmodule Website45sV3.AnalyticsTest do
 
       # A batch that is refused stores none of its clicks either.
       assert {:error, :duplicate_seq} =
-               Analytics.append_chunk(ann, 0, "[2]", [%{at_ms: 3_000, data: %{}}])
+               Analytics.append_chunk(ann, 0, @batch, [%{at_ms: 3_000, data: %{}}])
 
       assert length(Analytics.list_clicks("G1")) == 2
 
@@ -143,7 +220,7 @@ defmodule Website45sV3.AnalyticsTest do
   describe "prune/1" do
     test "deletes replays past their retention and their chunks" do
       old = start_replay!()
-      {:ok, _} = Analytics.append_chunk(old, 0, "[1]")
+      {:ok, _} = Analytics.append_chunk(old, 0, @batch)
       backdate(Replay, old.id, Analytics.config(:replay_days) + 1)
       fresh = start_replay!()
 
@@ -155,10 +232,10 @@ defmodule Website45sV3.AnalyticsTest do
 
     test "deletes the oldest replays until storage is under the cap" do
       oldest = start_replay!()
-      {:ok, _} = Analytics.append_chunk(oldest, 0, "[1]")
+      {:ok, _} = Analytics.append_chunk(oldest, 0, @batch)
       backdate(Replay, oldest.id, 2)
       newer = start_replay!()
-      {:ok, newer} = Analytics.append_chunk(newer, 0, "[1]")
+      {:ok, newer} = Analytics.append_chunk(newer, 0, @batch)
       backdate(Replay, newer.id, 1)
 
       # A cap of exactly one replay: the oldest goes, the newer one fits.

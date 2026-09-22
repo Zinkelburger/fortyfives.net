@@ -112,14 +112,15 @@ defmodule Website45sV3Web.UserRegistrationLive do
     client_ip = socket.assigns.client_ip
 
     # Turnstile gates the attempt, then a per-network budget caps how many
-    # accounts (and therefore confirmation emails) one source can create. The
-    # budget is only *checked* here and charged after the account exists, so a
-    # rejected changeset costs the visitor nothing.
+    # signups (and therefore confirmation emails) one source can attempt. A
+    # form that fails its local checks is answered before the budget is
+    # touched, so a mistyped password costs nothing; everything that reaches
+    # the database is charged, including "email has already been taken",
+    # which would otherwise be a free account-existence oracle.
     with :ok <- Turnstile.verify(params["cf-turnstile-response"], client_ip),
-         :ok <- registration_allowed(client_ip),
+         :ok <- locally_valid(user_params),
+         :ok <- RateLimiter.check_registration(client_ip),
          {:ok, user} <- Accounts.register_user(user_params) do
-      RateLimiter.record_registration(client_ip)
-
       # The account exists either way; a mail failure must not crash the
       # sign-in that follows. The session controller turns the marker into a
       # flash telling the user to request a new confirmation email.
@@ -172,10 +173,12 @@ defmodule Website45sV3Web.UserRegistrationLive do
     end
   end
 
-  defp registration_allowed(client_ip) do
-    if RateLimiter.registration_exhausted?(client_ip),
-      do: {:error, :rate_limited},
-      else: :ok
+  defp locally_valid(user_params) do
+    changeset = Accounts.change_user_registration(%User{}, user_params)
+
+    if changeset.valid?,
+      do: :ok,
+      else: {:error, Map.put(changeset, :action, :insert)}
   end
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do

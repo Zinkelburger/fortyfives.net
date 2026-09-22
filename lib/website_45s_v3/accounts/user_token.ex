@@ -187,6 +187,13 @@ defmodule Website45sV3.Accounts.UserToken do
   end
 
   @doc """
+  The raw session tokens a user holds.
+  """
+  def session_tokens_query(user) do
+    from t in UserToken, where: t.user_id == ^user.id and t.context == "session", select: t.token
+  end
+
+  @doc """
   Gets all tokens for the given user for the given contexts.
   """
   def user_and_contexts_query(user, :all) do

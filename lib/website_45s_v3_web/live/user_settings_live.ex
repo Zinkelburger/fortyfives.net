@@ -1,11 +1,12 @@
 defmodule Website45sV3Web.UserSettingsLive do
   use Website45sV3Web, :live_view
 
-  import Website45sV3Web.AuthLiveHelpers, only: [password_field: 1]
+  import Website45sV3Web.AuthLiveHelpers, only: [client_ip: 1, password_field: 1]
 
   require Logger
 
   alias Website45sV3.Accounts
+  alias Website45sV3.Security.RateLimiter
 
   def render(assigns) do
     ~H"""
@@ -13,6 +14,34 @@ defmodule Website45sV3Web.UserSettingsLive do
       class="space-y-12 divide-y mx-auto max-w-sm mb-10"
       style="border: 2px solid #d2e8f9; border-radius: 10px; padding:10px; background-color: #071f31; margin-top: 35px;"
     >
+      <div>
+        <p style="color: #d2e8f9">
+          Change your username
+        </p>
+        <.simple_form
+          for={@username_form}
+          id="username_form"
+          phx-submit="update_username"
+          phx-change="validate_username"
+        >
+          <.input
+            field={@username_form[:username]}
+            type="text"
+            label="Username"
+            required
+            background_color="071f31"
+          />
+          <:actions>
+            <.button
+              phx-disable-with="Changing..."
+              class="w-full green-button"
+              style="margin-top: 10px;"
+            >
+              Change Username
+            </.button>
+          </:actions>
+        </.simple_form>
+      </div>
       <div style="border-bottom; 0px;">
         <p style="color: #d2e8f9">
           Change your email
@@ -121,7 +150,7 @@ defmodule Website45sV3Web.UserSettingsLive do
   # Passwords typed into the forms are never stored in assigns: the inputs
   # keep their own value in the browser (see `password_field/1`) and reach
   # this process only when a form is submitted or validated.
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     user = socket.assigns.current_user
     email_changeset = Accounts.change_user_email(user)
     password_changeset = Accounts.change_user_password(user)
@@ -129,12 +158,54 @@ defmodule Website45sV3Web.UserSettingsLive do
     socket =
       socket
       |> assign(:current_email, user.email)
+      # Kept so a password change can leave this session's socket connected
+      # while every other session is signed out (see `update_password`).
+      |> assign(:session_token, session["user_token"])
+      |> assign(:client_ip, client_ip(socket))
+      |> assign(:username_form, to_form(Accounts.change_user_username(user)))
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
       |> assign(:trigger_submit, false)
       |> assign(:post_auth_token, nil)
 
     {:ok, socket}
+  end
+
+  def handle_event("validate_username", %{"user" => user_params}, socket) do
+    username_form =
+      socket.assigns.current_user
+      |> Accounts.change_user_username(user_params)
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, username_form: username_form)}
+  end
+
+  def handle_event("update_username", %{"user" => user_params}, socket) do
+    user = socket.assigns.current_user
+    changeset = Accounts.change_user_username(user, user_params)
+
+    # Local checks first, so a typo does not spend the daily budget.
+    with true <- changeset.valid? || {:error, Map.put(changeset, :action, :insert)},
+         :ok <- RateLimiter.check_username_change(user.id),
+         {:ok, user} <- Accounts.update_user_username(user, user_params) do
+      {:noreply,
+       socket
+       |> assign(current_user: user)
+       |> assign(username_form: to_form(Accounts.change_user_username(user)))
+       |> put_flash(:info, "Username changed to #{user.username}.")}
+    else
+      {:error, :rate_limited} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "You have changed your username too often. Try again tomorrow."
+         )}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply, assign(socket, username_form: to_form(Map.put(changeset, :action, :insert)))}
+    end
   end
 
   def handle_event("validate_email", %{"user" => user_params}, socket) do
@@ -152,6 +223,8 @@ defmodule Website45sV3Web.UserSettingsLive do
     user = socket.assigns.current_user
 
     with {:ok, applied_user} <- Accounts.apply_user_email(user, password, user_params),
+         :ok <-
+           RateLimiter.check_email_change(socket.assigns.client_ip, user.id, applied_user.email),
          {:ok, _email} <-
            Accounts.deliver_user_update_email_instructions(
              applied_user,
@@ -163,6 +236,10 @@ defmodule Website45sV3Web.UserSettingsLive do
     else
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :email_form, to_form(Map.put(changeset, :action, :insert)))}
+
+      {:error, :rate_limited} ->
+        {:noreply,
+         put_flash(socket, :error, "Too many email change requests. Please try again later.")}
 
       {:error, reason} ->
         Logger.error(
@@ -192,7 +269,9 @@ defmodule Website45sV3Web.UserSettingsLive do
     %{"current_password" => password, "user" => user_params} = params
     user = socket.assigns.current_user
 
-    case Accounts.update_user_password(user, password, user_params) do
+    case Accounts.update_user_password(user, password, user_params,
+           keep_session: socket.assigns.session_token
+         ) do
       {:ok, user} ->
         password_form =
           user

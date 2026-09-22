@@ -116,6 +116,25 @@ defmodule Website45sV3.Accounts do
   ## Settings
 
   @doc """
+  Returns a changeset for the username form. Uniqueness is only checked on
+  submit, for the same reason as `change_user_registration/2`.
+  """
+  def change_user_username(user, attrs \\ %{}) do
+    User.username_changeset(user, attrs, validate_username: false)
+  end
+
+  @doc """
+  Changes the username. No password is asked for: Google sign-ups never set
+  one, and a username (unlike the email or password) cannot be used to take
+  the account. Callers rate limit it (`RateLimiter.check_username_change/1`).
+  """
+  def update_user_username(user, attrs) do
+    user
+    |> User.username_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Returns an `%Ecto.Changeset{}` for changing the user email.
 
   ## Examples
@@ -218,8 +237,12 @@ defmodule Website45sV3.Accounts do
       iex> update_user_password(user, "invalid password", %{password: ...})
       {:error, %Ecto.Changeset{}}
 
+  Every session is revoked and its open LiveView sockets disconnected,
+  except the session token given as `keep_session:` (the one making the
+  change, which signs in again with the new password straight after).
+
   """
-  def update_user_password(user, password, attrs) do
+  def update_user_password(user, password, attrs, opts \\ []) do
     changeset =
       user
       |> User.password_changeset(attrs)
@@ -227,13 +250,48 @@ defmodule Website45sV3.Accounts do
 
     Ecto.Multi.new()
     |> Ecto.Multi.update(:user, changeset)
-    |> Ecto.Multi.delete_all(:tokens, UserToken.user_and_contexts_query(user, :all))
+    |> revoke_all_tokens(user)
     |> Repo.transaction()
     |> case do
-      {:ok, %{user: user}} -> {:ok, user}
-      {:error, :user, changeset, _} -> {:error, changeset}
+      {:ok, %{user: user, sessions: sessions}} ->
+        disconnect_sessions(sessions, Keyword.get(opts, :keep_session))
+        {:ok, user}
+
+      {:error, :user, changeset, _} ->
+        {:error, changeset}
     end
   end
+
+  # Deletes every token the user holds, remembering the session tokens so
+  # their open LiveView sockets can be told to disconnect once the
+  # transaction commits. Deleting a token only stops it being accepted on
+  # the next mount; a socket that is already connected keeps its
+  # `current_user` until it is disconnected.
+  defp revoke_all_tokens(multi, user) do
+    multi
+    |> Ecto.Multi.all(:sessions, UserToken.session_tokens_query(user))
+    |> Ecto.Multi.delete_all(:tokens, UserToken.user_and_contexts_query(user, :all))
+  end
+
+  defp disconnect_sessions(tokens, keep) do
+    for token <- tokens, token != keep do
+      topic = live_socket_id(token)
+
+      Phoenix.PubSub.broadcast(Website45sV3.PubSub, topic, %Phoenix.Socket.Broadcast{
+        topic: topic,
+        event: "disconnect",
+        payload: %{}
+      })
+    end
+
+    :ok
+  end
+
+  @doc """
+  The topic a session's LiveView sockets are identified by (the session's
+  `:live_socket_id`); broadcasting "disconnect" on it closes them.
+  """
+  def live_socket_id(token), do: "users_sessions:#{Base.url_encode64(token)}"
 
   ## Session
 
@@ -358,7 +416,8 @@ defmodule Website45sV3.Accounts do
   end
 
   @doc """
-  Resets the user password.
+  Resets the user password, revoking every session and disconnecting their
+  open LiveView sockets.
 
   ## Examples
 
@@ -372,11 +431,15 @@ defmodule Website45sV3.Accounts do
   def reset_user_password(user, attrs) do
     Ecto.Multi.new()
     |> Ecto.Multi.update(:user, User.password_changeset(user, attrs))
-    |> Ecto.Multi.delete_all(:tokens, UserToken.user_and_contexts_query(user, :all))
+    |> revoke_all_tokens(user)
     |> Repo.transaction()
     |> case do
-      {:ok, %{user: user}} -> {:ok, user}
-      {:error, :user, changeset, _} -> {:error, changeset}
+      {:ok, %{user: user, sessions: sessions}} ->
+        disconnect_sessions(sessions, nil)
+        {:ok, user}
+
+      {:error, :user, changeset, _} ->
+        {:error, changeset}
     end
   end
 
@@ -459,7 +522,7 @@ defmodule Website45sV3.Accounts do
   # as a changeset error thanks to the unique constraint; retry with a fresh
   # random name rather than failing the sign-in.
   defp create_google_user(uid, email) do
-    insert_google_user(uid, email, generate_username(email), 3)
+    insert_google_user(uid, email, random_username(), 3)
   end
 
   defp insert_google_user(uid, email, username, attempts_left) do
@@ -483,40 +546,12 @@ defmodule Website45sV3.Accounts do
   end
 
   @doc """
-  Derives a valid, currently unused username from an email address.
-
-  The local part is reduced to the characters usernames allow, truncated to
-  fit, and given a numeric suffix if it is taken. When nothing usable is left
-  (too short, a banned word, every suffix taken) a random `player_xxxx` name
-  is used instead, so sign-up can never fail on the username alone.
+  A random, currently unused `player_xxxxxxx` username. Given to Google
+  sign-ups, which never pick a name themselves; they can change it in
+  settings. Never derived from the email address: the username is shown to
+  strangers at the table.
   """
-  def generate_username(email) when is_binary(email) do
-    base =
-      email
-      |> String.split("@")
-      |> hd()
-      |> String.replace(~r/[^\p{L}\p{N}_.-]/u, "")
-      |> String.slice(0, 30)
-
-    if User.valid_username?(base) do
-      first_available([base | Enum.map(2..20, &suffixed(base, &1))]) || random_username()
-    else
-      random_username()
-    end
-  end
-
-  defp suffixed(base, n) do
-    suffix = Integer.to_string(n)
-    String.slice(base, 0, 30 - String.length(suffix)) <> suffix
-  end
-
-  defp first_available(candidates) do
-    Enum.find(candidates, fn candidate ->
-      User.valid_username?(candidate) and is_nil(get_user_by_username(candidate))
-    end)
-  end
-
-  defp random_username do
+  def random_username do
     candidate =
       "player_" <> Base.encode32(:crypto.strong_rand_bytes(4), case: :lower, padding: false)
 

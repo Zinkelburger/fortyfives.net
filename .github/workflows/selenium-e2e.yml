@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR makes the older run moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   e2e-test:
     runs-on: ubuntu-24.04
@@ -22,10 +27,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build Docker image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
@@ -35,21 +40,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Install Chrome and ChromeDriver
+      # ubuntu-24.04 ships matching Chrome and chromedriver builds; Selenium
+      # Manager picks them up, so nothing is downloaded here.
+      - name: Show browser versions
         run: |
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub \
-            | gpg --dearmor \
-            | sudo tee /usr/share/keyrings/google-chrome.gpg > /dev/null
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
-            | sudo tee /etc/apt/sources.list.d/google-chrome.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable unzip
-          CHROME_VERSION=$(google-chrome --version | awk '{print $3}')
-          DRIVER_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip"
-          wget $DRIVER_URL -O chromedriver-linux64.zip
-          unzip chromedriver-linux64.zip
-          sudo mv -f chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
-          sudo chmod +x /usr/local/bin/chromedriver
           google-chrome --version
           chromedriver --version
 
@@ -79,7 +73,7 @@ jobs:
       - name: Generate ephemeral database credentials
         run: echo "E2E_DATABASE_PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
-      - name: Run tbot instances
+      - name: Run tbot scenarios
         run: |
           set -euo pipefail
           mkdir -p artifacts
@@ -100,7 +94,7 @@ jobs:
 
           timeout=300
           start_time=$(date +%s)
-          until curl -s http://localhost:4000; do
+          until curl -sf -o /dev/null http://localhost:4000; do
             if (( $(date +%s) - start_time >= timeout )); then
               echo "Timeout waiting for the elixir app"
               docker logs my-elixir-app-container
@@ -112,35 +106,13 @@ jobs:
 
           source venv/bin/activate
           echo 'Running wait_play'
-          python -u python/wait_play.py
+          TBOT_ARTIFACT_DIR=artifacts python -u python/wait_play.py
 
-          echo 'Running 4 tbot instances...'
-          pids=()
-          for i in {1..4}; do
-            TBOT_INSTANCE="$i" TBOT_ARTIFACT_DIR=artifacts python -u python/tbot.py > "tbot_$i.log" 2>&1 &
-            pids+=("$!")
-          done
+          python/run_e2e.sh
 
-          failed=0
-          for pid in "${pids[@]}"; do
-            if ! wait "$pid"; then
-              failed=1
-            fi
-          done
-
-          if [ "$failed" -ne 0 ]; then
-            echo "At least one tbot instance failed"
-            exit 1
-          fi
-
-      - name: Upload tbot logs to Actions
-        if: always()
-        run: |
-          for i in {1..4}; do
-            echo "::group::tbot instance $i log"
-            cat tbot_$i.log
-            echo "::endgroup::"
-          done
+      - name: Dump app logs on failure
+        if: failure()
+        run: docker logs my-elixir-app-container 2>&1 | tail -n 300
 
       - name: Upload Selenium artifacts
         if: always()
@@ -151,12 +123,3 @@ jobs:
             tbot_*.log
             artifacts/**
           if-no-files-found: ignore
-
-      - name: Check tbot logs for success
-        run: |
-          for i in {1..4}; do
-            grep -q "Final Scoring detected" "tbot_$i.log" \
-              || { echo "Missing scoring in tbot_$i.log"; exit 1; }
-            grep -q "WebDriver closed" "tbot_$i.log" \
-              || { echo "Missing WebDriver closed in tbot_$i.log"; exit 1; }
-          done

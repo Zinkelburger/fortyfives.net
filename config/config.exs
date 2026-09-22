@@ -28,9 +28,10 @@ config :website_45s_v3, Website45sV3.Analytics,
   replay_max_bytes: 2_000_000_000,
   game_events_days: 365
 
-# Usernames allowed into /admin (replays, game logs). Set ADMIN_USERNAMES in
-# the environment; empty means nobody.
-config :website_45s_v3, :admin_usernames, []
+# User ids allowed into /admin (replays, game logs). Set ADMIN_USER_IDS in
+# the environment; empty means nobody. Ids, not usernames: a username can be
+# changed or claimed by whoever registers it first.
+config :website_45s_v3, :admin_user_ids, []
 
 # Configures the endpoint
 config :website_45s_v3, Website45sV3Web.Endpoint,

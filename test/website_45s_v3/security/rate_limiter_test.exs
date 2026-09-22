@@ -154,11 +154,8 @@ defmodule Website45sV3.Security.RateLimiterTest do
       assert {:error, :rate_limited} = RateLimiter.check_queue_join(nil)
     end
 
-    test "registration checks with no IP report exhausted-free but cannot be charged" do
-      # `registration_exhausted?` is a read; the charge happens later and is
-      # what fails closed.
-      refute RateLimiter.registration_exhausted?(nil)
-      assert {:error, :rate_limited} = RateLimiter.record_registration(nil)
+    test "registrations with no IP are refused" do
+      assert {:error, :rate_limited} = RateLimiter.check_registration(nil)
     end
   end
 
@@ -197,30 +194,56 @@ defmodule Website45sV3.Security.RateLimiterTest do
     end
   end
 
-  describe "registration" do
-    test "accounts created from one network are capped" do
-      put_limits(registration: [window_ms: 60_000, max_ip: 2])
+  describe "account-scoped budgets" do
+    test "email changes are capped per account, whatever the address or network" do
+      put_limits(email: [window_ms: 60_000, max_ip: 100, max_address: 100, max_account: 2])
 
-      refute RateLimiter.registration_exhausted?("203.0.113.1")
-      RateLimiter.record_registration("203.0.113.1")
-      refute RateLimiter.registration_exhausted?("203.0.113.1")
-      RateLimiter.record_registration("203.0.113.1")
+      assert :ok = RateLimiter.check_email_change("203.0.113.1", 7, "a@example.com")
+      assert :ok = RateLimiter.check_email_change("203.0.113.2", 7, "b@example.com")
 
-      assert RateLimiter.registration_exhausted?("203.0.113.1")
-      refute RateLimiter.registration_exhausted?("203.0.113.2")
+      assert {:error, :rate_limited} =
+               RateLimiter.check_email_change("203.0.113.3", 7, "c@example.com")
+
+      assert :ok = RateLimiter.check_email_change("203.0.113.3", 8, "c@example.com")
     end
 
-    test "a rejected signup does not consume the network budget" do
-      put_limits(registration: [window_ms: 60_000, max_ip: 1])
+    test "username changes are capped per account" do
+      put_limits(username: [window_ms: 60_000, max_account: 1])
 
-      # Only successful registrations are recorded, so someone fumbling the
-      # form cannot lock themselves out of signing up.
-      refute RateLimiter.registration_exhausted?("203.0.113.1")
-      refute RateLimiter.registration_exhausted?("203.0.113.1")
-      refute RateLimiter.registration_exhausted?("203.0.113.1")
+      assert :ok = RateLimiter.check_username_change(7)
+      assert {:error, :rate_limited} = RateLimiter.check_username_change(7)
+      assert :ok = RateLimiter.check_username_change(8)
+    end
 
-      RateLimiter.record_registration("203.0.113.1")
-      assert RateLimiter.registration_exhausted?("203.0.113.1")
+    test "bots are capped per network" do
+      put_limits(bots: [window_ms: 60_000, max_ip: 2])
+
+      assert :ok = RateLimiter.check_bot_spawn("203.0.113.1")
+      assert :ok = RateLimiter.check_bot_spawn("203.0.113.1")
+      assert {:error, :rate_limited} = RateLimiter.check_bot_spawn("203.0.113.1")
+      assert :ok = RateLimiter.check_bot_spawn("203.0.113.2")
+    end
+  end
+
+  describe "registration" do
+    test "signups from one network are capped" do
+      put_limits(registration: [window_ms: 60_000, max_ip: 2])
+
+      assert :ok = RateLimiter.check_registration("203.0.113.1")
+      assert :ok = RateLimiter.check_registration("203.0.113.1")
+      assert {:error, :rate_limited} = RateLimiter.check_registration("203.0.113.1")
+      assert :ok = RateLimiter.check_registration("203.0.113.2")
+    end
+
+    test "concurrent signups cannot race past the budget" do
+      put_limits(registration: [window_ms: 60_000, max_ip: 5])
+
+      results =
+        1..50
+        |> Task.async_stream(fn _ -> RateLimiter.check_registration("203.0.113.1") end)
+        |> Enum.map(fn {:ok, result} -> result end)
+
+      assert Enum.count(results, &(&1 == :ok)) == 5
     end
   end
 end

@@ -5,6 +5,7 @@ defmodule Website45sV3Web.GameLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.GameSupervisor
@@ -256,7 +257,7 @@ defmodule Website45sV3Web.GameLiveTest do
 
       # Nobody may check out a connection any more: every query in the view
       # process raises, as it would with the pool exhausted.
-      Ecto.Adapters.SQL.Sandbox.mode(Website45sV3.Repo, :manual)
+      Sandbox.mode(Website45sV3.Repo, :manual)
 
       render_hook(view, "replay_chunk", replay_batch(0))
 

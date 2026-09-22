@@ -282,11 +282,11 @@ defmodule Website45sV3Web.UserAuth do
   end
 
   @doc """
-  Whether the user may see `/admin`: their username is in the
-  `:admin_usernames` config (ADMIN_USERNAMES in the environment).
+  Whether the user may see `/admin`: their id is in the
+  `:admin_user_ids` config (ADMIN_USER_IDS in the environment).
   """
-  def admin?(%{username: username}) when is_binary(username) do
-    username in Application.get_env(:website_45s_v3, :admin_usernames, [])
+  def admin?(%{id: id}) when is_integer(id) do
+    id in Application.get_env(:website_45s_v3, :admin_user_ids, [])
   end
 
   def admin?(_user), do: false
@@ -310,7 +310,7 @@ defmodule Website45sV3Web.UserAuth do
   defp put_token_in_session(conn, token) do
     conn
     |> put_session(:user_token, token)
-    |> put_session(:live_socket_id, "users_sessions:#{Base.url_encode64(token)}")
+    |> put_session(:live_socket_id, Accounts.live_socket_id(token))
   end
 
   defp maybe_store_return_to(%{method: "GET"} = conn) do

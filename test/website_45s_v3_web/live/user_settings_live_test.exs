@@ -2,6 +2,7 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
   use Website45sV3Web.ConnCase
 
   alias Website45sV3.Accounts
+  alias Website45sV3.Security.RateLimiter
   import Phoenix.LiveViewTest
   import Website45sV3.AccountsFixtures
 
@@ -25,11 +26,94 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
     end
   end
 
+  describe "update username form" do
+    setup %{conn: conn} do
+      RateLimiter.reset()
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "changes the username without asking for a password", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      new_name = "renamed_#{System.unique_integer([:positive])}"
+
+      result =
+        lv
+        |> form("#username_form", %{"user" => %{"username" => new_name}})
+        |> render_submit()
+
+      assert result =~ "Username changed to #{new_name}"
+      assert Accounts.get_user!(user.id).username == new_name
+    end
+
+    test "refuses a name that is taken, banned or unchanged", %{conn: conn, user: user} do
+      other = user_fixture()
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      for {name, error} <- [
+            {other.username, "has already been taken"},
+            {"admin", "Contains a banned word"},
+            {user.username, "did not change"}
+          ] do
+        result =
+          lv
+          |> form("#username_form", %{"user" => %{"username" => name}})
+          |> render_submit()
+
+        assert result =~ error
+      end
+
+      assert Accounts.get_user!(user.id).username == user.username
+    end
+
+    test "caps how often the username can change", %{conn: conn, user: user} do
+      previous = Application.get_env(:website_45s_v3, :security_rate_limits)
+      Application.put_env(:website_45s_v3, :security_rate_limits, username: [max_account: 1])
+      on_exit(fn -> Application.put_env(:website_45s_v3, :security_rate_limits, previous) end)
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      lv
+      |> form("#username_form", %{"user" => %{"username" => "first_#{user.id}"}})
+      |> render_submit()
+
+      result =
+        lv
+        |> form("#username_form", %{"user" => %{"username" => "second_#{user.id}"}})
+        |> render_submit()
+
+      assert result =~ "changed your username too often"
+      assert Accounts.get_user!(user.id).username == "first_#{user.id}"
+    end
+  end
+
   describe "update email form" do
     setup %{conn: conn} do
+      RateLimiter.reset()
       password = valid_user_password()
       user = user_fixture(%{password: password})
       %{conn: log_in_user(conn, user), user: user, password: password}
+    end
+
+    test "caps how many email changes one account can request",
+         %{conn: conn, password: password} do
+      previous = Application.get_env(:website_45s_v3, :security_rate_limits)
+      Application.put_env(:website_45s_v3, :security_rate_limits, email: [max_account: 1])
+      on_exit(fn -> Application.put_env(:website_45s_v3, :security_rate_limits, previous) end)
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      submit = fn ->
+        lv
+        |> form("#email_form", %{
+          "current_password" => password,
+          "user" => %{"email" => unique_user_email()}
+        })
+        |> render_submit()
+      end
+
+      assert submit.() =~ "A link to confirm your email"
+      assert submit.() =~ "Too many email change requests"
     end
 
     test "updates the user email", %{conn: conn, password: password, user: user} do
@@ -152,6 +236,30 @@ defmodule Website45sV3Web.UserSettingsLiveTest do
                "Password updated successfully"
 
       assert Accounts.get_user_by_email_and_password(user.email, new_password)
+    end
+
+    test "signs out the user's other open sessions but not this one",
+         %{conn: conn, user: user, password: password} do
+      other_token = Accounts.generate_user_session_token(user)
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, Accounts.live_socket_id(other_token))
+      this_token = get_session(conn, :user_token)
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, Accounts.live_socket_id(this_token))
+
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      new_password = valid_user_password() <> "!"
+
+      lv
+      |> form("#password_form", %{
+        "current_password" => password,
+        "user" => %{"password" => new_password, "password_confirmation" => new_password}
+      })
+      |> render_submit()
+
+      other_topic = Accounts.live_socket_id(other_token)
+      assert_receive %Phoenix.Socket.Broadcast{topic: ^other_topic, event: "disconnect"}
+
+      this_topic = Accounts.live_socket_id(this_token)
+      refute_received %Phoenix.Socket.Broadcast{topic: ^this_topic}
     end
 
     test "renders errors with invalid data (phx-change)", %{conn: conn} do

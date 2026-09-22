@@ -24,11 +24,21 @@ several people share one Postgres.
 
 ### Selenium bots
 
-`python/` holds end-to-end bots that drive the real site in headless Chrome:
-`wait_play.py` checks that the queue page loads and join/leave works, and
-`tbot.py` joins the public queue and plays a whole game. Four `tbot.py`
-instances together fill a table. They need Chrome and a matching
-`chromedriver` (found on `PATH` or at `/usr/local/bin/chromedriver`).
+`python/` holds end-to-end bots that drive the real site in headless Chrome.
+`wait_play.py` checks that the queue page loads and join/leave works;
+`tbot.py` plays a whole game, and `TBOT_SCENARIO` picks how it gets there
+(see the docstring at the top of `tbot.py`). `run_e2e.sh` runs every scenario
+at once, which is what CI does:
+
+- four bots fill a table from the public queue;
+- a host creates a private lobby, a guest joins by link, the host fills the
+  last seats with server bots, and the guest leaves mid-game and comes back
+  through "Rejoin Game";
+- a player fills a private lobby with bots, then abandons the game and
+  checks that the seat is released.
+
+They need Chrome; Selenium Manager finds a matching `chromedriver` (set
+`CHROMEDRIVER` to use a specific one).
 
 ```sh
 python3 -m venv .venv && source .venv/bin/activate
@@ -36,15 +46,14 @@ pip install -r python/requirements.txt
 
 mix phx.server                       # in another terminal
 python python/wait_play.py           # smoke check
-for n in 1 2 3 4; do
-  TBOT_INSTANCE=$n python python/tbot.py &
-done
-wait
+python/run_e2e.sh                    # all scenarios, ~4 minutes
 ```
 
 `APP_BASE_URL` (default `http://localhost:4000/play`) points the bots at
-another server; failing bots write a screenshot and page source to
-`artifacts/` (`TBOT_ARTIFACT_DIR`).
+another server. Each bot logs to `tbot_<name>.log`, and failing bots write
+a screenshot and page source to `artifacts/` (`TBOT_ARTIFACT_DIR`). The app
+rate-limits bot spawns per IP (6 per 10 minutes) and a run uses 5, so
+restart the server between back-to-back local runs.
 
 ## Quality checks
 
@@ -96,7 +105,7 @@ deleted after 60 days or once total storage passes 2 GB (oldest first); event
 logs are dropped after a year, keeping the summary row. The
 `Website45sV3.Analytics.Pruner` process applies this daily.
 
-`/admin` (usernames listed in `ADMIN_USERNAMES`) lists games, shows each
+`/admin` (user ids listed in `ADMIN_USER_IDS`) lists games, shows each
 game's timeline merged with the clicks from its replays (the text meant for
 reading or for handing to a model), and plays replays back with rrweb-player.
 

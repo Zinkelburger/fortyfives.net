@@ -25,13 +25,17 @@ defmodule Website45sV3.Security.RateLimiter do
   @default_login [window_ms: 15 * 60 * 1000, max_ip: 30, max_account: 8]
   @default_queue [window_ms: 60 * 60 * 1000, max_ip: 40, max_create_ip: 10]
   @default_registration [window_ms: 60 * 60 * 1000, max_ip: 5]
-  @default_email [window_ms: 60 * 60 * 1000, max_ip: 20, max_address: 5]
+  @default_email [window_ms: 60 * 60 * 1000, max_ip: 20, max_address: 5, max_account: 5]
+  @default_bots [window_ms: 10 * 60 * 1000, max_ip: 6]
+  @default_username [window_ms: 24 * 60 * 60 * 1000, max_account: 5]
 
   @defaults [
     login: @default_login,
     queue: @default_queue,
     registration: @default_registration,
-    email: @default_email
+    email: @default_email,
+    bots: @default_bots,
+    username: @default_username
   ]
 
   @sweep_interval_ms 5 * 60 * 1000
@@ -91,28 +95,17 @@ defmodule Website45sV3.Security.RateLimiter do
   ## Registration and outbound mail
 
   @doc """
-  Reports whether a network has created its allowance of accounts, *without*
-  consuming any of it, so a caller can refuse before doing the work.
+  Records a registration attempt from `remote_ip` and refuses it once the
+  per-network budget is spent.
+
+  Checking and charging are one atomic counter update, so concurrent submits
+  cannot all see a budget that is not yet spent. The caller runs it only
+  after the form passes its local checks (see `UserRegistrationLive`), so a
+  mistyped password costs nothing, but an attempt refused by the database
+  ("email has already been taken") is charged: that answer is what someone
+  probing which addresses have accounts is after.
   """
-  def registration_exhausted?(remote_ip) do
-    config = limits(:registration)
-
-    exhausted?(
-      {:registration_ip, network_key(remote_ip)},
-      config[:max_ip],
-      config[:window_ms]
-    )
-  end
-
-  @doc """
-  Records an account actually created from `remote_ip`.
-
-  Charged on success only: a rejected changeset costs the visitor nothing, so
-  someone fumbling the signup form cannot lock themselves out of registering.
-  What this budget exists to cap is created accounts and the confirmation mail
-  they send, and only a success produces either.
-  """
-  def record_registration(remote_ip) do
+  def check_registration(remote_ip) do
     config = limits(:registration)
     hit([{{:registration_ip, network_key(remote_ip)}, config[:max_ip]}], config[:window_ms])
   end
@@ -136,6 +129,35 @@ defmodule Website45sV3.Security.RateLimiter do
     )
   end
 
+  @doc """
+  Records a request by a signed-in account to send mail to an address it
+  typed (an email change). Budgeted per network, per destination address and
+  per account, so a throwaway account cannot turn the site's mail sender on
+  someone's inbox.
+  """
+  def check_email_change(remote_ip, user_id, address) do
+    config = limits(:email)
+
+    hit(
+      [
+        {{:email_ip, network_key(remote_ip)}, config[:max_ip]},
+        {{:email_address, account_key(address)}, config[:max_address]},
+        {{:email_account, account_key(user_id)}, config[:max_account]}
+      ],
+      config[:window_ms]
+    )
+  end
+
+  @doc """
+  Records a username change by `user_id` and refuses it once the account's
+  budget is spent, so a name cannot be cycled to dodge reports or squat on
+  names one after another.
+  """
+  def check_username_change(user_id) do
+    config = limits(:username)
+    hit([{{:username_account, account_key(user_id)}, config[:max_account]}], config[:window_ms])
+  end
+
   ## Queues
 
   def check_queue_join(remote_ip) do
@@ -150,6 +172,16 @@ defmodule Website45sV3.Security.RateLimiter do
       [{{:private_queue_create_network, network_key(remote_ip)}, config[:max_create_ip]}],
       config[:window_ms]
     )
+  end
+
+  @doc """
+  Records one bot added to a lobby from `remote_ip`. Bots are a shared pool
+  (see `Website45sV3.Game.BotSupervisor`), and the per-session cap alone is
+  reset by dropping the cookie, so this caps what one network can take.
+  """
+  def check_bot_spawn(remote_ip) do
+    config = limits(:bots)
+    hit([{{:bot_network, network_key(remote_ip)}, config[:max_ip]}], config[:window_ms])
   end
 
   @doc false

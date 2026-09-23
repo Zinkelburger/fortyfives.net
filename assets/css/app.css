@@ -546,9 +546,6 @@ input[type='checkbox'], input[type='radio'] {
         align-items: center;
         gap: 0.4rem;
         white-space: nowrap;
-}
-
-.fill-bots-button {
         cursor: pointer;
         background-color: #2563eb;
         outline-color: transparent;
@@ -559,16 +556,25 @@ input[type='checkbox'], input[type='radio'] {
         transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-.fill-bots-button:hover {
+.request-bot-button:hover {
         background-color: #1d4ed8;
         transform: translateY(-1px);
         box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2);
 }
 
-.fill-bots-button:active {
+.request-bot-button:active {
         background-color: #1e40af;
         transform: translateY(1px);
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.bot-seat-count {
+        font-size: 1rem;
+        line-height: 1.5rem;
+        padding: 0 0.5rem;
+        border-radius: 9999px;
+        background-color: rgba(255, 255, 255, 0.18);
+        font-variant-numeric: tabular-nums;
 }
 
 .share-link-row {

@@ -166,30 +166,6 @@ defmodule Website45sV3Web.QueueLive do
     end
   end
 
-  # One click to play right now: joins the queue if needed, then fills the
-  # remaining seats with bots (the 4th seat starts the game).
-  def handle_event("fill_bots", _params, socket) do
-    if socket.assigns.active_game do
-      {:noreply, put_flash(socket, :error, @active_game_message)}
-    else
-      socket = if socket.assigns.in_queue, do: socket, else: join_queue(socket)
-
-      cond do
-        # Join was refused; join_queue already set a flash explaining why.
-        not socket.assigns.in_queue ->
-          {:noreply, socket}
-
-        # Joining completed a game (e.g. bots were already waiting) — the
-        # redirect is on its way, don't seed the next queue with strays.
-        ActiveGames.find_game(socket.assigns.user_id) != nil ->
-          {:noreply, socket}
-
-        true ->
-          {:noreply, spawn_bots(socket, max(4 - queue_size(socket), 0))}
-      end
-    end
-  end
-
   def handle_event("abandon_game", _params, socket) do
     case socket.assigns.active_game do
       nil ->
@@ -346,12 +322,6 @@ defmodule Website45sV3Web.QueueLive do
   # Authoritative queue size (the assigns copy lags behind presence
   # broadcasts). Bots register themselves synchronously on spawn, so this is
   # accurate immediately after each spawn.
-  defp queue_size(%{assigns: %{live_action: :private_game, private_id: id}}) do
-    id |> PrivateQueueManager.queue_players() |> length()
-  end
-
-  defp queue_size(_socket), do: QueueStarter.player_count()
-
   defp my_queued_bots(socket) do
     user_id = socket.assigns.user_id
 
@@ -514,6 +484,7 @@ defmodule Website45sV3Web.QueueLive do
   attr :join_label, :string, required: true
   attr :leave_label, :string, required: true
   attr :waiting_message, :string, required: true
+  attr :seats, :integer, required: true
 
   defp queue_actions(%{active_game: %{}} = assigns) do
     ~H"""
@@ -532,7 +503,7 @@ defmodule Website45sV3Web.QueueLive do
       >
         {@join_label}
       </button>
-      <.add_bot_button />
+      <.add_bot_button seats={@seats} />
     </div>
     """
   end
@@ -549,30 +520,28 @@ defmodule Website45sV3Web.QueueLive do
       >
         {@leave_label}
       </button>
-      <button
-        id="fill-bots-button"
-        type="button"
-        phx-click="fill_bots"
-        class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 fill-bots-button"
-      >
-        Fill with Bots
-      </button>
-      <.add_bot_button />
+      <.add_bot_button seats={@seats} />
     </div>
     """
   end
 
+  # Each click seats one bot; the count shows how full the table is, and the
+  # 4th seat starts the game.
+  attr :seats, :integer, required: true
+
   defp add_bot_button(assigns) do
     ~H"""
     <button
+      id="add-bot-button"
       type="button"
       phx-click="request_bot"
-      class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 fill-bots-button request-bot-button"
-      aria-label="Add a bot"
+      class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 request-bot-button"
+      aria-label={"Add a bot (#{@seats} of 4 seats filled)"}
       title="Add a bot"
     >
       <span aria-hidden="true">🤖</span>
       <span>Add a bot</span>
+      <span class="bot-seat-count" aria-hidden="true">{@seats}/4</span>
     </button>
     """
   end
@@ -640,6 +609,7 @@ defmodule Website45sV3Web.QueueLive do
         join_label="Join Private Game"
         leave_label="Leave"
         waiting_message="You are in the game lobby"
+        seats={map_size(@queue)}
       />
     </div>
     """
@@ -677,6 +647,7 @@ defmodule Website45sV3Web.QueueLive do
           join_label="Join Queue"
           leave_label="Leave Queue"
           waiting_message="You are in the queue"
+          seats={map_size(@queue)}
         />
       </div>
 

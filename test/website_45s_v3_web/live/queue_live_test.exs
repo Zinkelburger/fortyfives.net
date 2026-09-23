@@ -327,7 +327,22 @@ defmodule Website45sV3Web.QueueLiveTest do
       assert length(PrivateQueueManager.queue_players(private_id)) == 3
     end
 
-    test "fill_bots starts a private game in one click", %{conn: conn} do
+    test "the add-bot button counts filled seats", %{conn: conn} do
+      on_exit(&kill_all_bots/0)
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+
+      assert view |> element("#add-bot-button") |> render() =~ "0/4"
+      render_click(view, "join")
+      render_click(view, "request_bot")
+
+      wait_until(fn -> view |> element("#add-bot-button") |> render() =~ "2/4" end)
+      refute has_element?(view, "#fill-bots-button")
+    end
+
+    test "adding a bot to the last seat starts a private game", %{conn: conn} do
       on_exit(&kill_all_bots/0)
       user = unique("qlt_user_")
       private_id = create_private_lobby(user)
@@ -335,7 +350,8 @@ defmodule Website45sV3Web.QueueLiveTest do
 
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
 
-      render_click(view, "fill_bots")
+      render_click(view, "join")
+      for _ <- 1..3, do: render_click(view, "request_bot")
 
       assert_receive {:redirect, "/game/" <> game_name}, 2_000
       on_exit(fn -> kill_game(game_name) end)
@@ -348,7 +364,7 @@ defmodule Website45sV3Web.QueueLiveTest do
       assert ActiveGames.find_game(user) == game_name
     end
 
-    test "Play vs Bots starts a public game in one click", %{conn: conn} do
+    test "adding a bot to the last seat starts a public game", %{conn: conn} do
       on_exit(&kill_all_bots/0)
       # Straggler cleanup from earlier tests can lag by a moment.
       wait_until(fn -> QueueStarter.player_count() == 0 end)
@@ -358,7 +374,8 @@ defmodule Website45sV3Web.QueueLiveTest do
 
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play")
 
-      render_click(view, "fill_bots")
+      render_click(view, "join")
+      for _ <- 1..3, do: render_click(view, "request_bot")
 
       assert_receive {:redirect, "/game/" <> game_name}, 2_000
       on_exit(fn -> kill_game(game_name) end)
@@ -384,7 +401,6 @@ defmodule Website45sV3Web.QueueLiveTest do
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play")
 
       assert render_click(view, "request_bot") =~ "Rejoin or abandon your current game first"
-      assert render_click(view, "fill_bots") =~ "Rejoin or abandon your current game first"
       assert BotSupervisor.bot_count() == 0
     end
   end

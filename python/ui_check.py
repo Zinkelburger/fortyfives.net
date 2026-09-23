@@ -44,8 +44,7 @@ LOGO_WIDTH_RANGE = (100, 180)
 EXPECTED_BUTTON_COLORS = {
     "#join-queue-button": "rgb(94, 144, 90)",
     "#leave-queue-button": "rgb(212, 4, 34)",
-    "#fill-bots-button": "rgb(37, 99, 235)",
-    ".request-bot-button": "rgb(37, 99, 235)",
+    "#add-bot-button": "rgb(37, 99, 235)",
 }
 
 FREEZE_CSS = """

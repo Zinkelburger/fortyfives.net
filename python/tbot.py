@@ -273,9 +273,10 @@ class PhxWeb:
     ) -> None:
         """Click `element_id` until `acknowledged()` holds.
 
-        Only safe for events the server treats as idempotent (join, fill
-        bots, resume). The button may vanish once the first click lands, so
-        its absence is not an error as long as the acknowledgement follows.
+        Only safe for events the server treats as idempotent (join, resume)
+        or caps (add bot: 3 per player). The button may vanish once the first
+        click lands, so its absence is not an error as long as the
+        acknowledgement follows.
         """
         for attempt in range(1, CLICK_ATTEMPTS + 1):
             try:
@@ -355,15 +356,20 @@ class PhxWeb:
             MATCH_TIMEOUT,
             f"{self.wait_for_players} players in the lobby",
         )
-        self.log(f"{self.player_cards()} player(s) in the lobby; filling with bots.")
-        # Each bot costs per-network budget, so give the redirect a full
-        # action timeout before clicking again.
-        self.click_until(
-            "fill-bots-button",
-            self.in_game,
-            "game start after Fill with Bots",
-            ack_timeout=ACTION_TIMEOUT,
-        )
+        self.log(f"{self.player_cards()} player(s) in the lobby; adding bots.")
+        # One bot per click; the 4th seat starts the game. Each bot costs
+        # per-network budget, so only click again once the last one is seated.
+        for _ in range(4):
+            if self.in_game():
+                return
+            seated = self.player_cards()
+            self.click_until(
+                "add-bot-button",
+                lambda: self.in_game() or self.player_cards() > seated,
+                "a bot to take a seat",
+                ack_timeout=ACTION_TIMEOUT,
+            )
+        self.wait_until(self.in_game, ACTION_TIMEOUT, "game start after adding bots")
 
     def enter_game(self) -> None:
         if self.scenario == "public":

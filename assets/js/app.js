@@ -409,7 +409,16 @@ Hooks.SessionRecorder = {
   },
 }
 
-let liveSocket = new LiveSocket("/live", Socket, {params: {_csrf_token: csrfToken}, hooks: Hooks})
+// Viewport and referrer feed the site analytics (Website45sV3Web.SiteTracking).
+let liveSocket = new LiveSocket("/live", Socket, {
+  params: {
+    _csrf_token: csrfToken,
+    _vw: window.innerWidth,
+    _vh: window.innerHeight,
+    _ref: document.referrer
+  },
+  hooks: Hooks
+})
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})

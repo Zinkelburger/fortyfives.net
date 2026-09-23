@@ -98,4 +98,22 @@ defmodule Website45sV3Web.AdminControllerTest do
     assert [%{"type" => 4}] =
              conn |> get(~p"/admin/replays/#{replay.id}/events.json") |> json_response(200)
   end
+
+  test "admins see the insights report", %{conn: conn, user: user} do
+    make_admin(user)
+    log = finished_game!()
+
+    html = conn |> get(~p"/admin/insights") |> html_response(200)
+    assert html =~ "Where visitors drop off"
+    assert html =~ "Phones vs computers"
+
+    html = conn |> get(~p"/admin/insights?days=bogus") |> html_response(200)
+    assert html =~ "Last 14 days"
+    assert log.id
+  end
+
+  test "non-admins cannot see insights", %{conn: conn} do
+    conn = get(conn, ~p"/admin/insights")
+    assert redirected_to(conn) == ~p"/"
+  end
 end

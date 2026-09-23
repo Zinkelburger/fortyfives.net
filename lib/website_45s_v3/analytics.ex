@@ -18,6 +18,8 @@ defmodule Website45sV3.Analytics do
       by deleting the oldest replays first (default 2 GB)
     * `:game_events_days` - null `game_logs.events` older than this; the
       summary row is kept forever (default 365)
+    * `:site_event_days` - delete site events (page views, queue actions)
+      older than this (default 365)
 
   `Website45sV3.Analytics.Pruner` applies these once a day.
   """
@@ -27,6 +29,7 @@ defmodule Website45sV3.Analytics do
   alias Website45sV3.Analytics.Replay
   alias Website45sV3.Analytics.ReplayChunk
   alias Website45sV3.Analytics.ReplayClick
+  alias Website45sV3.Analytics.SiteEvent
   alias Website45sV3.Game.GameLog
   alias Website45sV3.Repo
 
@@ -59,7 +62,8 @@ defmodule Website45sV3.Analytics do
     record_replays: true,
     replay_days: 60,
     replay_max_bytes: 2_000_000_000,
-    game_events_days: 365
+    game_events_days: 365,
+    site_event_days: 365
   ]
 
   def config(key) do
@@ -361,7 +365,8 @@ defmodule Website45sV3.Analytics do
     %{
       replays_expired: prune_expired_replays(now),
       replays_over_cap: prune_replays_over_cap(),
-      game_events_expired: prune_game_events(now)
+      game_events_expired: prune_game_events(now),
+      site_events_expired: prune_site_events(now)
     }
   end
 
@@ -404,6 +409,12 @@ defmodule Website45sV3.Analytics do
         set: [events: nil]
       )
 
+    count
+  end
+
+  defp prune_site_events(now) do
+    cutoff = DateTime.add(now, -config(:site_event_days), :day)
+    {count, _} = Repo.delete_all(from(e in SiteEvent, where: e.inserted_at < ^cutoff))
     count
   end
 end

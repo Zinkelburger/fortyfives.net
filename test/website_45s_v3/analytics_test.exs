@@ -3,6 +3,7 @@ defmodule Website45sV3.AnalyticsTest do
 
   alias Website45sV3.Analytics
   alias Website45sV3.Analytics.Replay
+  alias Website45sV3.Analytics.SiteEvent
   alias Website45sV3.Analytics.Timeline
   alias Website45sV3.Game.GameEvents
   alias Website45sV3.Game.GameLog
@@ -257,6 +258,22 @@ defmodule Website45sV3.AnalyticsTest do
 
       assert %{game_events_expired: 1} = Analytics.prune()
       assert %GameLog{events: nil, ended: "finished"} = Repo.get(GameLog, log.id)
+    end
+
+    test "deletes site events past their retention" do
+      insert = fn ->
+        %SiteEvent{}
+        |> SiteEvent.changeset(%{visitor_id: "v", name: "page_view"})
+        |> Repo.insert!()
+      end
+
+      old = insert.()
+      backdate(SiteEvent, old.id, Analytics.config(:site_event_days) + 1)
+      fresh = insert.()
+
+      assert %{site_events_expired: 1} = Analytics.prune()
+      assert Repo.get(SiteEvent, old.id) == nil
+      assert Repo.get(SiteEvent, fresh.id)
     end
   end
 

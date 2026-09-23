@@ -19,4 +19,11 @@ defmodule Website45sV3Web.AdminHTML do
 
   def when_at(%NaiveDateTime{} = dt), do: Calendar.strftime(dt, "%Y-%m-%d %H:%M")
   def when_at(_), do: "-"
+
+  def pct(nil), do: "-"
+  def pct(n), do: "#{n}%"
+
+  def seconds(nil), do: "-"
+  def seconds(ms) when ms < 60_000, do: "#{Float.round(ms / 1000, 1)}s"
+  def seconds(ms), do: duration(ms)
 end

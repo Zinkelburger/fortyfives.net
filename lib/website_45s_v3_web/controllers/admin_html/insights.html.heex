@@ -1,0 +1,236 @@
+<div class="admin">
+  <p><a href={~p"/admin"}>&larr; Games</a></p>
+  <h1>Insights</h1>
+  <p class="admin-muted">
+    Last {@report.days} days
+    (<a href={~p"/admin/insights?days=1"}>1</a>
+    · <a href={~p"/admin/insights?days=7"}>7</a>
+    · <a href={~p"/admin/insights?days=14"}>14</a>
+    · <a href={~p"/admin/insights?days=30"}>30</a>
+    · <a href={~p"/admin/insights?days=90"}>90</a>). Dates are UTC.
+    Visitor tracking started {when_at(@report.tracking_since)}; sections built on
+    it only cover visits since then. Game sections use every game log.
+  </p>
+
+  <h2>Where visitors drop off</h2>
+  <p class="admin-muted">
+    Unique visitors (anonymous browser cookie) reaching each step. Only browsers that
+    ran the page count, so crawlers are left out.
+  </p>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Step</th><th>Visitors</th><th>% of all</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={step <- @report.funnel}>
+        <td>{step.label}</td>
+        <td>{step.count}</td>
+        <td>{pct(step.pct)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Leaving games</h2>
+  <p class="admin-muted">
+    {@report.exit_points.left} of {@report.exit_points.total_games} human seats were
+    given up before the game ended (a bot played for them and they never came back).
+    "Waiting on" is the move the game needed from them when they went.
+  </p>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Hand</th><th>Had made a move?</th><th>Waiting on</th><th>Players</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={row <- @report.exit_points.rows}>
+        <td>{row.hand}</td>
+        <td>{if row.never_moved, do: "no", else: "yes"}</td>
+        <td>{row.waiting_on}</td>
+        <td>{row.count}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Players who left in the first hand</h3>
+  <p class="admin-muted">Watch these replays to see what stopped them.</p>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>When</th><th>Device</th><th>Their moves</th><th>Left after</th><th>Waiting on</th><th>
+          Game
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={s <- @report.early_exits}>
+        <td>{when_at(s.at)}</td>
+        <td>{s.device}</td>
+        <td>{s.moves}</td>
+        <td>{seconds(s.left_at_ms)}</td>
+        <td>{s.left_before}</td>
+        <td><a href={~p"/admin/games/#{s.game_id}"}>log &amp; replays</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Phones vs computers</h2>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Device</th><th>Games</th><th>Left in hand 1</th><th>Played to the end</th><th>
+          Median time per card
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={d <- @report.devices}>
+        <td>{d.device}</td>
+        <td>{d.games}</td>
+        <td>{pct(d.left_first_hand)}</td>
+        <td>{pct(d.stayed)}</td>
+        <td>{seconds(d.median_play_ms)}</td>
+      </tr>
+    </tbody>
+  </table>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Screen width</th><th>Visitors</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={v <- @report.viewports}>
+        <td>{v.bucket}</td>
+        <td>{v.visitors}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>How long decisions take</h2>
+  <p class="admin-muted">
+    From the moment it became the player's turn to their move. Approximate: includes
+    animations the log doesn't record. Slow first-hand moves that speed up later suggest
+    the rules or the controls take some learning.
+  </p>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Move</th><th>Hand</th><th>Device</th><th>Moves</th><th>Median</th><th>Slowest 10%</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={d <- @report.decision_times}>
+        <td>{d.action}</td>
+        <td>{d.hand}</td>
+        <td>{d.device}</td>
+        <td>{d.n}</td>
+        <td>{seconds(d.median_ms)}</td>
+        <td>{seconds(d.p90_ms)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Bot difficulty</h2>
+  <p class="admin-muted">
+    Games a single human played to the end against bots: {@report.bots.games}.
+    The human's team won {pct(@report.bots.won)}.
+  </p>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Week of</th><th>Games</th><th>Human team won</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={w <- @report.bots.by_week}>
+        <td>{w.week}</td>
+        <td>{w.games}</td>
+        <td>{pct(w.won)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Visitors by day</h2>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Date</th><th>Visitors</th><th>New</th><th>Returning</th><th>Games opened</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={d <- @report.visitors_by_day}>
+        <td>{d.date}</td>
+        <td>{d.visitors}</td>
+        <td>{d.new}</td>
+        <td>{d.returning}</td>
+        <td>{d.games_opened}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Where visitors come from</h2>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Referrer</th><th>Visitors</th><th>Opened a game</th><th>%</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={r <- @report.referrers}>
+        <td>{r.source}</td>
+        <td>{r.visitors}</td>
+        <td>{r.played}</td>
+        <td>{pct(r.pct)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Does the Learn page help?</h2>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th></th><th>Games</th><th>Left in hand 1</th><th>Played to the end</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr :for={l <- @report.learn}>
+        <td>{l.label}</td>
+        <td>{l.games}</td>
+        <td>{pct(l.left_first_hand)}</td>
+        <td>{pct(l.stayed)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Queue and multiplayer</h2>
+  <table class="admin-table">
+    <tbody>
+      <tr>
+        <td>Joined the public queue</td><td>{@report.queue.public_joins}</td>
+      </tr>
+      <tr>
+        <td>... when nobody else was waiting</td><td>{@report.queue.joined_empty_queue}</td>
+      </tr>
+      <tr>
+        <td>Left the queue without a game</td><td>{@report.queue.left_queue}</td>
+      </tr>
+      <tr>
+        <td>Median wait before leaving</td>
+        <td>{seconds(@report.queue.median_wait_before_leaving_ms)}</td>
+      </tr>
+      <tr>
+        <td>Bots added</td><td>{@report.queue.bots_added}</td>
+      </tr>
+      <tr>
+        <td>Private games created</td><td>{@report.queue.private_created}</td>
+      </tr>
+      <tr>
+        <td>Games with 2+ humans</td>
+        <td>{@report.queue.games_with_2_plus_humans} of {@report.queue.games}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

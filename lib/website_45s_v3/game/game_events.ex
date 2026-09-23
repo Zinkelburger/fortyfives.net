@@ -75,6 +75,9 @@ defmodule Website45sV3.Game.GameEvents do
         Enum.with_index(state.player_ids, fn id, seat ->
           %{
             "seat" => seat,
+            # The anonymous seat id, which joins a seat to the visitor's
+            # site events and replays.
+            "id" => id,
             "name" => Map.get(state.player_map, id, "Anonymous"),
             "bot" => MapSet.member?(state.seat_bots, id)
           }

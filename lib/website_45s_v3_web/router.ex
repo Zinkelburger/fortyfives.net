@@ -17,6 +17,7 @@ defmodule Website45sV3Web.Router do
     plug :put_content_security_policy
     # Loads `current_user` and the anonymous player id in one pass.
     plug :fetch_current_user
+    plug Website45sV3Web.VisitorId
     plug :assign_canonical_path
   end
 
@@ -87,7 +88,10 @@ defmodule Website45sV3Web.Router do
     pipe_through [:browser, :redirect_if_user_is_authenticated]
 
     live_session :redirect_if_user_is_authenticated,
-      on_mount: [{Website45sV3Web.UserAuth, :redirect_if_user_is_authenticated}] do
+      on_mount: [
+        {Website45sV3Web.UserAuth, :redirect_if_user_is_authenticated},
+        {Website45sV3Web.SiteTracking, :default}
+      ] do
       live "/users/register", UserRegistrationLive, :new
       live "/users/log_in", UserLoginLive, :new
       live "/users/reset_password", UserForgotPasswordLive, :new
@@ -101,7 +105,10 @@ defmodule Website45sV3Web.Router do
     pipe_through [:browser, :require_authenticated_user]
 
     live_session :require_authenticated_user,
-      on_mount: [{Website45sV3Web.UserAuth, :ensure_authenticated}] do
+      on_mount: [
+        {Website45sV3Web.UserAuth, :ensure_authenticated},
+        {Website45sV3Web.SiteTracking, :default}
+      ] do
       live "/users/settings", UserSettingsLive, :edit
       live "/users/settings/confirm_email/:token", UserSettingsLive, :confirm_email
     end
@@ -112,7 +119,10 @@ defmodule Website45sV3Web.Router do
 
     # default session for “play”
     live_session :default,
-      on_mount: [{Website45sV3Web.UserAuth, :mount_current_user}],
+      on_mount: [
+        {Website45sV3Web.UserAuth, :mount_current_user},
+        {Website45sV3Web.SiteTracking, :default}
+      ],
       root_layout: {Website45sV3Web.Layouts, :root} do
       live "/", HomeLive, :index
       live "/learn", LearnLive, :index
@@ -122,7 +132,10 @@ defmodule Website45sV3Web.Router do
 
     # separate session for “game” with its own root layout
     live_session :game,
-      on_mount: [{Website45sV3Web.UserAuth, :mount_current_user}],
+      on_mount: [
+        {Website45sV3Web.UserAuth, :mount_current_user},
+        {Website45sV3Web.SiteTracking, :default}
+      ],
       root_layout: {Website45sV3Web.Layouts, :game_root} do
       live "/game/:id", GameLive, :new
     end
@@ -135,6 +148,7 @@ defmodule Website45sV3Web.Router do
     pipe_through [:browser, :require_authenticated_user, :require_admin]
 
     get "/", AdminController, :index
+    get "/insights", AdminController, :insights
     get "/games/:id", AdminController, :game
     get "/games/:id/events.json", AdminController, :game_events
     get "/replays/:id", AdminController, :replay
@@ -147,7 +161,10 @@ defmodule Website45sV3Web.Router do
     delete "/users/log_out", UserSessionController, :delete
 
     live_session :current_user,
-      on_mount: [{Website45sV3Web.UserAuth, :mount_current_user}] do
+      on_mount: [
+        {Website45sV3Web.UserAuth, :mount_current_user},
+        {Website45sV3Web.SiteTracking, :default}
+      ] do
       live "/users/confirm/:token", UserConfirmationLive, :edit
       live "/users/confirm", UserConfirmationInstructionsLive, :new
     end

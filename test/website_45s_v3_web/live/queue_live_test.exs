@@ -269,18 +269,17 @@ defmodule Website45sV3Web.QueueLiveTest do
       assert QueueStarter.player_count() == 0
     end
 
-    test "abandoning hands the seat to a bot and frees the user to queue", %{conn: conn} do
+    test "abandoning a game against bots ends it and frees the user to queue", %{conn: conn} do
       user = unique("qlt_user_")
       {_game_name, game_pid} = start_active_game(user)
+      ref = Process.monitor(game_pid)
 
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play")
 
       html = render_click(view, "abandon_game")
-      assert html =~ "A bot will finish it for you"
+      assert html =~ "You left your game."
 
-      state = GameController.get_game_state(game_pid)
-      assert MapSet.member?(state.abandoned_players, user)
-      assert MapSet.member?(state.auto_play_players, user)
+      assert_receive {:DOWN, ^ref, :process, ^game_pid, :normal}, 500
       assert ActiveGames.find_game(user) == nil
 
       assert render_click(view, "join") =~ "You are in the queue"
@@ -290,8 +289,9 @@ defmodule Website45sV3Web.QueueLiveTest do
       user = unique("qlt_user_")
       {game_name, game_pid} = start_active_game(user)
 
+      ref = Process.monitor(game_pid)
       send(game_pid, {:abandon_game, user})
-      _sync = GameController.get_game_state(game_pid)
+      assert_receive {:DOWN, ^ref, :process, ^game_pid, :normal}, 500
 
       assert {:error, {:live_redirect, %{to: "/play"}}} =
                conn |> anon_conn(user) |> live(~p"/game/#{game_name}")

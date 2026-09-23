@@ -1,12 +1,13 @@
 defmodule Website45sV3Web.AdminController do
   @moduledoc """
   Read-only analytics pages for admins (see `UserAuth.require_admin/2`):
-  recent games with their event logs, and the browser session replays
-  recorded at each table.
+  recent games with their event logs, the browser session replays recorded
+  at each table, and the insights report built from both plus site events.
   """
   use Website45sV3Web, :controller
 
   alias Website45sV3.Analytics
+  alias Website45sV3.Analytics.Insights
   alias Website45sV3.Analytics.Timeline
   alias Website45sV3.Game.GameEvents
 
@@ -18,6 +19,18 @@ defmodule Website45sV3Web.AdminController do
       replay_bytes: Analytics.replay_bytes()
     )
   end
+
+  def insights(conn, params) do
+    days = params |> Map.get("days", "14") |> Integer.parse() |> days_or_default()
+
+    render(conn, :insights,
+      page_title: "Insights | Admin",
+      report: Insights.report(days: days)
+    )
+  end
+
+  defp days_or_default({days, ""}) when days in 1..365, do: days
+  defp days_or_default(_), do: 14
 
   def game(conn, %{"id" => id}) do
     log = Analytics.get_game_log!(id)

@@ -15,6 +15,7 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.Rules
   alias Website45sV3Web.Presence
+  alias Website45sV3Web.SiteTracking
 
   require Logger
 
@@ -34,6 +35,7 @@ defmodule Website45sV3Web.GameLive do
 
     with [{game_pid, _}] <- Registry.lookup(Website45sV3.Registry, game_id),
          {:ok, game_state} <- fetch_view(game_pid, game_id, user_id, socket) do
+      SiteTracking.track(socket, "game_view", %{game_name: game_id})
       {:ok, seat(socket, game_id, user_id, game_state)}
     else
       # Not seated (or abandoned), or the game is gone: back to the lobby.
@@ -216,6 +218,12 @@ defmodule Website45sV3Web.GameLive do
     # the lobby we're navigating to must not show a rejoin banner.
     socket = dispatch_game(socket, {:abandon_game, socket.assigns.user_id})
     ActiveGames.remove_player(socket.assigns.user_id)
+
+    SiteTracking.track(socket, "abandon", %{
+      game_name: socket.assigns.game_id,
+      data: %{from: "game", phase: socket.assigns.game_state[:phase]}
+    })
+
     {:noreply, push_navigate(socket, to: ~p"/play")}
   end
 

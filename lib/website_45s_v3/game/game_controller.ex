@@ -36,7 +36,8 @@ defmodule Website45sV3.Game.GameController do
     scoring_display: 6_000,
     final_scoring_timeout: 60_000,
     game_max_lifetime: 7_200_000,
-    all_bot_timeout: 300_000
+    all_bot_timeout: 300_000,
+    unattended_timeout: 60_000
   }
 
   @doc """
@@ -162,6 +163,7 @@ defmodule Website45sV3.Game.GameController do
         |> schedule_termination_timer(timing(:game_max_lifetime))
         |> ensure_timers()
         |> reconcile_all_bot_controlled_timer()
+        |> reconcile_unattended_timer()
         |> then(&{:ok, &1})
     end
   end
@@ -204,7 +206,8 @@ defmodule Website45sV3.Game.GameController do
       seat_bots: MapSet.new(seat_bot_ids),
       auto_play_players: MapSet.new(),
       abandoned_players: MapSet.new(),
-      all_bot_controlled_timer_ref: nil
+      all_bot_controlled_timer_ref: nil,
+      unattended_timer: nil
     }
   end
 
@@ -253,6 +256,46 @@ defmodule Website45sV3.Game.GameController do
         %{state | all_bot_controlled_timer_ref: nil}
 
       true ->
+        state
+    end
+  end
+
+  # Nobody plays a game out for an empty table: bots only stand in for
+  # people who are still around. Once every human has abandoned their seat
+  # the game ends straight away; once none is connected, it ends after
+  # `:unattended_timeout`, long enough for a reload or a phone switching
+  # apps. Games seated entirely by bots are left to the all-bot timeout.
+  defp human_seats(state), do: Enum.reject(state.player_ids, &seat_bot?(state, &1))
+
+  defp deserted?(state) do
+    humans = human_seats(state)
+    humans != [] and Enum.all?(humans, &abandoned?(state, &1))
+  end
+
+  defp unattended?(state) do
+    humans = human_seats(state)
+
+    humans != [] and
+      not Enum.any?(humans, &(&1 in state.active_players and not abandoned?(state, &1)))
+  end
+
+  # The timer record is `{ref, token}`; the token lets the handler ignore a
+  # message from a timer that was cancelled after it had already fired.
+  defp reconcile_unattended_timer(state) do
+    case {unattended?(state), state.unattended_timer} do
+      {true, nil} ->
+        token = make_ref()
+
+        ref =
+          Process.send_after(self(), {:unattended_timeout, token}, timing(:unattended_timeout))
+
+        %{state | unattended_timer: {ref, token}}
+
+      {false, {ref, _token}} ->
+        Process.cancel_timer(ref)
+        %{state | unattended_timer: nil}
+
+      _ ->
         state
     end
   end
@@ -525,8 +568,13 @@ defmodule Website45sV3.Game.GameController do
   @impl true
   def handle_info(msg, state) do
     case handle_message(msg, state) do
-      {:noreply, new_state} -> {:noreply, ensure_timers(new_state)}
-      other -> other
+      {:noreply, new_state} ->
+        if deserted?(new_state),
+          do: {:stop, :normal, new_state},
+          else: {:noreply, new_state |> ensure_timers() |> reconcile_unattended_timer()}
+
+      other ->
+        other
     end
   end
 
@@ -541,6 +589,12 @@ defmodule Website45sV3.Game.GameController do
       {:noreply, %{state | all_bot_controlled_timer_ref: nil}}
     end
   end
+
+  defp handle_message({:unattended_timeout, token}, %{unattended_timer: {_ref, token}} = state) do
+    {:stop, :normal, state}
+  end
+
+  defp handle_message({:unattended_timeout, _stale_token}, state), do: {:noreply, state}
 
   defp handle_message(
          {:idle_timeout, player_id, phase},
@@ -642,6 +696,7 @@ defmodule Website45sV3.Game.GameController do
       |> Map.put(:auto_play_players, state.auto_play_players)
       |> Map.put(:abandoned_players, state.abandoned_players)
       |> Map.put(:all_bot_controlled_timer_ref, state.all_bot_controlled_timer_ref)
+      |> Map.put(:unattended_timer, state.unattended_timer)
       |> log_deal()
 
     broadcast_state(new_state)

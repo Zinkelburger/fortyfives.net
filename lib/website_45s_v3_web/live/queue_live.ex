@@ -18,6 +18,7 @@ defmodule Website45sV3Web.QueueLive do
   alias Website45sV3.Security.RateLimiter
   alias Website45sV3.Turnstile
   alias Website45sV3Web.Presence
+  alias Website45sV3Web.SiteTracking
 
   # A player only ever needs 3 bots to fill their game, so that is the cap on
   # bots one session can have waiting in a queue. The global process cap
@@ -41,6 +42,7 @@ defmodule Website45sV3Web.QueueLive do
         display_name: display_name(socket.assigns.current_user),
         client_ip: client_ip(socket) || "session:#{user_id}",
         in_queue: false,
+        queue_joined_at: nil,
         presence_ref: nil,
         private_id: nil,
         tab: "public"
@@ -137,6 +139,10 @@ defmodule Website45sV3Web.QueueLive do
     Presence.untrack(self(), topic, socket.assigns.user_id)
     remove_from_queue(socket)
 
+    SiteTracking.track(socket, "queue_leave", %{
+      data: %{queue: queue_kind(socket), waited_ms: queue_waited_ms(socket)}
+    })
+
     {:noreply, assign(socket, in_queue: false, presence_ref: nil, queue: Presence.list(topic))}
   end
 
@@ -173,6 +179,7 @@ defmodule Website45sV3Web.QueueLive do
 
       %{id: game_id} ->
         GameController.dispatch(game_id, {:abandon_game, socket.assigns.user_id})
+        SiteTracking.track(socket, "abandon", %{game_name: game_id, data: %{from: "lobby"}})
         # The dispatch is async; free the session now so an immediate
         # "Join Queue" click isn't refused while the game catches up.
         ActiveGames.remove_player(socket.assigns.user_id)
@@ -180,7 +187,7 @@ defmodule Website45sV3Web.QueueLive do
         {:noreply,
          socket
          |> assign(active_game: nil)
-         |> put_flash(:info, "You left your game. A bot will finish it for you.")}
+         |> put_flash(:info, "You left your game.")}
     end
   end
 
@@ -193,6 +200,7 @@ defmodule Website45sV3Web.QueueLive do
            socket.assigns.client_ip
          ) do
       :ok ->
+        SiteTracking.track(socket, "private_created")
         {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
 
       {:error, :too_soon} ->
@@ -283,7 +291,15 @@ defmodule Website45sV3Web.QueueLive do
         {:ok, ref} =
           Presence.track(self(), queue_topic(socket), user_id, %{display_name: display_name})
 
-        assign(socket, in_queue: true, presence_ref: ref)
+        SiteTracking.track(socket, "queue_join", %{
+          data: %{queue: queue_kind(socket), waiting: map_size(socket.assigns.queue)}
+        })
+
+        assign(socket,
+          in_queue: true,
+          presence_ref: ref,
+          queue_joined_at: System.monotonic_time(:millisecond)
+        )
 
       {:error, :already_in_game} ->
         socket
@@ -303,6 +319,14 @@ defmodule Website45sV3Web.QueueLive do
         |> push_navigate(to: ~p"/play")
     end
   end
+
+  defp queue_kind(%{assigns: %{live_action: :private_game}}), do: "private"
+  defp queue_kind(_socket), do: "public"
+
+  defp queue_waited_ms(%{assigns: %{queue_joined_at: joined_at}}) when is_integer(joined_at),
+    do: System.monotonic_time(:millisecond) - joined_at
+
+  defp queue_waited_ms(_socket), do: nil
 
   defp remove_from_queue(%{assigns: %{live_action: :private_game} = assigns}) do
     PrivateQueueManager.remove_player(assigns.private_id, assigns.user_id)
@@ -344,6 +368,10 @@ defmodule Website45sV3Web.QueueLive do
     Enum.reduce_while(names, socket, fn name, socket ->
       case charge_and_start_bot(socket, name) do
         {:ok, _pid} ->
+          SiteTracking.track(socket, "bot_added", %{
+            data: %{queue: queue_kind(socket), in_queue: socket.assigns.in_queue}
+          })
+
           {:cont, socket}
 
         {:error, :too_many_bots} ->
@@ -454,7 +482,7 @@ defmodule Website45sV3Web.QueueLive do
           id="abandon-game-button"
           type="button"
           phx-click="abandon_game"
-          data-confirm="Abandon this game? A bot will play your seat for the rest of the game."
+          data-confirm="Abandon this game? If anyone else is at the table, a bot takes your seat."
           class="text-sm font-semibold leading-6 text-white rounded-lg bg-zinc-900 py-2 px-3 red-button"
         >
           Abandon

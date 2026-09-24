@@ -36,6 +36,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     GenServer.call(__MODULE__, {:add_player, id, {name, user_id}, remote_ip})
   end
 
+  # Returns :not_queued after a match, expiry or an earlier removal.
   def remove_player(id, user_id) do
     GenServer.call(__MODULE__, {:remove_player, id, user_id})
   end
@@ -76,10 +77,11 @@ defmodule Website45sV3.Game.PrivateQueueManager do
         # Empty lobbies are reaped by the sweeper instead, after a grace period.
         state = put_in(state.queues[id], mark_empty(queue, updated_players))
 
-        {:reply, :ok, state}
+        result = if updated_players == queue.players, do: :not_queued, else: :ok
+        {:reply, result, state}
 
       :error ->
-        {:reply, :ok, state}
+        {:reply, :not_queued, state}
     end
   end
 

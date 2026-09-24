@@ -233,6 +233,20 @@ defmodule Website45sV3Web.GameLiveTest do
       assert render(view) =~ ~s(data-record="true")
     end
 
+    test "a stale reconnect batch cannot open a replay before the new initial chunk",
+         %{conn: conn} do
+      user = unique("glt_user_")
+      {game_name, _pid} = start_game(user)
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+
+      render_hook(view, "replay_chunk", replay_batch(3))
+      assert Analytics.list_replays(game_name: game_name) == []
+      assert render(view) =~ ~s(data-record="true")
+
+      render_hook(view, "replay_chunk", replay_batch(0, %{"device" => "mobile"}))
+      assert [%{chunk_count: 1, device: "mobile"}] = Analytics.list_replays(game_name: game_name)
+    end
+
     test "a batch over the size cap ends the recording and later batches are ignored",
          %{conn: conn} do
       user = unique("glt_user_")

@@ -525,24 +525,20 @@ defmodule Website45sV3.Game.GameControllerTest do
     wait_for_change(pid, state)
   end
 
-  defp presence_diff(joins, leaves) do
-    %Phoenix.Socket.Broadcast{
-      topic: "game",
-      event: "presence_diff",
-      payload: %{
-        joins: Map.new(joins, &{&1, %{metas: []}}),
-        leaves: Map.new(leaves, &{&1, %{metas: []}})
-      }
-    }
-  end
-
   defp join_presence(pid, players) do
-    send(pid, presence_diff(players, []))
-    GameController.get_game_state(pid)
+    game = GameController.get_game_state(pid).game_name
+    for player <- players, do: Website45sV3Web.Presence.track(self(), game, player, %{})
+    sync_presence(pid)
   end
 
   defp leave_presence(pid, players) do
-    send(pid, presence_diff([], players))
+    game = GameController.get_game_state(pid).game_name
+    for player <- players, do: Website45sV3Web.Presence.untrack(self(), game, player)
+    sync_presence(pid)
+  end
+
+  defp sync_presence(pid) do
+    send(pid, %Phoenix.Socket.Broadcast{event: "presence_diff"})
     GameController.get_game_state(pid)
   end
 

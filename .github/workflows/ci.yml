@@ -24,7 +24,7 @@ jobs:
       postgres:
         # Same image (pinned by digest) as the compose stacks; citext ships in
         # the official image.
-        image: docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+        image: docker.io/library/postgres:15.18-trixie@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -75,6 +75,9 @@ jobs:
 
       - name: Hex audit (retired packages)
         run: mix hex.audit
+
+      - name: Test browser recording lifecycle
+        run: node --test assets/test/*.test.mjs
 
       - name: Run tests
         run: mix test

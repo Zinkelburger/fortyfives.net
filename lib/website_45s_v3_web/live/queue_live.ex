@@ -111,7 +111,7 @@ defmodule Website45sV3Web.QueueLive do
   # second tab evicted the first tab's entry while it still said "in queue".
   def terminate(_reason, socket) do
     if socket.assigns[:in_queue] and not other_tabs_in_queue?(socket) do
-      remove_from_queue(socket)
+      leave_queue(socket, "disconnect")
     end
 
     :ok
@@ -137,11 +137,10 @@ defmodule Website45sV3Web.QueueLive do
   def handle_event("leave", _params, socket) do
     topic = queue_topic(socket)
     Presence.untrack(self(), topic, socket.assigns.user_id)
-    remove_from_queue(socket)
 
-    SiteTracking.track(socket, "queue_leave", %{
-      data: %{queue: queue_kind(socket), waited_ms: queue_waited_ms(socket)}
-    })
+    if socket.assigns.in_queue and not other_tabs_in_queue?(socket) do
+      leave_queue(socket, "explicit")
+    end
 
     {:noreply, assign(socket, in_queue: false, presence_ref: nil, queue: Presence.list(topic))}
   end
@@ -327,6 +326,16 @@ defmodule Website45sV3Web.QueueLive do
     do: System.monotonic_time(:millisecond) - joined_at
 
   defp queue_waited_ms(_socket), do: nil
+
+  # The queue process decides atomically whether this was a departure.
+  # A matched player is already removed before their redirect arrives.
+  defp leave_queue(socket, reason) do
+    if remove_from_queue(socket) == :ok do
+      SiteTracking.track(socket, "queue_leave", %{
+        data: %{queue: queue_kind(socket), waited_ms: queue_waited_ms(socket), reason: reason}
+      })
+    end
+  end
 
   defp remove_from_queue(%{assigns: %{live_action: :private_game} = assigns}) do
     PrivateQueueManager.remove_player(assigns.private_id, assigns.user_id)

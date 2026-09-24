@@ -122,6 +122,42 @@ defmodule Website45sV3.Analytics.InsightsTest do
              report.early_exits
   end
 
+  test "explicit abandonment counts even before a replacement bot can move" do
+    extra = [%{"t" => 500, "e" => "abandon", "p" => 0}]
+    report = build([], [game(1, "A", "p1", [], extra: extra, ended: "abandoned")])
+
+    assert report.exit_points.left == 1
+    assert [%{left_at_ms: 500, left_before: "abandon", moves: 0}] = report.early_exits
+    assert [%{stayed: 0}] = report.devices
+  end
+
+  test "a final disconnect counts, but a reconnect or subsequent human move cancels it" do
+    leave = %{"t" => 500, "e" => "leave", "p" => 0}
+    join = %{"t" => 600, "e" => "join", "p" => 0}
+
+    games = [
+      game(1, "A", "p1", [], extra: [leave], ended: "abandoned"),
+      game(2, "B", "p2", [], extra: [leave, join]),
+      game(3, "C", "p3", [{700, "bid", false}], extra: [leave])
+    ]
+
+    report = build([], games)
+    assert report.exit_points.left == 1
+    assert [%{game_id: 1, left_before: "leave"}] = report.early_exits
+  end
+
+  test "leaving the results page is not an early exit" do
+    extra = [
+      %{"t" => 10_000, "e" => "score", "win" => "team1"},
+      %{"t" => 10_000, "e" => "leave", "p" => 0},
+      %{"t" => 11_000, "e" => "abandon", "p" => 0}
+    ]
+
+    report = build([], [game(1, "A", "p1", [{3_000, "play", false}], extra: extra)])
+    assert report.exit_points.left == 0
+    assert [%{stayed: 100}] = report.devices
+  end
+
   test "times a move from the moment the turn started, skipping presence events" do
     extra = [%{"t" => 2_500, "e" => "leave", "p" => 3}]
     games = [game(1, "A", "p1", [{5_000, "bid", false}], extra: extra)]

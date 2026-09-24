@@ -35,13 +35,14 @@
   <h2>Leaving games</h2>
   <p class="admin-muted">
     {@report.exit_points.left} of {@report.exit_points.total_games} human seats were
-    given up before the game ended (a bot played for them and they never came back).
-    "Waiting on" is the move the game needed from them when they went.
+    given up before the game ended. Departures include explicit abandonment,
+    disconnects without a return, and bot moves with no later human move.
+    The departure signal is "abandon", "leave", or the first move a bot took over.
   </p>
   <table class="admin-table">
     <thead>
       <tr>
-        <th>Hand</th><th>Had made a move?</th><th>Waiting on</th><th>Players</th>
+        <th>Hand</th><th>Had made a move?</th><th>Departure signal</th><th>Players</th>
       </tr>
     </thead>
     <tbody>
@@ -59,7 +60,9 @@
   <table class="admin-table">
     <thead>
       <tr>
-        <th>When</th><th>Device</th><th>Their moves</th><th>Left after</th><th>Waiting on</th><th>
+        <th>When</th><th>Device</th><th>Their moves</th><th>Left after</th><th>
+          Departure signal
+        </th><th>
           Game
         </th>
       </tr>

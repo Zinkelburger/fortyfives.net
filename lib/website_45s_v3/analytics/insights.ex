@@ -10,8 +10,9 @@ defmodule Website45sV3.Analytics.Insights do
 
   A player's seat is followed through a game's event log: every bid, discard
   and card is marked as played by the human or by a bot standing in. A
-  player has *left* once a bot plays for them and they never act again;
-  *stayed* means they made their own moves to the end.
+  player has *left* once they abandon, disconnect without returning, or a
+  bot plays for them and they never act again. Transient disconnects and
+  temporary bot control do not count as departures.
   """
 
   import Ecto.Query
@@ -102,7 +103,12 @@ defmodule Website45sV3.Analytics.Insights do
 
   # One entry per human seat per game, with how that player's game went.
   defp human_seats(%{log: log, document: doc}, data) do
-    events = doc["events"] || []
+    # Closing the results page is not dropping out of the game. Ignore
+    # presence and abandon events after the winning score, in event order.
+    events =
+      (doc["events"] || [])
+      |> Enum.take_while(&(not (&1["e"] == "score" and &1["win"] in ["team1", "team2"])))
+
     players = doc["players"] || []
     humans = Enum.reject(players, & &1["bot"])
 
@@ -111,7 +117,7 @@ defmodule Website45sV3.Analytics.Insights do
       player_id = seat_player_id(player, humans)
       own = Enum.filter(events, &(&1["p"] == seat and &1["e"] in @actions))
       {mine, bots} = Enum.split_with(own, &(&1["b"] != true))
-      left = takeover(mine, bots)
+      left = departure(events, seat, mine, bots)
 
       %{
         game_id: log.id,
@@ -139,6 +145,26 @@ defmodule Website45sV3.Analytics.Insights do
   defp seat_player_id(%{"id" => id}, _humans) when is_binary(id), do: id
   defp seat_player_id(_player, [_only]), do: :only_human
   defp seat_player_id(_player, _humans), do: nil
+
+  defp departure(events, seat, own_moves, bot_moves) do
+    seat_events = Enum.filter(events, &(&1["p"] == seat))
+    abandon = Enum.find(seat_events, &(&1["e"] == "abandon"))
+
+    # A join or a human move proves the player returned after a leave.
+    disconnect =
+      Enum.reduce(seat_events, nil, fn event, last_leave ->
+        cond do
+          event["e"] == "leave" -> event
+          event["e"] == "join" -> nil
+          event["e"] in @actions and event["b"] != true -> nil
+          true -> last_leave
+        end
+      end)
+
+    [abandon, disconnect, takeover(own_moves, bot_moves)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.min_by(& &1["t"], fn -> nil end)
+  end
 
   # The first move a bot made for the seat after the human's last own move:
   # the moment they left for good. nil if they played to the end.

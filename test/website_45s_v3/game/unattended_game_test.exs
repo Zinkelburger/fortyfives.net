@@ -34,14 +34,10 @@ defmodule Website45sV3.Game.UnattendedGameTest do
   end
 
   defp presence(pid, joins, leaves) do
-    send(pid, %Phoenix.Socket.Broadcast{
-      topic: "game",
-      event: "presence_diff",
-      payload: %{
-        joins: Map.new(joins, &{&1, %{metas: []}}),
-        leaves: Map.new(leaves, &{&1, %{metas: []}})
-      }
-    })
+    game = GameController.get_game_state(pid).game_name
+    for player <- joins, do: Website45sV3Web.Presence.track(self(), game, player, %{})
+    for player <- leaves, do: Website45sV3Web.Presence.untrack(self(), game, player)
+    send(pid, %Phoenix.Socket.Broadcast{event: "presence_diff"})
 
     _sync = GameController.get_game_state(pid)
   end
@@ -89,6 +85,27 @@ defmodule Website45sV3.Game.UnattendedGameTest do
     refute_receive {:DOWN, ^ref, _, _, _}, 300
     state = GameController.get_game_state(pid)
     assert Enum.all?(stayers, &(&1 in state.active_players))
+  end
+
+  test "closing one of two tabs keeps the human present and logs only the last departure" do
+    {human, game_name, pid, ref} = solo_game()
+    presence(pid, [human], [])
+    tab = spawn(fn -> receive do: (:stop -> :ok) end)
+    on_exit(fn -> Process.exit(tab, :kill) end)
+    {:ok, _} = Website45sV3Web.Presence.track(tab, game_name, human, %{})
+    presence(pid, [], [])
+
+    presence(pid, [], [human])
+    refute_receive {:DOWN, ^ref, _, _, _}, 300
+    state = GameController.get_game_state(pid)
+    assert human in state.active_players
+    assert state.unattended_timer == nil
+    assert Enum.count(state.events, &(&1["e"] == "join")) == 1
+    refute Enum.any?(state.events, &(&1["e"] == "leave"))
+
+    Website45sV3Web.Presence.untrack(tab, game_name, human)
+    presence(pid, [], [])
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
   end
 
   test "games seated entirely by bots are left to the all-bot timeout" do

@@ -29,15 +29,36 @@ front. Everything below happens on the host in a checkout of this repository
    docker volume create fortyfives_db_data
    ```
 
-   If you are migrating an existing host whose data lives in the old
-   compose-managed volume (`docker volume ls | grep db_data`, typically
-   `<dirname>_db_data`), copy it across with the stack stopped:
+   **Existing production hosts:** reuse the existing volume. Check the running
+   database's mount with `docker inspect <db-container> --format '{{json .Mounts}}'`
+   and set `volumes.db_data.name` to that volume's name if it differs. Do not
+   create an empty replacement or copy a database while PostgreSQL is running.
+
+   The database and backup images are pinned to the Debian PostgreSQL 15.18
+   digest verified on the live host on 2026-09-24 (glibc collation version
+   2.41). Preserve this image when attaching the existing data directory.
+   **Never attach this volume to Alpine PostgreSQL:** musl and glibc sort
+   text differently, which can silently break existing indexes and unique
+   constraints even with the same PostgreSQL major version.
+
+   Before changing the database image, take a logical backup and check the
+   recorded versus actual locale versions:
 
    ```sh
-   docker compose -f docker-compose-nginx.yml down
-   docker run --rm -v <old_volume>:/from:ro -v fortyfives_db_data:/to alpine \
-     sh -c 'cd /from && cp -a . /to'
+   docker compose -f docker-compose-nginx.yml exec -T db sh -c \
+     'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > before-db-change.dump
+   docker compose -f docker-compose-nginx.yml exec -T db sh -c \
+     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT datname, datcollate, datctype, datcollversion, pg_database_collation_actual_version(oid) FROM pg_database WHERE datallowconn"'
    ```
+
+   For a change of libc, distribution, or locale provider, restore the dump
+   into a **fresh volume**, test account lookups and uniqueness there, and
+   then switch the app to that database. Pause app writes while taking the
+   final dump and switching over. Keep the original volume and dump for
+   rollback. A physical directory copy or merely refreshing the recorded
+   collation version does not rebuild incompatible indexes. The same rule
+   applies to an existing local test volume from the Alpine configuration:
+   dump/restore it, or recreate it only if its contents are disposable.
 
 3. **First TLS certificate.** nginx will not start without
    `/etc/letsencrypt/live/fortyfives.net/`. Obtain it with the certbot

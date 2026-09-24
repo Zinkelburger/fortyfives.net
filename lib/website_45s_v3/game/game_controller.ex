@@ -25,6 +25,7 @@ defmodule Website45sV3.Game.GameController do
   alias Website45sV3.Game.GameSupervisor
   alias Website45sV3.Game.Rules
   alias Website45sV3.Repo
+  alias Website45sV3Web.Presence
 
   # Delays and timeouts (milliseconds). Overridable through the
   # :game_timings application env so tests can run a full game quickly.
@@ -710,13 +711,16 @@ defmodule Website45sV3.Game.GameController do
 
   defp handle_message(
          %Phoenix.Socket.Broadcast{
-           event: "presence_diff",
-           payload: %{joins: joins, leaves: leaves}
+           event: "presence_diff"
          },
          state
        ) do
-    joined_players = Enum.map(joins, fn {player, _meta} -> player end)
-    left_players = Enum.map(leaves, fn {player, _meta} -> player end)
+    # A diff describes connections, not seats: one tab leaving must not
+    # disconnect a player whose other tab is still watching the table.
+    present = Presence.list(state.game_name)
+    updated_active_players = Enum.filter(state.player_ids, &Map.has_key?(present, &1))
+    joined_players = updated_active_players -- state.active_players
+    left_players = state.active_players -- updated_active_players
 
     state =
       Enum.reduce(left_players, state, fn player, acc ->
@@ -731,12 +735,6 @@ defmodule Website45sV3.Game.GameController do
           do: log(acc, "join", %{p: GameEvents.seat(acc, player)}),
           else: acc
       end)
-
-    updated_active_players =
-      state.active_players
-      |> Enum.concat(joined_players)
-      |> Enum.uniq()
-      |> Enum.filter(fn player -> player not in left_players end)
 
     new_state =
       joined_players

@@ -4,6 +4,7 @@ defmodule Website45sV3Web.QueueLiveTest do
   use Website45sV3Web.ConnCase, async: false
 
   import Phoenix.LiveViewTest
+  import Ecto.Query
 
   alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.BotSupervisor
@@ -226,6 +227,88 @@ defmodule Website45sV3Web.QueueLiveTest do
       assert player_cards(html) == []
       assert QueueStarter.player_count() == 0
       assert queue_metas("queue", user) == []
+    end
+  end
+
+  defp departures(user) do
+    Website45sV3.Repo.all(
+      from(e in Website45sV3.Analytics.SiteEvent,
+        where: e.player_id == ^user and e.name == "queue_leave"
+      )
+    )
+  end
+
+  describe "queue departure analytics" do
+    test "closing the public queue records the departure", %{conn: conn} do
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+      user = unique("qlt_user_")
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/play")
+      render_click(view, "join")
+      close_tab(view)
+      assert QueueStarter.player_count() == 0
+      assert [%{data: %{"reason" => "disconnect", "queue" => "public"}}] = departures(user)
+    end
+
+    test "only the last tab closing records a departure with its wait", %{conn: conn} do
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      path = ~p"/play/private/#{private_id}"
+      {:ok, tab_a, _} = conn |> anon_conn(user) |> live(path)
+      {:ok, tab_b, _} = conn |> anon_conn(user) |> live(path)
+      render_click(tab_a, "join")
+      render_click(tab_b, "join")
+
+      close_tab(tab_a)
+      assert departures(user) == []
+      close_tab(tab_b)
+
+      assert [%{data: %{"reason" => "disconnect", "queue" => "private", "waited_ms" => wait}}] =
+               departures(user)
+
+      assert is_integer(wait) and wait >= 0
+    end
+
+    test "explicit leave is idempotent and closing the tab does not count twice", %{conn: conn} do
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+      render_click(view, "leave")
+      assert departures(user) == []
+      render_click(view, "join")
+      render_click(view, "leave")
+      render_click(view, "leave")
+      close_tab(view)
+      assert [%{data: %{"reason" => "explicit"}}] = departures(user)
+    end
+
+    test "leaving one tab preserves another tab's membership", %{conn: conn} do
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      path = ~p"/play/private/#{private_id}"
+      {:ok, tab_a, _} = conn |> anon_conn(user) |> live(path)
+      {:ok, tab_b, _} = conn |> anon_conn(user) |> live(path)
+      render_click(tab_a, "join")
+      render_click(tab_b, "join")
+      render_click(tab_a, "leave")
+      assert [{_, ^user}] = PrivateQueueManager.queue_players(private_id)
+      assert departures(user) == []
+      close_tab(tab_a)
+      close_tab(tab_b)
+      assert length(departures(user)) == 1
+    end
+
+    test "a matched player leaving the lobby is not a queue drop-off", %{conn: conn} do
+      on_exit(&kill_all_bots/0)
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user}")
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+      render_click(view, "join")
+      for _ <- 1..3, do: render_click(view, "request_bot")
+      assert_receive {:redirect, "/game/" <> game_name}, 2_000
+      on_exit(fn -> kill_game(game_name) end)
+      wait_until(fn -> not Process.alive?(view.pid) end)
+      assert departures(user) == []
     end
   end
 

@@ -27,7 +27,9 @@ services:
     logging: *default-logging
 
   db:
-    image: docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    # Preserve the live Debian/glibc collation. Changing libc requires a
+    # logical dump/restore into a fresh volume; see docs/deploy.md.
+    image: docker.io/library/postgres:15.18-trixie@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
     restart: unless-stopped
     # Only the Postgres variables; the rest of .env (SECRET_KEY_BASE, AWS,
     # Google, Turnstile) must not reach this container.
@@ -48,7 +50,7 @@ services:
   # Nightly logical backup: one custom-format pg_dump per day, 14 days kept.
   # Restore with: pg_restore -d "$POSTGRES_DB" /backups/<file>.dump
   db_backup:
-    image: docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    image: docker.io/library/postgres:15.18-trixie@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
     restart: unless-stopped
     depends_on:
       db:

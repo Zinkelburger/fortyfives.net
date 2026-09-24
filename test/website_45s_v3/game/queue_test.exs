@@ -124,9 +124,9 @@ defmodule Website45sV3.Game.QueueTest do
       private_id = create_lobby()
       owner = unique("owner_")
 
-      # QueueLive.terminate/2 fires on every unmount of the lobby page —
-      # including a plain refresh by the owner, who has not joined yet.
-      :ok = PrivateQueueManager.remove_player(private_id, owner)
+      # A repeated/no-op cleanup preserves the link and reports that no
+      # membership ended, so analytics cannot count a phantom departure.
+      assert :not_queued = PrivateQueueManager.remove_player(private_id, owner)
 
       assert PrivateQueueManager.queue_exists?(private_id)
 

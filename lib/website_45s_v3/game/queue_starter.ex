@@ -23,6 +23,7 @@ defmodule Website45sV3.Game.QueueStarter do
     GenServer.call(__MODULE__, {:add_player, {player_name, player_id}, remote_ip})
   end
 
+  # Returns :not_queued after a match or an earlier removal.
   def remove_player({_player_name, player_id}) do
     GenServer.call(__MODULE__, {:remove_player, player_id})
   end
@@ -72,7 +73,8 @@ defmodule Website45sV3.Game.QueueStarter do
   def handle_call({:remove_player, player_id}, _from, %{players: players} = state) do
     Logger.info("Player left matchmaking queue")
     updated_players = Enum.reject(players, fn {_username, id} -> id == player_id end)
-    {:reply, :ok, %{state | players: updated_players}}
+    result = if updated_players == players, do: :not_queued, else: :ok
+    {:reply, result, %{state | players: updated_players}}
   end
 
   # Starts a game with the first four players once enough are waiting and

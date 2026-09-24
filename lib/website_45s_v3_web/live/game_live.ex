@@ -293,6 +293,11 @@ defmodule Website45sV3Web.GameLive do
   defp ensure_replay(%{assigns: %{replay: %Analytics.Replay{} = replay}}, _params),
     do: {:ok, replay}
 
+  # A stale batch buffered before disconnect cannot open a recording without
+  # its initial snapshot. The reconnected hook will send a fresh sequence 0.
+  defp ensure_replay(%{assigns: %{replay: nil}}, %{"seq" => seq}) when seq != 0,
+    do: {:error, :missing_initial_chunk}
+
   defp ensure_replay(socket, params) do
     Analytics.start_replay(%{
       game_name: socket.assigns.game_id,

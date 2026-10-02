@@ -140,13 +140,15 @@ defmodule Website45sV3Web.UserSessionControllerTest do
       assert Phoenix.Flash.get(second.assigns.flash, :error) =~ "Too many failed attempts"
     end
 
-    test "a spent account budget refuses even the real password until the window passes",
+    test "a spent account budget refuses even the real password until reset",
          %{conn: conn, user: user} do
       previous = Application.get_env(:website_45s_v3, :security_rate_limits)
 
-      # A 300ms window keeps the rollover observable in a test.
+      # Test controller enforcement independently of wall-clock bucket edges.
+      # RateLimiterTest covers expiry; a 300ms window could roll over between
+      # the two requests on CI and admit the correct password legitimately.
       Application.put_env(:website_45s_v3, :security_rate_limits,
-        login: [window_ms: 300, max_ip: 100, max_account: 1],
+        login: [window_ms: 60_000, max_ip: 100, max_account: 1],
         queue: [window_ms: 60_000, max_ip: 100, max_create_ip: 100]
       )
 
@@ -172,8 +174,8 @@ defmodule Website45sV3Web.UserSessionControllerTest do
       assert redirected_to(refused) == ~p"/users/log_in"
       assert Phoenix.Flash.get(refused.assigns.flash, :error) =~ "Too many failed attempts"
 
-      # ...and honoured again once the window rolls over.
-      Process.sleep(350)
+      # ...and honoured again once the account budget is reset.
+      RateLimiter.reset_login_account({:user, user.id})
 
       admitted =
         post(conn, ~p"/users/log_in", %{

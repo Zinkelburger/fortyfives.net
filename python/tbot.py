@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 from bs4 import BeautifulSoup
 from card import Suit, Card, less_than, is_ace_of_hearts
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -511,10 +511,23 @@ class PhxWeb:
         if card_value in self.selected_cards():
             return
 
-        selector = f"img[data-card-value='{card_value}']"
-        WebDriverWait(self.driver, ACTION_TIMEOUT).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-        ).click()
+        selector = f"button[data-card='{card_value}']"
+
+        def select_current_button(driver):
+            # LiveView can patch the hand between lookup and click. Recheck
+            # selection before retrying so an applied click is never toggled off.
+            if card_value in self.selected_cards():
+                return True
+            try:
+                button = EC.element_to_be_clickable((By.CSS_SELECTOR, selector))(driver)
+                if button:
+                    button.click()
+                    return True
+            except StaleElementReferenceException:
+                pass
+            return False
+
+        WebDriverWait(self.driver, ACTION_TIMEOUT).until(select_current_button)
 
         self.wait_until(
             lambda: card_value in self.selected_cards(),
@@ -567,8 +580,15 @@ class PhxWeb:
 
     def place_bid(self, bid_value: int, bid_suit: Suit) -> None:
         if bid_value == 0 or bid_suit == Suit.PASS:
+            # A pass is selected, then confirmed, like a bid.
             WebDriverWait(self.driver, ACTION_TIMEOUT).until(
                 EC.element_to_be_clickable((By.ID, "pass-bid-button"))
+            ).click()
+            WebDriverWait(self.driver, ACTION_TIMEOUT).until(
+                EC.text_to_be_present_in_element((By.ID, "confirm-bid-button"), "Confirm Pass")
+            )
+            WebDriverWait(self.driver, ACTION_TIMEOUT).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "#confirm-bid-button:not([disabled])"))
             ).click()
             self.log("Passed the bid.")
             return

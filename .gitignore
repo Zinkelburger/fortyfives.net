@@ -52,3 +52,8 @@ priv/static/images/cards-uncompressed
 
 # Claude Code agent worktrees
 /.claude/worktrees/
+
+# SQLite files contain private application data.
+*.db
+*.db-*
+*.dump

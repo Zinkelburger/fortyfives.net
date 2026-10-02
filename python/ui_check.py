@@ -21,7 +21,7 @@ from selenium.webdriver.common.by import By
 
 from tbot import get_driver, live_socket_connected
 
-VIEWPORTS = {"desktop": (1400, 900), "phone": (390, 844)}
+VIEWPORTS = {"desktop": (1400, 900), "phone": (390, 844), "small-phone": (320, 568)}
 
 # name -> path; "play-joined" joins the public queue first.
 PAGES = {
@@ -125,7 +125,6 @@ class UiCheck:
               header: h && h.getBoundingClientRect().height,
               logo: logo && logo.getBoundingClientRect().width,
               scrollWidth: document.documentElement.scrollWidth,
-              innerWidth: window.innerWidth,
             };
             """,
         )
@@ -135,11 +134,12 @@ class UiCheck:
             low, high = LOGO_WIDTH_RANGE
             if not low <= header["logo"] <= high:
                 self.fail(where, f"logo is {header['logo']:.0f}px wide (expected {low}-{high})")
-        if header["scrollWidth"] > header["innerWidth"] + 1:
+        requested_width = VIEWPORTS[viewport][0]
+        if header["scrollWidth"] > requested_width + 1:
             self.fail(
                 where,
                 f"page scrolls sideways ({header['scrollWidth']}px content in "
-                f"a {header['innerWidth']}px {viewport} viewport)",
+                f"a {requested_width}px {viewport} viewport)",
             )
 
     def check_queue_buttons(self, driver, where: str) -> None:
@@ -191,6 +191,54 @@ class UiCheck:
             if actual is not None and actual != expected:
                 self.fail(where, f"{selector} background is {actual}, expected {expected}")
 
+    def check_turnstile_resize(self, driver) -> None:
+        # Model the documented widget dimensions without relying on a remote
+        # challenge. This checks our sizing/rotation integration, not verification.
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": ["*challenges.cloudflare.com*"]})
+        script = driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          window.widgetSizes = [];
+          const widgets = new Map();
+          window.turnstile = {
+            render(el, options) {
+              const id = String(window.widgetSizes.length);
+              window.widgetSizes.push(options.size);
+              const node = document.createElement('div');
+              node.style.cssText = options.size === 'compact'
+                ? 'width:150px;height:140px'
+                : 'width:100%;min-width:300px;height:65px';
+              el.append(node); widgets.set(id, node); return id;
+            },
+            remove(id) { widgets.get(id)?.remove(); widgets.delete(id); },
+            reset() {},
+          };
+        """})
+        try:
+            self.set_viewport(driver, 1400, 900)
+            driver.get(self.base_url + '/users/log_in')
+            self.settle(driver)
+            if not driver.find_elements(By.CLASS_NAME, 'cf-turnstile'):
+                print('skip Turnstile resize: widget disabled in this server', flush=True)
+                return
+            self.set_viewport(driver, 320, 568)
+            time.sleep(.3)
+            self.check_layout(driver, 'Turnstile after rotation', 'small-phone')
+            if self.js(driver, 'return window.widgetSizes') != ['flexible', 'compact']:
+                self.fail('Turnstile', 'expected flexible to become compact after narrowing')
+            self.set_viewport(driver, 1400, 900)
+            time.sleep(.3)
+            if self.js(driver, 'return window.widgetSizes.length') != 2:
+                self.fail('Turnstile', 'widening unnecessarily reset the challenge')
+            self.set_viewport(driver, 320, 568)
+            driver.refresh()
+            self.settle(driver)
+            if self.js(driver, 'return window.widgetSizes') != ['compact']:
+                self.fail('Turnstile', 'initial narrow form must render compact')
+            self.check_layout(driver, 'Turnstile initial portrait', 'small-phone')
+        finally:
+            driver.execute_cdp_cmd('Page.removeScriptToEvaluateOnNewDocument', script)
+            driver.execute_cdp_cmd('Network.setBlockedURLs', {'urls': []})
+
     # ── Run ─────────────────────────────────────────────────────────
 
     def run(self) -> int:
@@ -225,6 +273,8 @@ class UiCheck:
                             button.click()
                         time.sleep(0.5)
                     print(f"ok   {where}", flush=True)
+                if self.check and viewport == 'small-phone':
+                    self.check_turnstile_resize(driver)
             finally:
                 driver.quit()
 

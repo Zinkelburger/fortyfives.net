@@ -42,12 +42,20 @@ defmodule Website45sV3.Game.Matchmaking do
   Starts a game for the given `{name, user_id}` players and redirects them to
   it. Returns `:ok`, or `{:error, reason}` if the game could not be started
   (in which case no players were redirected).
+
+  A private table passes `rematch_id:`, the lobby its players can gather in
+  again once the game is over.
   """
-  def start_game(players) do
+  def start_game(players, opts \\ []) do
     game_name = create_unique_game_name()
 
     case GameController.start_game(game_name, players) do
       {:ok, _pid} ->
+        # Sent before anyone is redirected, so every seat's first view has it.
+        if rematch_id = opts[:rematch_id] do
+          GameController.dispatch(game_name, {:private_table, rematch_id})
+        end
+
         for {_name, user_id} <- players do
           Phoenix.PubSub.broadcast(
             Website45sV3.PubSub,

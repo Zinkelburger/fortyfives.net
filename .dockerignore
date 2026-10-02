@@ -32,3 +32,8 @@ venv
 certbot
 ios
 __pycache__
+
+# SQLite files contain private application data.
+*.db
+*.db-*
+*.dump

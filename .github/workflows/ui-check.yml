@@ -90,6 +90,12 @@ jobs:
           set -euo pipefail
           password="$(openssl rand -hex 32)"
           start() { # name image host-port
+            # Historical PostgreSQL builds still need their original database.
+            # Once the baseline is SQLite, neither build starts Postgres.
+            if ! docker run --rm --entrypoint sh "$2" -c 'command -v pg_isready' >/dev/null; then
+              docker run -d --name "$1-app" -p "$3:4000" "$2"
+              return
+            fi
             docker run -d --name "$1-db" -p "$3:4000" \
               -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=website_45s_v3_dev \
               docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
@@ -108,7 +114,7 @@ jobs:
             docker logs "$1-app" | tail -n 100
             return 1
           }
-          start ui-new ui-new:latest 4000
+          docker run -d --name ui-new-app -p 4000:4000 ui-new:latest
           if [ "$BASE_BUILT" = "true" ]; then start ui-base ui-base:latest 4001; fi
           wait_for ui-new 4000
           if [ "$BASE_BUILT" = "true" ]; then

@@ -625,6 +625,7 @@ defmodule Website45sV3Web.QueueLive do
         <span class="copy-icon">Copy</span>
         <span class="copy-check">Copied!</span>
       </button>
+      <button type="button" id="share-game" class="share-link-copy" phx-hook="ShareGame" hidden>Share</button>
     </div>
     """
   end

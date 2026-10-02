@@ -8,7 +8,7 @@ RUN apk update && \
       build-base \
       git \
       bash \
-      postgresql-client
+      sqlite
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -60,7 +60,7 @@ RUN apk update && \
       bash \
       openssl \
       ncurses-libs \
-      postgresql-client \
+      sqlite \
       libstdc++
 
 RUN addgroup -S app && adduser -S -G app -h /app app
@@ -75,7 +75,7 @@ COPY --from=build --chown=app:app /app/_build/prod/rel/website_45s_v3 ./
 COPY --chown=app:app prod_entrypoint.sh /app/entrypoint.sh
 
 # Make the script executable
-RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh && mkdir /data && chown app:app /data
 
 USER app
 

@@ -9,12 +9,13 @@ config :bcrypt_elixir, :log_rounds, 1
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
 config :website_45s_v3, Website45sV3.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "website_45s_v3_test#{System.get_env("MIX_TEST_PARTITION")}",
-  pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 10
+  database: Path.expand("../priv/test#{System.get_env("MIX_TEST_PARTITION")}.db", __DIR__),
+  pool_size: 3,
+  cache_size: -8000,
+  busy_timeout: 5000,
+  synchronous: :full,
+  default_transaction_mode: :immediate,
+  pool: Ecto.Adapters.SQL.Sandbox
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

@@ -108,6 +108,7 @@ defmodule Website45sV3.Game.GameController do
       legal_moves: Map.get(state.legal_moves, player_id, []),
       actions: state.actions,
       winning_bid: state.winning_bid,
+      bids: state.bids,
       bagged: state.bagged,
       suit_led: state.suit_led,
       trump: state.trump,
@@ -116,10 +117,60 @@ defmodule Website45sV3.Game.GameController do
       team_scores: state.team_scores,
       team_1_history: state.team_1_history,
       team_2_history: state.team_2_history,
+      tricks_won: Enum.frequencies_by(state.trick_winning_cards, & &1.player_id),
+      trick_winner_id: trick_winner_id(state),
+      bot_ids: MapSet.to_list(state.auto_play_players),
+      deadline: idle_deadline(state, player_id),
+      rematch_id: state.rematch_id,
       auto_playing: auto_playing?(state, player_id),
       abandoned: abandoned?(state, player_id)
     }
   end
+
+  # Set while a finished trick is still on the table.
+  defp trick_winner_id(%{
+         phase: "Playing",
+         current_player_id: nil,
+         trick_winning_cards: [%{player_id: winner} | _]
+       }),
+       do: winner
+
+  defp trick_winner_id(_state), do: nil
+
+  # When a bot takes over this seat if its player does nothing, as a system
+  # time in milliseconds. A view can be built just before the timers are
+  # reconciled (see handle_info/2); the clock about to be armed then runs
+  # the full timeout from now.
+  defp idle_deadline(%{phase: "Discard"} = state, player_id) do
+    cond do
+      player_id in state.received_discards_from or bot_controlled?(state, player_id) ->
+        nil
+
+      match?(%{kind: :idle}, state.discard_timers[player_id]) ->
+        state.discard_timers[player_id].deadline
+
+      true ->
+        deadline_after(:discard_timeout)
+    end
+  end
+
+  defp idle_deadline(%{current_player_id: player_id, phase: phase} = state, player_id)
+       when phase in ["Bidding", "Playing"] do
+    cond do
+      bot_controlled?(state, player_id) ->
+        nil
+
+      match?(%{player_id: ^player_id, phase: ^phase, kind: :idle}, state.turn_timer) ->
+        state.turn_timer.deadline
+
+      true ->
+        deadline_after(:idle_timeout)
+    end
+  end
+
+  defp idle_deadline(_state, _player_id), do: nil
+
+  defp deadline_after(timing_key), do: System.system_time(:millisecond) + timing(timing_key)
 
   ## Server callbacks
 
@@ -149,6 +200,9 @@ defmodule Website45sV3.Game.GameController do
             team_2_history: [],
             # :team1 | :team2 once the game is decided (see score_hand/1).
             winning_team: nil,
+            # The lobby a private table's players are offered for another
+            # game (see Matchmaking.start_game/2); nil for public games.
+            rematch_id: nil,
             game_name: game_name
           })
           |> Map.merge(GameEvents.init())
@@ -192,6 +246,8 @@ defmodule Website45sV3.Game.GameController do
       discard_pile: [],
       actions: [],
       winning_bid: {0, nil, nil},
+      # player id => {bid, suit}, with {0, :pass} for a pass.
+      bids: %{},
       bids_placed: 0,
       active_players: [],
       received_discards_from: [],
@@ -345,6 +401,7 @@ defmodule Website45sV3.Game.GameController do
   # where they differ, so presence changes or repeated events never reset a
   # player's clock. A timer record is `%{kind: :idle | :bot, ref: ref}`
   # plus, for the turn timer, the `player_id` and `phase` it was armed for.
+  # Idle timers also carry the `deadline` shown to the player as a countdown.
 
   defp ensure_timers(%{phase: "Discard"} = state) do
     state |> cancel_turn_timer() |> ensure_discard_timers()
@@ -366,7 +423,16 @@ defmodule Website45sV3.Game.GameController do
       _ ->
         state = cancel_turn_timer(state)
         ref = start_turn_timer(kind, player_id, phase)
-        %{state | turn_timer: %{player_id: player_id, phase: phase, kind: kind, ref: ref}}
+
+        timer = %{
+          player_id: player_id,
+          phase: phase,
+          kind: kind,
+          ref: ref,
+          deadline: if(kind == :idle, do: deadline_after(:idle_timeout))
+        }
+
+        %{state | turn_timer: timer}
     end
   end
 
@@ -422,7 +488,7 @@ defmodule Website45sV3.Game.GameController do
         ref =
           Process.send_after(self(), {:discard_idle_timeout, player_id}, timing(:discard_timeout))
 
-        %{kind: :idle, ref: ref}
+        %{kind: :idle, ref: ref, deadline: deadline_after(:discard_timeout)}
     end
   end
 
@@ -606,6 +672,7 @@ defmodule Website45sV3.Game.GameController do
       |> clear_fired_turn_timer(player_id, :idle)
       |> enable_auto_play(player_id)
 
+    broadcast_state(new_state)
     {:noreply, new_state}
   end
 
@@ -621,6 +688,7 @@ defmodule Website45sV3.Game.GameController do
           else: enable_auto_play(state, player_id)
       end)
 
+    if new_state.auto_play_players != state.auto_play_players, do: broadcast_state(new_state)
     {:noreply, new_state}
   end
 
@@ -744,6 +812,7 @@ defmodule Website45sV3.Game.GameController do
         if abandoned?(acc, player), do: acc, else: disable_auto_play(acc, player)
       end)
 
+    if new_state.auto_play_players != state.auto_play_players, do: broadcast_state(new_state)
     {:noreply, new_state}
   end
 
@@ -773,9 +842,15 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
+  defp handle_message({:private_table, rematch_id}, state) when is_binary(rematch_id) do
+    {:noreply, %{state | rematch_id: rematch_id}}
+  end
+
   defp handle_message({:resume_control, player_id}, state) do
     if auto_playing?(state, player_id) and not abandoned?(state, player_id) do
-      {:noreply, disable_auto_play(state, player_id)}
+      new_state = disable_auto_play(state, player_id)
+      broadcast_state(new_state)
+      {:noreply, new_state}
     else
       {:noreply, state}
     end
@@ -996,6 +1071,7 @@ defmodule Website45sV3.Game.GameController do
       state
       | actions: state.actions ++ [action],
         winning_bid: winning_bid,
+        bids: Map.put(state.bids, player_id, {bid, suit}),
         bids_placed: state.bids_placed + 1,
         current_player_id: next_player(state.player_ids, player_id)
     }

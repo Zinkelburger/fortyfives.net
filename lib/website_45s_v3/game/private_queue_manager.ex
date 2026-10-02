@@ -32,6 +32,15 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     GenServer.call(__MODULE__, {:create_queue, id, owner_id, remote_ip})
   end
 
+  @doc """
+  Opens the lobby a finished private game offers its players for another
+  game, unless one of them already has. The id comes from the game, not the
+  client, so the creation cooldown and network limit do not apply.
+  """
+  def reopen_queue(id, owner_id) do
+    GenServer.call(__MODULE__, {:reopen_queue, id, owner_id})
+  end
+
   def add_player(id, {name, user_id}, remote_ip \\ nil) do
     GenServer.call(__MODULE__, {:add_player, id, {name, user_id}, remote_ip})
   end
@@ -59,6 +68,22 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   @impl true
   def handle_call({:create_queue, id, owner_id, remote_ip}, _from, state) do
     handle_create_queue(id, owner_id, remote_ip, state)
+  end
+
+  def handle_call({:reopen_queue, id, owner_id}, _from, state) do
+    cond do
+      not valid_queue_id?(id) ->
+        {:reply, {:error, :invalid_id}, state}
+
+      Map.has_key?(state.queues, id) ->
+        {:reply, :ok, state}
+
+      map_size(state.queues) >= max_queues() ->
+        {:reply, {:error, :too_many_lobbies}, state}
+
+      true ->
+        {:reply, :ok, put_in(state.queues[id], new_queue(owner_id))}
+    end
   end
 
   def handle_call({:add_player, id, {incoming_name, user_id}, remote_ip}, _from, state) do
@@ -152,7 +177,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   # Stores the updated seating, starting (and removing) the lobby once it is
   # full. If the game could not start everyone stays seated for a retry.
   defp seat_players(id, queue, players, state) when length(players) >= 4 do
-    case Matchmaking.start_game(players) do
+    case Matchmaking.start_game(players, rematch_id: Ecto.UUID.generate()) do
       :ok -> %{state | queues: Map.delete(state.queues, id)}
       {:error, _reason} -> put_in(state.queues[id], mark_empty(queue, players))
     end

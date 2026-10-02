@@ -9,6 +9,7 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {record} from "../vendor/rrweb-record"
+import {CardSelection} from "./card_selection.mjs"
 import {createSessionRecorder} from "./session_recorder.mjs"
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
@@ -28,8 +29,21 @@ Hooks.Turnstile = {
       }
     });
     this.renderWidget();
+    this.resizeObserver = new ResizeObserver(() => {
+      // Flexible widgets still have a 300px minimum. Once a form becomes
+      // narrower, retain compact sizing through later rotations so we don't
+      // repeatedly invalidate a completed challenge.
+      if (this.widgetId !== null && this.widgetSize === 'flexible' && this.el.clientWidth < 300) {
+        window.turnstile.remove(this.widgetId);
+        this.widgetId = null;
+        this.renderWidget();
+      }
+    });
+    this.resizeObserver.observe(this.el);
   },
   destroyed() {
+    this.resizeObserver.disconnect();
+    clearTimeout(this.retryTimer);
     if (this.widgetId !== null && window.turnstile) {
       window.turnstile.remove(this.widgetId);
       this.widgetId = null;
@@ -38,14 +52,16 @@ Hooks.Turnstile = {
   renderWidget() {
     if (this.widgetId !== null) return;
     if (window.turnstile) {
+      this.widgetSize = this.widgetSize === 'compact' || this.el.clientWidth < 300 ? 'compact' : 'flexible';
       this.widgetId = window.turnstile.render(this.el, {
         sitekey: this.el.dataset.sitekey,
         action: this.el.dataset.action,
         theme: "dark",
+        size: this.widgetSize,
         "response-field-name": "cf-turnstile-response",
       });
     } else if (document.body.contains(this.el)) {
-      setTimeout(() => this.renderWidget(), 100);
+      this.retryTimer = setTimeout(() => this.renderWidget(), 100);
     }
   },
 };
@@ -105,113 +121,7 @@ Hooks.CopyShareLink = {
   },
 }
 
-Hooks.CardSelection = {
-  mounted() {
-    this.selectedCards = new Set();
-    this.discardLimit = 5;
-    this.handleCardClickRef = (event) => this.handleCardClick(event);
-    this.handleDiscardConfirmedRef = () => {
-      this.locked = true;
-      this.clearSelection();
-    };
-
-    this.syncStateFromDataset();
-    this.el.addEventListener('click', this.handleCardClickRef);
-    this.el.addEventListener('discard-confirmed', this.handleDiscardConfirmedRef);
-    this.sync();
-    this.render();
-  },
-
-  updated() {
-    const previousPhase = this.phase;
-    const previousSelectionVersion = this.selectionVersion;
-    const previousAutoPlaying = this.autoPlaying;
-
-    this.syncStateFromDataset();
-
-    if (
-      previousPhase !== this.phase ||
-      previousSelectionVersion !== this.selectionVersion ||
-      previousAutoPlaying !== this.autoPlaying
-    ) {
-      this.clearSelection();
-    } else {
-      this.render();
-      this.sync();
-    }
-  },
-
-  destroyed() {
-    this.el.removeEventListener('click', this.handleCardClickRef);
-    this.el.removeEventListener('discard-confirmed', this.handleDiscardConfirmedRef);
-  },
-
-  handleCardClick(event) {
-    if (this.locked) return;
-
-    const card = event.target.closest('img[data-card-value]');
-    if (!card || card.classList.contains('grayed-out')) return;
-
-    const cardValue = card.dataset.cardValue;
-    if (this.phase === 'Discard') {
-      this.toggleDiscardSelection(cardValue);
-    } else if (this.phase === 'Playing') {
-      this.togglePlaySelection(cardValue);
-    }
-
-    this.render();
-    this.sync();
-  },
-
-  toggleDiscardSelection(cardValue) {
-    if (this.selectedCards.has(cardValue)) {
-      this.selectedCards.delete(cardValue);
-    } else {
-      if (this.selectedCards.size >= this.discardLimit) {
-        const first = this.selectedCards.values().next().value;
-        this.selectedCards.delete(first);
-      }
-      this.selectedCards.add(cardValue);
-    }
-  },
-
-  togglePlaySelection(cardValue) {
-    if (this.selectedCards.has(cardValue)) {
-      this.selectedCards.clear();
-    } else {
-      this.selectedCards.clear();
-      this.selectedCards.add(cardValue);
-    }
-  },
-
-  syncStateFromDataset() {
-    this.phase = this.el.dataset.phase;
-    this.selectionVersion = this.el.dataset.selectionVersion || '';
-    this.autoPlaying = this.el.dataset.autoPlaying === 'true';
-    this.updateLockState();
-  },
-
-  updateLockState() {
-    this.locked = this.autoPlaying || !['Discard', 'Playing'].includes(this.phase);
-  },
-
-  clearSelection() {
-    this.selectedCards.clear();
-    this.render();
-    this.sync();
-  },
-
-  render() {
-    this.el.querySelectorAll('img[data-card-value]').forEach(img => {
-      const isSelected = this.selectedCards.has(img.dataset.cardValue);
-      img.classList.toggle('selected-card', isSelected);
-    });
-  },
-
-  sync() {
-    this.el.dataset.selectedCards = JSON.stringify(Array.from(this.selectedCards));
-  }
-};
+Hooks.CardSelection = CardSelection
 
 // Drains the progress bar of a flash message and then clicks it away. Only
 // real, visible flashes get this hook (see CoreComponents.flash/1); the
@@ -227,7 +137,7 @@ Hooks.AutoDismissFlash = {
         this.stop();
         this.el.click();
       }
-    }, 30);
+    }, 120);
   },
   destroyed() {
     this.stop();
@@ -258,41 +168,87 @@ Hooks.ScoringCountdown = {
   }
 }
 
-Hooks.PlayCardButton = {
-  mounted() {
-    this.handleClick = () => {
-      const hand = document.getElementById('player-hand')
-      if (!hand) { return }
-      const cards = JSON.parse(hand.dataset.selectedCards || '[]')
-      if (cards.length === 1) {
-        this.pushEvent('play-card', {cards: cards})
-      }
-    }
-
-    this.el.addEventListener('click', this.handleClick)
+// Counts down the last seconds before a bot takes over the seat. The server
+// renders how long is left (data-ms-left) whenever the game state changes;
+// only a new reading re-anchors the count. Unrelated patches (the session
+// recorder's, say) re-render the same stale reading and must not reset it.
+Hooks.TurnClock = {
+  mounted() { this.start() },
+  updated() {
+    if (this.el.dataset.msLeft !== this.reading) this.start()
+    else this.tick()
   },
-  destroyed() {
-    this.el.removeEventListener('click', this.handleClick)
-  }
+  destroyed() { clearInterval(this.interval) },
+  start() {
+    clearInterval(this.interval)
+    this.reading = this.el.dataset.msLeft
+    const left = parseInt(this.reading || '', 10)
+    this.endsAt = Number.isNaN(left) ? null : Date.now() + left
+    this.tick()
+    if (this.endsAt) this.interval = setInterval(() => this.tick(), 250)
+  },
+  tick() {
+    const seconds = this.endsAt ? Math.ceil((this.endsAt - Date.now()) / 1000) : 0
+    this.show(seconds > 0 && seconds <= 10 ? seconds : null)
+    if (this.endsAt && seconds <= 0) clearInterval(this.interval)
+  },
+  show(seconds) {
+    const text = seconds ? `Bot in ${seconds}s` : ''
+    if (this.el.textContent !== text) this.el.textContent = text
+    const label = seconds ? `A bot plays for you in ${seconds} seconds` : ''
+    if (this.el.getAttribute('aria-label') !== label) this.el.setAttribute('aria-label', label)
+  },
 }
 
-Hooks.ConfirmDiscardButton = {
+Hooks.GameDialog = {
   mounted() {
-    this.handleClick = () => {
-      const hand = document.getElementById('player-hand')
-      if (!hand) { return }
-      const cards = JSON.parse(hand.dataset.selectedCards || '[]')
-      if (cards.length > 0 && cards.length <= 5) {
-        this.pushEvent('confirm_discard', {cards: cards})
-        hand.dispatchEvent(new CustomEvent('discard-confirmed'))
+    this.opener = document.activeElement
+    // Native modal inertness survives LiveView patches to the game behind it.
+    this.el.showModal()
+    this.cancel = event => {
+      event.preventDefault()
+      this.pushEvent('close_game_dialog', {})
+    }
+    this.el.addEventListener('cancel', this.cancel)
+    this.previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    this.trap = event => {
+      if (event.key !== 'Tab') return
+      const controls = [...this.el.querySelectorAll('button:not(:disabled), a[href], [tabindex="0"]')]
+      const first = controls[0], last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus()
       }
     }
-
-    this.el.addEventListener('click', this.handleClick)
+    this.el.addEventListener('keydown', this.trap)
+    this.el.querySelector('#close-score-overlay').focus()
+  },
+  updated() {
+    if (!this.el.open) this.el.showModal()
   },
   destroyed() {
-    this.el.removeEventListener('click', this.handleClick)
-  }
+    this.el.close()
+    this.el.removeEventListener('cancel', this.cancel)
+    document.body.style.overflow = this.previousOverflow
+    this.el.removeEventListener('keydown', this.trap)
+    if (this.opener?.isConnected) this.opener.focus()
+  },
+}
+
+Hooks.ShareGame = {
+  mounted() {
+    this.el.hidden = !navigator.share
+    this.share = async () => {
+      try {
+        await navigator.share({title: 'Play Forty Fives', url: document.getElementById('share_link').textContent.trim()})
+      } catch (_) { /* Dismissal leaves the Copy action available. */ }
+    }
+    this.el.addEventListener('click', this.share)
+  },
+  updated() { this.el.hidden = !navigator.share },
+  destroyed() { this.el.removeEventListener('click', this.share) },
 }
 
 Hooks.SessionRecorder = createSessionRecorder(record)

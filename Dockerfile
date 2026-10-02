@@ -8,7 +8,7 @@ RUN apk update && \
       git \
       bash \
       inotify-tools \
-      postgresql-client
+      sqlite
 
 RUN addgroup -S app && adduser -S -G app -h /home/app app
 

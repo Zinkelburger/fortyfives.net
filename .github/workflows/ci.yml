@@ -20,23 +20,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
-    services:
-      postgres:
-        # Same image (pinned by digest) as the compose stacks; citext ships in
-        # the official image.
-        image: docker.io/library/postgres:15.18-trixie@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

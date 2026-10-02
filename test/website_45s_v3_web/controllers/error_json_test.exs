@@ -1,5 +1,5 @@
 defmodule Website45sV3Web.ErrorJSONTest do
-  use Website45sV3Web.ConnCase, async: true
+  use Website45sV3Web.ConnCase, async: false
 
   test "renders 404" do
     assert Website45sV3Web.ErrorJSON.render("404.json", %{}) == %{errors: %{detail: "Not Found"}}

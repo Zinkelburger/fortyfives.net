@@ -8,8 +8,8 @@ front. Everything below happens on the host in a checkout of this repository
 
 | File | Purpose |
 | --- | --- |
-| `docker-compose-nginx.yml` | Production stack: `web`, `db`, `db_backup`, `nginx`, `certbot` |
-| `docker-compose.yml` | App + database only, Phoenix bound to `127.0.0.1:4000` (local testing of a release image) |
+| `docker-compose-nginx.yml` | Production stack: `web`, `db_backup`, `nginx`, `certbot` |
+| `docker-compose.yml` | App + SQLite backup, Phoenix bound to `127.0.0.1:4000` (local testing of a release image) |
 | `nginx.conf` | TLS termination and reverse proxy; Cloudflare real-IP list |
 | `.env.example` | Template for `.env`; copy it and replace every `CHANGE_ME` |
 | `Dockerfile.prod` | Release image built and pushed by the "Build and Push" workflow on `v*` tags |
@@ -26,39 +26,15 @@ front. Everything below happens on the host in a checkout of this repository
    `docker compose down -v` can never delete it. Create it once:
 
    ```sh
-   docker volume create fortyfives_db_data
+   docker volume create fortyfives_app_data
    ```
 
-   **Existing production hosts:** reuse the existing volume. Check the running
-   database's mount with `docker inspect <db-container> --format '{{json .Mounts}}'`
-   and set `volumes.db_data.name` to that volume's name if it differs. Do not
-   create an empty replacement or copy a database while PostgreSQL is running.
-
-   The database and backup images are pinned to the Debian PostgreSQL 15.18
-   digest verified on the live host on 2026-09-24 (glibc collation version
-   2.41). Preserve this image when attaching the existing data directory.
-   **Never attach this volume to Alpine PostgreSQL:** musl and glibc sort
-   text differently, which can silently break existing indexes and unique
-   constraints even with the same PostgreSQL major version.
-
-   Before changing the database image, take a logical backup and check the
-   recorded versus actual locale versions:
-
-   ```sh
-   docker compose -f docker-compose-nginx.yml exec -T db sh -c \
-     'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > before-db-change.dump
-   docker compose -f docker-compose-nginx.yml exec -T db sh -c \
-     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT datname, datcollate, datctype, datcollversion, pg_database_collation_actual_version(oid) FROM pg_database WHERE datallowconn"'
-   ```
-
-   For a change of libc, distribution, or locale provider, restore the dump
-   into a **fresh volume**, test account lookups and uniqueness there, and
-   then switch the app to that database. Pause app writes while taking the
-   final dump and switching over. Keep the original volume and dump for
-   rollback. A physical directory copy or merely refreshing the recorded
-   collation version does not rebuild incompatible indexes. The same rule
-   applies to an existing local test volume from the Alpine configuration:
-   dump/restore it, or recreate it only if its contents are disposable.
+   `web` mounts this at `/data`, with `DATABASE_PATH=/data/fortyfives.db`.
+   A fresh volume inherits the image's `app` ownership; when installing a
+   converted database, set its ownership to match `id app` in that image.
+   Only one app instance should use this SQLite file. For an existing
+   PostgreSQL deployment, follow [the cutover plan](sqlite-migration.md).
+   Never point the new image at the old PostgreSQL database.
 
 3. **First TLS certificate.** nginx will not start without
    `/etc/letsencrypt/live/fortyfives.net/`. Obtain it with the certbot
@@ -92,7 +68,7 @@ front. Everything below happens on the host in a checkout of this repository
 
 ## Releasing
 
-1. Tag and push: `git tag v2.0.1.10 && git push origin v2.0.1.10`. The
+1. Tag and push: `git tag v2.0.1.16 && git push origin v2.0.1.16`. The
    "Build and Push Tagged Docker Image" workflow builds `Dockerfile.prod`,
    pushes `thwar/fortyfives.net:<tag>` and `:latest`, and prints the image
    digest in the workflow's job summary.
@@ -101,7 +77,7 @@ front. Everything below happens on the host in a checkout of this repository
 3. `docker compose -f docker-compose-nginx.yml pull web`
 4. `docker compose -f docker-compose-nginx.yml up -d`
 
-`web`'s entrypoint waits for Postgres, runs `bin/migrate`
+`web`'s entrypoint runs `bin/migrate`
 (`Website45sV3.Release.migrate`) and then `bin/server`. `nginx` only starts
 once `web` reports healthy on `GET /healthz`.
 
@@ -111,18 +87,19 @@ once `web` reports healthy on `GET /healthz`.
   driver, 3 x 10 MB per container).
 - **Health:** `docker compose -f docker-compose-nginx.yml ps` shows the
   healthcheck state of every service.
-- **Backups:** `db_backup` runs `pg_dump -Fc` once a day into the
-  `fortyfives_db_backups` volume and deletes dumps older than 14 days. Copy
-  them off-host, e.g.
-  `docker run --rm -v fortyfives_db_backups:/b:ro alpine tar cz -C /b . > backups.tgz`.
-  Restore with
-  `docker compose -f docker-compose-nginx.yml exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean' < file.dump` (single quotes so the variables expand inside the container, not on the host)
-  (with the dump copied into the container or piped from the backup volume).
+- **Backups:** `db_backup` runs SQLite's online backup once daily, verifies
+  integrity, and keeps 14 days in `fortyfives_sqlite_backups`. The service mounts
+  `scripts/backup-sqlite.sh`, so deploy that file alongside compose. Inspect
+  `docker compose -f docker-compose-nginx.yml logs db_backup` for verification.
+  Copy backups off-host too. To restore, stop `web` and `db_backup`, preserve the
+  current database and its WAL/SHM files, install the selected backup as
+  `/data/fortyfives.db` with `app` ownership, remove the old WAL/SHM from the
+  active path, then restart. Rehearse on a separate volume first.
 - **Cloudflare IP ranges:** the `set_real_ip_from` list in `nginx.conf` must
   match https://www.cloudflare.com/ips/; the comment above the list shows a
   one-liner that regenerates it. Reload with
   `docker compose -f docker-compose-nginx.yml exec nginx nginx -s reload`.
-- **Rollback:** point `APP_IMAGE` at the previous digest and `up -d` again.
-  Migrations are forward-only; use `bin/website_45s_v3 eval
-  'Website45sV3.Release.rollback(Website45sV3.Repo, <version>)'` if one has
-  to be undone.
+- **Rollback:** for releases already using SQLite, restore the previous image
+  digest and recreate `web`. A PostgreSQL-era image cannot read SQLite; see the
+  [migration rollback procedure](sqlite-migration.md) before reverting across
+  the database switch.

@@ -2,11 +2,9 @@ defmodule Website45sV3.Repo.Migrations.CreateUsersAuthTables do
   use Ecto.Migration
 
   def change do
-    execute "CREATE EXTENSION IF NOT EXISTS citext", ""
-
     create table(:users) do
-      add :username, :citext, null: false
-      add :email, :citext, null: false
+      add :username, :string, null: false, collate: :nocase
+      add :email, :string, null: false, collate: :nocase
       add :hashed_password, :string, null: false
       add :confirmed_at, :naive_datetime
       timestamps()

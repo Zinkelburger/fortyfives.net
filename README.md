@@ -7,11 +7,9 @@ Prerequisites:
 
 - Elixir 1.19 and Erlang/OTP 27 — the exact versions are pinned in
   `.tool-versions` (`asdf install` or `mise install` picks them up).
-- PostgreSQL 15 with the `citext` extension available (the migrations enable
-  it). Development expects `postgres` / `postgres` on `localhost:5432`;
-  override with the `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_HOST`,
-  `DATABASE_PORT` and `DATABASE_NAME` environment variables (see
-  `config/dev.exs`).
+- SQLite is embedded through `ecto_sqlite3`; no database server is needed.
+  Development uses `priv/dev.db`; override with `DATABASE_PATH`. Tests use
+  `priv/test${MIX_TEST_PARTITION}.db`.
 
 ```sh
 mix setup        # deps, database, migrations, JS/CSS toolchain
@@ -20,7 +18,7 @@ mix test
 ```
 
 Set `MIX_TEST_PARTITION=<name>` to give a test run its own database when
-several people share one Postgres.
+several test runs share one checkout. Database tests run sequentially.
 
 ### Selenium bots
 
@@ -59,7 +57,7 @@ restart the server between back-to-back local runs.
 
 `.github/workflows/ui-check.yml` guards against accidental visual changes.
 On every push and PR it builds this commit and the one before it, then runs
-`python/ui_check.py` against both (key pages at desktop and 390px phone
+`python/ui_check.py` against both (key pages at desktop, 390px and 320px phone
 width):
 
 - **Layout invariants fail the build:** header height, logo size, no
@@ -75,6 +73,24 @@ Locally, against a running server:
 ```sh
 python python/ui_check.py --url http://localhost:4000 --out /tmp/ui/new --check
 ```
+
+The Selenium workflow also plays a complete four-player private game using
+`python/mobile_check.py`. It checks ten portrait, landscape, tablet, and desktop
+viewports, every card in the eight-card discard, selection limits, keyboard
+activation, rotation, score/rules dialogs during live updates, reconnecting,
+and returning to the lobby. Card and control bounds and hit tests catch clipping
+or overlapping controls. Screenshots keep the requested viewport height.
+
+Run against a local/test instance (it creates four temporary guest sessions):
+
+```sh
+python python/mobile_check.py --url http://localhost:4000 --out /tmp/ui/game
+node --test assets/test/*.test.mjs
+```
+
+See [the mobile plan](docs/mobile-first-plan.md) and
+[implementation validation](docs/mobile-first-validation.md) for design decisions,
+screenshots, and device coverage.
 
 ## Quality checks
 

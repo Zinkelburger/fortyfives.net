@@ -1,5 +1,5 @@
 defmodule Website45sV3Web.SiteTrackingTest do
-  use Website45sV3Web.ConnCase, async: true
+  use Website45sV3Web.ConnCase, async: false
 
   import Ecto.Query
   import Phoenix.LiveViewTest

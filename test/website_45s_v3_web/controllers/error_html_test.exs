@@ -1,5 +1,5 @@
 defmodule Website45sV3Web.ErrorHTMLTest do
-  use Website45sV3Web.ConnCase, async: true
+  use Website45sV3Web.ConnCase, async: false
 
   # Bring render_to_string/4 for testing custom views
   import Phoenix.Template

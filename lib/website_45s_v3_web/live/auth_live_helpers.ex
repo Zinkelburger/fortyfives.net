@@ -85,9 +85,9 @@ defmodule Website45sV3Web.AuthLiveHelpers do
       )
 
     ~H"""
-    <div style="background-color: #071f31; color: #d2e8f9;">
+    <div class="form-field" style="background-color: #071f31; color: #d2e8f9;">
       <.label for={@id}>{@label}</.label>
-      <div id={"#{@id}-container"} class="relative" phx-update="ignore">
+      <div id={"#{@id}-container"} class="password-field relative" phx-update="ignore">
         <input
           type="password"
           id={@id}
@@ -100,7 +100,7 @@ defmodule Website45sV3Web.AuthLiveHelpers do
           type="button"
           phx-click={toggle_password_visibility(@id)}
           aria-label="Show or hide password"
-          class="absolute top-1/2 right-0 pr-4 transform -translate-y-1/2"
+          class="password-toggle"
         >
           <img
             id={"#{@id}-show-icon"}
@@ -119,7 +119,7 @@ defmodule Website45sV3Web.AuthLiveHelpers do
           />
         </button>
       </div>
-      <div style="margin-top: -20px;">
+      <div class="field-errors">
         <.error :for={msg <- @errors}>{msg}</.error>
       </div>
     </div>

@@ -168,7 +168,7 @@ defmodule Website45sV3Web.CoreComponents do
     <.form :let={f} for={@for} as={@as} {@rest}>
       <div style={"background: ##{@background_color};"}>
         {render_slot(@inner_block, f)}
-        <div :for={action <- @actions} class="mt-2 flex items-center justify-between gap-6">
+        <div :for={action <- @actions} class="form-actions">
           {render_slot(action, f)}
         </div>
       </div>
@@ -308,7 +308,7 @@ defmodule Website45sV3Web.CoreComponents do
     ~H"""
     <div class="mt-4">
       <label
-        class="flex items-center text-sm gap-1.5"
+        class="flex min-h-[44px] items-center text-sm gap-1.5"
         style={"color: ##{@text_color}; margin-bottom: 0;"}
       >
         <input type="hidden" name={@name} value="false" />
@@ -375,7 +375,7 @@ defmodule Website45sV3Web.CoreComponents do
   # All other inputs text, datetime-local, url, etc. are handled here...
   def input(assigns) do
     ~H"""
-    <div style={"background-color: ##{@background_color}; color: ##{@text_color};"}>
+    <div class="form-field" style={"background-color: ##{@background_color}; color: ##{@text_color};"}>
       <.label for={@id}>{@label}</.label>
       <input
         type={@type}
@@ -390,7 +390,7 @@ defmodule Website45sV3Web.CoreComponents do
         style="background-color: #041624; color: #d2e8f9;"
         {@rest}
       />
-      <div style="margin-top: -20px;">
+      <div class="field-errors">
         <.error :for={msg <- @errors}>{msg}</.error>
       </div>
     </div>
@@ -408,7 +408,7 @@ defmodule Website45sV3Web.CoreComponents do
     <label
       for={@for}
       class="block text-sm font-semibold leading-6"
-      style="color: #d2e8f9; margin-bottom: -8px;"
+      style="color: #d2e8f9;"
     >
       {render_slot(@inner_block)}
     </label>

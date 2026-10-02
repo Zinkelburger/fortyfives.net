@@ -99,68 +99,38 @@
 
   <section id="ui" class="ui">
     <h2 class="text-3xl font-bold mb-6">Playing Online</h2>
-    <p class="text-lg mb-4">
-      You can play 45s anonymously without logging in. Games are two-player teams.
-    </p>
-
-    <h3 class="text-xl font-semibold mb-4">1. Start Playing</h3>
-    <p class="text-lg mb-4">
-      Click "Play" located in several places, such as the homepage or the top right corner.
-    </p>
-    <img
-      src="/images/learn/play_links.png"
-      alt="How to play 45s online - play button"
-      class="w-3/4 my-4 mx-auto"
-    />
-
-    <h3 class="text-xl font-semibold mb-4">2. Join the Queue</h3>
-    <p class="text-lg mb-4">
-      On the play page, join the queue and see who else is waiting. A game starts as soon as
-      four players are in. Don't want to wait? "Add a bot" fills one empty seat with a computer
-      player, and "Fill with Bots" fills every empty seat and starts the game right away.
-      To play with friends instead, open the "Play a Friend" tab and share the private link.
-    </p>
-    <img
-      src="/images/learn/join_queue.gif"
-      alt="Join a 45s card game online"
-      class="w-3/4 my-4 mx-auto"
-    />
-
-    <h3 class="text-xl font-semibold mb-4">3. Bidding Phase</h3>
-    <p class="text-lg mb-4">
-      In the bidding phase, click the blue buttons to bid, then press "Bid" or "Pass." Remember, if no one bids, the dealer must bid.
-    </p>
-    <img
-      src="/images/learn/bidding.gif"
-      alt="Bidding in the forty fives card game"
-      class="w-3/4 my-4 mx-auto"
-    />
-
-    <h3 class="text-xl font-semibold mb-4">4. Discarding Phase</h3>
-    <p class="text-lg mb-4">
-      Select the cards you want to keep, then press "Confirm Keep." Once all players have discarded, the game moves to the playing phase.
-      Remember the game will force you to keep at least one card and no more than 5 cards.
-    </p>
-    <img src="/images/learn/discard.gif" alt="Discarding cards in 45s" class="w-3/4 my-4 mx-auto" />
-
-    <h3 class="text-xl font-semibold mb-4">5. Playing Phase</h3>
-    <p class="text-lg mb-4">
-      The first player plays, and then play proceeds clockwise. Click the card you want to play and press "Play Card." Invalid cards are greyed out. Remember the player opposite you is your partner.
-    </p>
-    <img
-      src="/images/learn/playing.gif"
-      alt="Playing a trick in the 45 card game"
-      class="w-3/4 my-4 mx-auto"
-    />
-
-    <h3 class="text-xl font-semibold mb-4">6. Scoring Phase</h3>
-    <p class="text-lg mb-4">
-      The scoring phase shows results for both teams. The left column displays the total score, and the right column shows the change for this round. This screen is displayed for a few seconds before the cycle restarts: Bidding -> Discarding -> Playing -> Scoring.
-    </p>
-    <img src="/images/learn/scoring.gif" alt="Scoring in forty fives" class="w-3/4 my-4 mx-auto" />
-
-    <p class="text-lg mb-4">
-      The game continues until one side reaches 120 or more points. In case of a tie, the team that bid wins.
-    </p>
+    <div class="learn-steps">
+      <article class="learn-step">
+        <h3>1. Find a table</h3><p>
+          Join the queue, or use Play a Friend for a private game. Add a bot for any empty seat.
+        </p>
+      </article>
+      <article class="learn-step">
+        <h3>2. Bid</h3><p>
+          Pick a number and a suit, then Confirm Bid. Or Pass, then Confirm Pass. A bagged dealer can't pass; the dealer can hold.
+        </p>
+      </article>
+      <article class="learn-step">
+        <h3>3. Keep</h3><p>
+          Tap 1–5 cards, then Confirm Keep.
+        </p>
+      </article>
+      <article class="learn-step">
+        <h3>4. Play</h3><p>
+          Tap a card, then Play Card.
+        </p>
+      </article>
+      <article class="learn-step">
+        <h3>5. Score</h3><p>
+          Scores shows every hand. Game is 120.
+        </p>
+      </article>
+      <article class="learn-step">
+        <h3>6. Rejoin</h3><p>
+          A bot plays your seat while you're away. Tap Resume playing, or Rejoin Game from the lobby.
+        </p>
+      </article>
+    </div>
+    <div class="my-6"><.link navigate={~p"/play"} class="btn">Play a game</.link></div>
   </section>
 </div>

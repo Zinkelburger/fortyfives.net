@@ -227,6 +227,12 @@ defmodule Website45sV3.Analytics do
   end
 
   defp insert_chunk(replay, seq, json, data, stored, clicks) do
+    # SQLite does not report foreign-key constraint names. The immediate
+    # transaction holds the writer lock, so the pruner cannot delete this
+    # replay between this check and the chunk insert.
+    unless Repo.exists?(from(r in Replay, where: r.id == ^replay.id)),
+      do: Repo.rollback(:replay_gone)
+
     %ReplayChunk{replay_id: replay.id, seq: seq, data: data}
     |> Ecto.Changeset.change()
     |> Ecto.Changeset.unique_constraint([:replay_id, :seq])

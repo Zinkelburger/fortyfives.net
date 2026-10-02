@@ -6,6 +6,41 @@ defmodule Website45sV3.AccountsTest do
   import Website45sV3.AccountsFixtures
   alias Website45sV3.Accounts.{User, UserToken}
 
+  test "SQLite preserves case-insensitive account lookup and uniqueness" do
+    user = user_fixture(%{username: "CasePlayer", email: "CasePlayer@example.com"})
+    assert Accounts.get_user_by_username("caseplayer").id == user.id
+    assert Accounts.get_user_by_email("CASEPLAYER@EXAMPLE.COM").id == user.id
+
+    # Bypass the advisory lookup to exercise the database constraint itself.
+    changeset =
+      User.registration_changeset(
+        %User{},
+        %{
+          username: "caseplayer",
+          email: "different@example.com",
+          password: valid_user_password()
+        },
+        validate_username: false
+      )
+
+    assert {:error, changeset} = Repo.insert(changeset)
+    assert "has already been taken" in errors_on(changeset).username
+
+    changeset =
+      User.registration_changeset(
+        %User{},
+        %{
+          username: "DifferentPlayer",
+          email: "CASEPLAYER@EXAMPLE.COM",
+          password: valid_user_password()
+        },
+        validate_email: false
+      )
+
+    assert {:error, changeset} = Repo.insert(changeset)
+    assert "has already been taken" in errors_on(changeset).email
+  end
+
   describe "get_user_by_email/1" do
     test "does not return the user if the email does not exist" do
       refute Accounts.get_user_by_email("unknown@example.com")

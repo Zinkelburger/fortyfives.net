@@ -2,14 +2,13 @@ import Config
 
 # Configure your database
 config :website_45s_v3, Website45sV3.Repo,
-  username: System.get_env("DATABASE_USER", "postgres"),
-  password: System.get_env("DATABASE_PASSWORD", "postgres"),
-  hostname: System.get_env("DATABASE_HOST", "localhost"),
-  port: String.to_integer(System.get_env("DATABASE_PORT", "5432")),
-  database: System.get_env("DATABASE_NAME", "website_45s_v3_dev"),
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: false,
-  pool_size: 10
+  database: System.get_env("DATABASE_PATH", Path.expand("../priv/dev.db", __DIR__)),
+  pool_size: 3,
+  cache_size: -8000,
+  busy_timeout: 5000,
+  synchronous: :full,
+  default_transaction_mode: :immediate,
+  stacktrace: true
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
@@ -21,7 +20,7 @@ config :website_45s_v3, Website45sV3Web.Endpoint,
   # Binds to all IPv4 interfaces so the dev server is reachable from other
   # machines/containers (the Selenium e2e job and `docker run --network host`
   # rely on this). Change to `ip: {127, 0, 0, 1}` to restrict to loopback.
-  http: [ip: {0, 0, 0, 0}, port: 4000],
+  http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT", "4000"))],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

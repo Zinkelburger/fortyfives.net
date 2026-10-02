@@ -1,5 +1,5 @@
 defmodule Website45sV3.AnalyticsTest do
-  use Website45sV3.DataCase, async: true
+  use Website45sV3.DataCase, async: false
 
   alias Website45sV3.Analytics
   alias Website45sV3.Analytics.Replay

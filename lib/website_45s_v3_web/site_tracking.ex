@@ -115,7 +115,7 @@ defmodule Website45sV3Web.SiteTracking do
       {:error, changeset} -> Logger.debug("site event dropped: #{inspect(changeset.errors)}")
     end
   rescue
-    error in [DBConnection.ConnectionError, DBConnection.OwnershipError, Postgrex.Error] ->
+    error in [DBConnection.ConnectionError, DBConnection.OwnershipError, Exqlite.Error] ->
       Logger.warning("site event not recorded: #{Exception.message(error)}")
   end
 end

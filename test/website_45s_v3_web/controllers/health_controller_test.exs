@@ -1,5 +1,5 @@
 defmodule Website45sV3Web.HealthControllerTest do
-  use Website45sV3Web.ConnCase, async: true
+  use Website45sV3Web.ConnCase, async: false
 
   test "GET /healthz answers ok in plain text when the database responds", %{conn: conn} do
     conn = get(conn, ~p"/healthz")

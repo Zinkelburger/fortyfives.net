@@ -70,27 +70,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Generate ephemeral database credentials
-        run: echo "E2E_DATABASE_PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-
       - name: Run tbot scenarios
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          docker rm -f postgres-db my-elixir-app-container 2>/dev/null || true
-
-          docker run -d --name postgres-db --network host \
-            -e POSTGRES_PASSWORD="$E2E_DATABASE_PASSWORD" \
-            -e POSTGRES_DB=website_45s_v3_dev \
-            docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
-
-          docker run -d --name my-elixir-app-container --network host \
-            -e DATABASE_HOST=localhost \
-            -e DATABASE_PORT=5432 \
-            -e DATABASE_USER=postgres \
-            -e DATABASE_PASSWORD="$E2E_DATABASE_PASSWORD" \
-            -e DATABASE_NAME=website_45s_v3_dev \
-            my-elixir-app:latest
+          docker run -d --name my-elixir-app-container --network host my-elixir-app:latest
 
           timeout=300
           start_time=$(date +%s)
@@ -109,6 +93,7 @@ jobs:
           TBOT_ARTIFACT_DIR=artifacts python -u python/wait_play.py
 
           python/run_e2e.sh
+          python -u python/mobile_check.py --url http://localhost:4000 --out artifacts/mobile
 
       - name: Dump app logs on failure
         if: failure()

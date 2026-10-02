@@ -23,7 +23,7 @@ if (mount) {
       }
       status.textContent = events.length + " events"
       const width = Math.min(mount.clientWidth || 1000, 1200)
-      new Player({
+      const player = new Player({
         target: mount,
         props: {
           events,
@@ -39,6 +39,16 @@ if (mount) {
           UNSAFE_replayCanvas: false,
         },
       })
+      let lastWidth = width
+      const observer = new ResizeObserver(() => {
+        const nextWidth = Math.min(mount.clientWidth, 1200)
+        if (nextWidth > 0 && nextWidth !== lastWidth) {
+          lastWidth = nextWidth
+          player.$set({width: nextWidth, height: Math.round(nextWidth * 0.62)})
+          player.triggerResize()
+        }
+      })
+      observer.observe(mount)
     })
     .catch((error) => {
       status.textContent = "Could not load the recording: " + error.message

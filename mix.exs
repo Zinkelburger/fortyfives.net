@@ -45,7 +45,9 @@ defmodule Website45sV3.MixProject do
       {:phoenix, "~> 1.8.9"},
       {:phoenix_ecto, "~> 4.7.0"},
       {:ecto_sql, "~> 3.14"},
-      {:postgrex, "~> 0.22.4"},
+      {:ecto_sqlite3, "~> 0.25.0"},
+      # Only the one-off PostgreSQL importer needs this driver.
+      {:postgrex, "~> 0.22.4", only: :dev, runtime: false},
       {:phoenix_html, "~> 4.3.0"},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
       {:phoenix_live_view, "~> 1.2"},

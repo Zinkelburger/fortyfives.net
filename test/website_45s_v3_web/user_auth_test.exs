@@ -1,5 +1,5 @@
 defmodule Website45sV3Web.UserAuthTest do
-  use Website45sV3Web.ConnCase, async: true
+  use Website45sV3Web.ConnCase, async: false
 
   alias Phoenix.LiveView
   alias Website45sV3.Accounts

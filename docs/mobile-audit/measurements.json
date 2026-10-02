@@ -1,0 +1,1548 @@
+[
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 73.25,
+        "h": 28,
+        "right": 390,
+        "tag": "H1",
+        "text": "Bidding",
+        "w": 390,
+        "x": 0,
+        "y": 45.25
+      },
+      {
+        "bottom": 150.046875,
+        "h": 35.203125,
+        "right": 130.421875,
+        "tag": "BUTTON",
+        "text": "15",
+        "w": 58.578125,
+        "x": 71.84375,
+        "y": 114.84375
+      },
+      {
+        "bottom": 150.046875,
+        "h": 35.203125,
+        "right": 193,
+        "tag": "BUTTON",
+        "text": "20",
+        "w": 58.578125,
+        "x": 134.421875,
+        "y": 114.84375
+      },
+      {
+        "bottom": 150.046875,
+        "h": 35.203125,
+        "right": 255.578125,
+        "tag": "BUTTON",
+        "text": "25",
+        "w": 58.578125,
+        "x": 197,
+        "y": 114.84375
+      },
+      {
+        "bottom": 150.046875,
+        "h": 35.203125,
+        "right": 318.15625,
+        "tag": "BUTTON",
+        "text": "30",
+        "w": 58.578125,
+        "x": 259.578125,
+        "y": 114.84375
+      },
+      {
+        "bottom": 205.25,
+        "h": 35.203125,
+        "right": 135.15625,
+        "tag": "BUTTON",
+        "text": "\u2665",
+        "w": 55,
+        "x": 80.15625,
+        "y": 170.046875
+      },
+      {
+        "bottom": 205.25,
+        "h": 35.203125,
+        "right": 191.828125,
+        "tag": "BUTTON",
+        "text": "\u2666",
+        "w": 52.671875,
+        "x": 139.15625,
+        "y": 170.046875
+      },
+      {
+        "bottom": 205.25,
+        "h": 35.203125,
+        "right": 252.578125,
+        "tag": "BUTTON",
+        "text": "\u2663",
+        "w": 56.75,
+        "x": 195.828125,
+        "y": 170.046875
+      },
+      {
+        "bottom": 205.25,
+        "h": 35.203125,
+        "right": 309.828125,
+        "tag": "BUTTON",
+        "text": "\u2660",
+        "w": 53.25,
+        "x": 256.578125,
+        "y": 170.046875
+      },
+      {
+        "bottom": 393.53125,
+        "h": 106.078125,
+        "right": 88.046875,
+        "tag": "IMG",
+        "text": "6 of Spades",
+        "w": 66.296875,
+        "x": 21.75,
+        "y": 287.453125
+      },
+      {
+        "bottom": 393.53125,
+        "h": 106.078125,
+        "right": 157.34375,
+        "tag": "IMG",
+        "text": "9 of Spades",
+        "w": 66.296875,
+        "x": 91.046875,
+        "y": 287.453125
+      },
+      {
+        "bottom": 393.53125,
+        "h": 106.078125,
+        "right": 226.640625,
+        "tag": "IMG",
+        "text": "4 of Diamonds",
+        "w": 66.296875,
+        "x": 160.34375,
+        "y": 287.453125
+      },
+      {
+        "bottom": 393.53125,
+        "h": 106.078125,
+        "right": 295.9375,
+        "tag": "IMG",
+        "text": "King of Diamonds",
+        "w": 66.296875,
+        "x": 229.640625,
+        "y": 287.453125
+      },
+      {
+        "bottom": 393.53125,
+        "h": 106.078125,
+        "right": 365.234375,
+        "tag": "IMG",
+        "text": "9 of Hearts",
+        "w": 66.296875,
+        "x": 298.9375,
+        "y": 287.453125
+      }
+    ],
+    "scrollHeight": 844,
+    "scrollWidth": 390,
+    "vh": 844,
+    "vw": 390,
+    "name": "bidding-390"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 73.25,
+        "h": 28,
+        "right": 320,
+        "tag": "H1",
+        "text": "Discard",
+        "w": 320,
+        "x": 0,
+        "y": 45.25
+      },
+      {
+        "bottom": 178.453125,
+        "h": 35.203125,
+        "right": 233.15625,
+        "tag": "BUTTON",
+        "text": "Confirm Keep",
+        "w": 146.328125,
+        "x": 86.828125,
+        "y": 143.25
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": -15.171875,
+        "tag": "IMG",
+        "text": "9 of Clubs",
+        "w": 54.390625,
+        "x": -69.5625,
+        "y": 194.453125
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": 42.21875,
+        "tag": "IMG",
+        "text": "2 of Spades",
+        "w": 54.390625,
+        "x": -12.171875,
+        "y": 194.453125
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": 99.609375,
+        "tag": "IMG",
+        "text": "2 of Hearts",
+        "w": 54.390625,
+        "x": 45.21875,
+        "y": 194.453125
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": 157,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 54.390625,
+        "x": 102.609375,
+        "y": 194.453125
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": 214.390625,
+        "tag": "IMG",
+        "text": "3 of Hearts",
+        "w": 54.390625,
+        "x": 160,
+        "y": 194.453125
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": 271.78125,
+        "tag": "IMG",
+        "text": "King of Hearts",
+        "w": 54.390625,
+        "x": 217.390625,
+        "y": 194.453125
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": 329.171875,
+        "tag": "IMG",
+        "text": "3 of Clubs",
+        "w": 54.390625,
+        "x": 274.78125,
+        "y": 194.453125
+      },
+      {
+        "bottom": 281.484375,
+        "h": 87.03125,
+        "right": 386.5625,
+        "tag": "IMG",
+        "text": "Jack of Diamonds",
+        "w": 54.390625,
+        "x": 332.171875,
+        "y": 194.453125
+      }
+    ],
+    "scrollHeight": 693,
+    "scrollWidth": 390,
+    "vh": 693,
+    "vw": 390,
+    "name": "discard-eight-320"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 73.25,
+        "h": 28,
+        "right": 390,
+        "tag": "H1",
+        "text": "Discard",
+        "w": 390,
+        "x": 0,
+        "y": 45.25
+      },
+      {
+        "bottom": 178.453125,
+        "h": 35.203125,
+        "right": 268.15625,
+        "tag": "BUTTON",
+        "text": "Confirm Keep",
+        "w": 146.328125,
+        "x": 121.828125,
+        "y": 143.25
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": -15.890625,
+        "tag": "IMG",
+        "text": "9 of Clubs",
+        "w": 66.296875,
+        "x": -82.1875,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 53.40625,
+        "tag": "IMG",
+        "text": "2 of Spades",
+        "w": 66.296875,
+        "x": -12.890625,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 122.703125,
+        "tag": "IMG",
+        "text": "2 of Hearts",
+        "w": 66.296875,
+        "x": 56.40625,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 192,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 66.296875,
+        "x": 125.703125,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 261.296875,
+        "tag": "IMG",
+        "text": "3 of Hearts",
+        "w": 66.296875,
+        "x": 195,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 330.59375,
+        "tag": "IMG",
+        "text": "King of Hearts",
+        "w": 66.296875,
+        "x": 264.296875,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 399.890625,
+        "tag": "IMG",
+        "text": "3 of Clubs",
+        "w": 66.296875,
+        "x": 333.59375,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 469.1875,
+        "tag": "IMG",
+        "text": "Jack of Diamonds",
+        "w": 66.296875,
+        "x": 402.890625,
+        "y": 194.453125
+      }
+    ],
+    "scrollHeight": 1022,
+    "scrollWidth": 473,
+    "vh": 1022,
+    "vw": 473,
+    "name": "discard-eight-390"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 73.25,
+        "h": 28,
+        "right": 600,
+        "tag": "H1",
+        "text": "Discard",
+        "w": 600,
+        "x": 0,
+        "y": 45.25
+      },
+      {
+        "bottom": 178.453125,
+        "h": 35.203125,
+        "right": 373.15625,
+        "tag": "BUTTON",
+        "text": "Confirm Keep",
+        "w": 146.328125,
+        "x": 226.828125,
+        "y": 143.25
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": -12,
+        "tag": "IMG",
+        "text": "9 of Clubs",
+        "w": 100,
+        "x": -112,
+        "y": 194.453125
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": 91,
+        "tag": "IMG",
+        "text": "2 of Spades",
+        "w": 100,
+        "x": -9,
+        "y": 194.453125
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": 194,
+        "tag": "IMG",
+        "text": "2 of Hearts",
+        "w": 100,
+        "x": 94,
+        "y": 194.453125
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": 297,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 100,
+        "x": 197,
+        "y": 194.453125
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": 400,
+        "tag": "IMG",
+        "text": "3 of Hearts",
+        "w": 100,
+        "x": 300,
+        "y": 194.453125
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": 503,
+        "tag": "IMG",
+        "text": "King of Hearts",
+        "w": 100,
+        "x": 403,
+        "y": 194.453125
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": 606,
+        "tag": "IMG",
+        "text": "3 of Clubs",
+        "w": 100,
+        "x": 506,
+        "y": 194.453125
+      },
+      {
+        "bottom": 354.453125,
+        "h": 160,
+        "right": 709,
+        "tag": "IMG",
+        "text": "Jack of Diamonds",
+        "w": 100,
+        "x": 609,
+        "y": 194.453125
+      }
+    ],
+    "scrollHeight": 950,
+    "scrollWidth": 713,
+    "vh": 950,
+    "vw": 713,
+    "name": "discard-eight-600"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 55.25,
+        "h": 50,
+        "right": 601,
+        "tag": "H1",
+        "text": "Discard",
+        "w": 601,
+        "x": 0,
+        "y": 5.25
+      },
+      {
+        "bottom": 186.25,
+        "h": 44,
+        "right": 428,
+        "tag": "BUTTON",
+        "text": "Confirm Keep",
+        "w": 255,
+        "x": 173,
+        "y": 142.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": -19.5,
+        "tag": "IMG",
+        "text": "9 of Clubs",
+        "w": 100,
+        "x": -119.5,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 85.5,
+        "tag": "IMG",
+        "text": "2 of Spades",
+        "w": 100,
+        "x": -14.5,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 190.5,
+        "tag": "IMG",
+        "text": "2 of Hearts",
+        "w": 100,
+        "x": 90.5,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 295.5,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 100,
+        "x": 195.5,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 400.5,
+        "tag": "IMG",
+        "text": "3 of Hearts",
+        "w": 100,
+        "x": 300.5,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 505.5,
+        "tag": "IMG",
+        "text": "King of Hearts",
+        "w": 100,
+        "x": 405.5,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 610.5,
+        "tag": "IMG",
+        "text": "3 of Clubs",
+        "w": 100,
+        "x": 510.5,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 715.5,
+        "tag": "IMG",
+        "text": "Jack of Diamonds",
+        "w": 100,
+        "x": 615.5,
+        "y": 206.25
+      }
+    ],
+    "scrollHeight": 960,
+    "scrollWidth": 721,
+    "vh": 960,
+    "vw": 721,
+    "name": "discard-eight-601"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 55.25,
+        "h": 50,
+        "right": 844,
+        "tag": "H1",
+        "text": "Discard",
+        "w": 844,
+        "x": 0,
+        "y": 5.25
+      },
+      {
+        "bottom": 186.25,
+        "h": 44,
+        "right": 549.5,
+        "tag": "BUTTON",
+        "text": "Confirm Keep",
+        "w": 255,
+        "x": 294.5,
+        "y": 142.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 102,
+        "tag": "IMG",
+        "text": "9 of Clubs",
+        "w": 100,
+        "x": 2,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 207,
+        "tag": "IMG",
+        "text": "2 of Spades",
+        "w": 100,
+        "x": 107,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 312,
+        "tag": "IMG",
+        "text": "2 of Hearts",
+        "w": 100,
+        "x": 212,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 417,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 100,
+        "x": 317,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 522,
+        "tag": "IMG",
+        "text": "3 of Hearts",
+        "w": 100,
+        "x": 422,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 627,
+        "tag": "IMG",
+        "text": "King of Hearts",
+        "w": 100,
+        "x": 527,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 732,
+        "tag": "IMG",
+        "text": "3 of Clubs",
+        "w": 100,
+        "x": 632,
+        "y": 206.25
+      },
+      {
+        "bottom": 366.25,
+        "h": 160,
+        "right": 837,
+        "tag": "IMG",
+        "text": "Jack of Diamonds",
+        "w": 100,
+        "x": 737,
+        "y": 206.25
+      }
+    ],
+    "scrollHeight": 450,
+    "scrollWidth": 844,
+    "vh": 390,
+    "vw": 844,
+    "name": "discard-eight-844"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 73.25,
+        "h": 28,
+        "right": 390,
+        "tag": "H1",
+        "text": "Discard",
+        "w": 390,
+        "x": 0,
+        "y": 45.25
+      },
+      {
+        "bottom": 178.453125,
+        "h": 35.203125,
+        "right": 268.15625,
+        "tag": "BUTTON",
+        "text": "Confirm Keep",
+        "w": 146.328125,
+        "x": 121.828125,
+        "y": 143.25
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": -15.890625,
+        "tag": "IMG",
+        "text": "9 of Clubs",
+        "w": 66.296875,
+        "x": -82.1875,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 53.40625,
+        "tag": "IMG",
+        "text": "2 of Spades",
+        "w": 66.296875,
+        "x": -12.890625,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 122.703125,
+        "tag": "IMG",
+        "text": "2 of Hearts",
+        "w": 66.296875,
+        "x": 56.40625,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 192,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 66.296875,
+        "x": 125.703125,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 261.296875,
+        "tag": "IMG",
+        "text": "3 of Hearts",
+        "w": 66.296875,
+        "x": 195,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 330.59375,
+        "tag": "IMG",
+        "text": "King of Hearts",
+        "w": 66.296875,
+        "x": 264.296875,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 399.890625,
+        "tag": "IMG",
+        "text": "3 of Clubs",
+        "w": 66.296875,
+        "x": 333.59375,
+        "y": 194.453125
+      },
+      {
+        "bottom": 300.53125,
+        "h": 106.078125,
+        "right": 469.1875,
+        "tag": "IMG",
+        "text": "Jack of Diamonds",
+        "w": 66.296875,
+        "x": 402.890625,
+        "y": 194.453125
+      },
+      {
+        "bottom": 1022,
+        "h": 1022,
+        "right": 473,
+        "tag": "DIV",
+        "text": "Scores by hand\nAnonymous1, Anonymous3\tAnonymous2, Anonymous4\nClose",
+        "w": 473,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 181.875,
+        "h": 92.875,
+        "right": 376.328125,
+        "tag": "TABLE",
+        "text": "Scores by hand\nAnonymous1, Anonymous3\tAnonymous2, Anonymous4",
+        "w": 366.671875,
+        "x": 9.65625,
+        "y": 89
+      },
+      {
+        "bottom": 532.59375,
+        "h": 39.203125,
+        "right": 473,
+        "tag": "BUTTON",
+        "text": "Close",
+        "w": 87.015625,
+        "x": 385.984375,
+        "y": 493.390625
+      }
+    ],
+    "scrollHeight": 1022,
+    "scrollWidth": 473,
+    "vh": 1022,
+    "vw": 473,
+    "name": "scores-overlay-390"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 41.484375,
+        "h": 28.234375,
+        "right": 258.234375,
+        "tag": "BUTTON",
+        "text": "View Scores",
+        "w": 88.765625,
+        "x": 169.46875,
+        "y": 13.25
+      },
+      {
+        "bottom": 81.484375,
+        "h": 24,
+        "right": 320,
+        "tag": "P",
+        "text": "Your turn",
+        "w": 320,
+        "x": 0,
+        "y": 57.484375
+      },
+      {
+        "bottom": 334.328125,
+        "h": 35.203125,
+        "right": 217,
+        "tag": "BUTTON",
+        "text": "Play Card",
+        "w": 114,
+        "x": 103,
+        "y": 299.125
+      },
+      {
+        "bottom": 437.359375,
+        "h": 87.03125,
+        "right": 70.90625,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 54.390625,
+        "x": 16.515625,
+        "y": 350.328125
+      },
+      {
+        "bottom": 437.359375,
+        "h": 87.03125,
+        "right": 128.296875,
+        "tag": "IMG",
+        "text": "8 of Hearts",
+        "w": 54.390625,
+        "x": 73.90625,
+        "y": 350.328125
+      },
+      {
+        "bottom": 437.359375,
+        "h": 87.03125,
+        "right": 185.6875,
+        "tag": "IMG",
+        "text": "2 of Diamonds",
+        "w": 54.390625,
+        "x": 131.296875,
+        "y": 350.328125
+      },
+      {
+        "bottom": 437.359375,
+        "h": 87.03125,
+        "right": 243.078125,
+        "tag": "IMG",
+        "text": "6 of Diamonds",
+        "w": 54.390625,
+        "x": 188.6875,
+        "y": 350.328125
+      },
+      {
+        "bottom": 437.359375,
+        "h": 87.03125,
+        "right": 300.46875,
+        "tag": "IMG",
+        "text": "Queen of Hearts",
+        "w": 54.390625,
+        "x": 246.078125,
+        "y": 350.328125
+      }
+    ],
+    "scrollHeight": 568,
+    "scrollWidth": 320,
+    "vh": 568,
+    "vw": 320,
+    "name": "playing-320"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 41.484375,
+        "h": 28.234375,
+        "right": 293.234375,
+        "tag": "BUTTON",
+        "text": "View Scores",
+        "w": 88.765625,
+        "x": 204.46875,
+        "y": 13.25
+      },
+      {
+        "bottom": 81.484375,
+        "h": 24,
+        "right": 390,
+        "tag": "P",
+        "text": "Your turn",
+        "w": 390,
+        "x": 0,
+        "y": 57.484375
+      },
+      {
+        "bottom": 379.75,
+        "h": 35.203125,
+        "right": 252,
+        "tag": "BUTTON",
+        "text": "Play Card",
+        "w": 114,
+        "x": 138,
+        "y": 344.546875
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 88.046875,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 66.296875,
+        "x": 21.75,
+        "y": 395.75
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 157.34375,
+        "tag": "IMG",
+        "text": "8 of Hearts",
+        "w": 66.296875,
+        "x": 91.046875,
+        "y": 395.75
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 226.640625,
+        "tag": "IMG",
+        "text": "2 of Diamonds",
+        "w": 66.296875,
+        "x": 160.34375,
+        "y": 395.75
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 295.9375,
+        "tag": "IMG",
+        "text": "6 of Diamonds",
+        "w": 66.296875,
+        "x": 229.640625,
+        "y": 395.75
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 365.234375,
+        "tag": "IMG",
+        "text": "Queen of Hearts",
+        "w": 66.296875,
+        "x": 298.9375,
+        "y": 395.75
+      }
+    ],
+    "scrollHeight": 844,
+    "scrollWidth": 390,
+    "vh": 844,
+    "vw": 390,
+    "name": "playing-390"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 41.484375,
+        "h": 28.234375,
+        "right": 398.234375,
+        "tag": "BUTTON",
+        "text": "View Scores",
+        "w": 88.765625,
+        "x": 309.46875,
+        "y": 13.25
+      },
+      {
+        "bottom": 81.484375,
+        "h": 24,
+        "right": 600,
+        "tag": "P",
+        "text": "Your turn",
+        "w": 600,
+        "x": 0,
+        "y": 57.484375
+      },
+      {
+        "bottom": 508.6875,
+        "h": 35.203125,
+        "right": 357,
+        "tag": "BUTTON",
+        "text": "Play Card",
+        "w": 114,
+        "x": 243,
+        "y": 473.484375
+      },
+      {
+        "bottom": 684.6875,
+        "h": 160,
+        "right": 142.5,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 100,
+        "x": 42.5,
+        "y": 524.6875
+      },
+      {
+        "bottom": 684.6875,
+        "h": 160,
+        "right": 245.5,
+        "tag": "IMG",
+        "text": "8 of Hearts",
+        "w": 100,
+        "x": 145.5,
+        "y": 524.6875
+      },
+      {
+        "bottom": 684.6875,
+        "h": 160,
+        "right": 348.5,
+        "tag": "IMG",
+        "text": "2 of Diamonds",
+        "w": 100,
+        "x": 248.5,
+        "y": 524.6875
+      },
+      {
+        "bottom": 684.6875,
+        "h": 160,
+        "right": 451.5,
+        "tag": "IMG",
+        "text": "6 of Diamonds",
+        "w": 100,
+        "x": 351.5,
+        "y": 524.6875
+      },
+      {
+        "bottom": 684.6875,
+        "h": 160,
+        "right": 554.5,
+        "tag": "IMG",
+        "text": "Queen of Hearts",
+        "w": 100,
+        "x": 454.5,
+        "y": 524.6875
+      }
+    ],
+    "scrollHeight": 800,
+    "scrollWidth": 600,
+    "vh": 800,
+    "vw": 600,
+    "name": "playing-600"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 40.046875,
+        "h": 34.796875,
+        "right": 423.125,
+        "tag": "BUTTON",
+        "text": "View Scores",
+        "w": 110.53125,
+        "x": 312.59375,
+        "y": 5.25
+      },
+      {
+        "bottom": 90.046875,
+        "h": 30,
+        "right": 601,
+        "tag": "P",
+        "text": "Your turn",
+        "w": 601,
+        "x": 0,
+        "y": 60.046875
+      },
+      {
+        "bottom": 533.046875,
+        "h": 44,
+        "right": 407.78125,
+        "tag": "BUTTON",
+        "text": "Play Card",
+        "w": 214.578125,
+        "x": 193.203125,
+        "y": 489.046875
+      },
+      {
+        "bottom": 713.046875,
+        "h": 160,
+        "right": 138,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 100,
+        "x": 38,
+        "y": 553.046875
+      },
+      {
+        "bottom": 713.046875,
+        "h": 160,
+        "right": 243,
+        "tag": "IMG",
+        "text": "8 of Hearts",
+        "w": 100,
+        "x": 143,
+        "y": 553.046875
+      },
+      {
+        "bottom": 713.046875,
+        "h": 160,
+        "right": 348,
+        "tag": "IMG",
+        "text": "2 of Diamonds",
+        "w": 100,
+        "x": 248,
+        "y": 553.046875
+      },
+      {
+        "bottom": 713.046875,
+        "h": 160,
+        "right": 453,
+        "tag": "IMG",
+        "text": "6 of Diamonds",
+        "w": 100,
+        "x": 353,
+        "y": 553.046875
+      },
+      {
+        "bottom": 713.046875,
+        "h": 160,
+        "right": 558,
+        "tag": "IMG",
+        "text": "Queen of Hearts",
+        "w": 100,
+        "x": 458,
+        "y": 553.046875
+      }
+    ],
+    "scrollHeight": 800,
+    "scrollWidth": 601,
+    "vh": 800,
+    "vw": 601,
+    "name": "playing-601"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 40.046875,
+        "h": 34.796875,
+        "right": 544.625,
+        "tag": "BUTTON",
+        "text": "View Scores",
+        "w": 110.53125,
+        "x": 434.09375,
+        "y": 5.25
+      },
+      {
+        "bottom": 90.046875,
+        "h": 30,
+        "right": 844,
+        "tag": "P",
+        "text": "Your turn",
+        "w": 844,
+        "x": 0,
+        "y": 60.046875
+      },
+      {
+        "bottom": 537.921875,
+        "h": 44,
+        "right": 529.28125,
+        "tag": "BUTTON",
+        "text": "Play Card",
+        "w": 214.578125,
+        "x": 314.703125,
+        "y": 493.921875
+      },
+      {
+        "bottom": 717.921875,
+        "h": 160,
+        "right": 259.5,
+        "tag": "IMG",
+        "text": "Queen of Spades",
+        "w": 100,
+        "x": 159.5,
+        "y": 557.921875
+      },
+      {
+        "bottom": 717.921875,
+        "h": 160,
+        "right": 364.5,
+        "tag": "IMG",
+        "text": "8 of Hearts",
+        "w": 100,
+        "x": 264.5,
+        "y": 557.921875
+      },
+      {
+        "bottom": 717.921875,
+        "h": 160,
+        "right": 469.5,
+        "tag": "IMG",
+        "text": "2 of Diamonds",
+        "w": 100,
+        "x": 369.5,
+        "y": 557.921875
+      },
+      {
+        "bottom": 717.921875,
+        "h": 160,
+        "right": 574.5,
+        "tag": "IMG",
+        "text": "6 of Diamonds",
+        "w": 100,
+        "x": 474.5,
+        "y": 557.921875
+      },
+      {
+        "bottom": 717.921875,
+        "h": 160,
+        "right": 679.5,
+        "tag": "IMG",
+        "text": "Queen of Hearts",
+        "w": 100,
+        "x": 579.5,
+        "y": 557.921875
+      }
+    ],
+    "scrollHeight": 718,
+    "scrollWidth": 844,
+    "vh": 390,
+    "vw": 844,
+    "name": "playing-844"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 41.484375,
+        "h": 28.234375,
+        "right": 293.234375,
+        "tag": "BUTTON",
+        "text": "View Scores",
+        "w": 88.765625,
+        "x": 204.46875,
+        "y": 13.25
+      },
+      {
+        "bottom": 81.484375,
+        "h": 24,
+        "right": 390,
+        "tag": "P",
+        "text": "Anonymous3's turn",
+        "w": 390,
+        "x": 0,
+        "y": 57.484375
+      },
+      {
+        "bottom": 91.65625,
+        "h": 14.40625,
+        "right": 237.28125,
+        "tag": "P",
+        "text": "Anonymous2",
+        "w": 84.578125,
+        "x": 152.703125,
+        "y": 77.25
+      },
+      {
+        "bottom": 183.609375,
+        "h": 14.40625,
+        "right": 157.15625,
+        "tag": "P",
+        "text": "Anonymous1",
+        "w": 84.578125,
+        "x": 72.578125,
+        "y": 169.203125
+      },
+      {
+        "bottom": 249.015625,
+        "h": 14.40625,
+        "right": 238.296875,
+        "tag": "P",
+        "text": "Anonymous4",
+        "w": 86.578125,
+        "x": 151.71875,
+        "y": 234.609375
+      },
+      {
+        "bottom": 379.75,
+        "h": 35.203125,
+        "right": 252,
+        "tag": "BUTTON",
+        "text": "Play Card",
+        "w": 114,
+        "x": 138,
+        "y": 344.546875
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 122.703125,
+        "tag": "IMG",
+        "text": "8 of Hearts",
+        "w": 66.296875,
+        "x": 56.40625,
+        "y": 395.75
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 192,
+        "tag": "IMG",
+        "text": "2 of Diamonds",
+        "w": 66.296875,
+        "x": 125.703125,
+        "y": 395.75
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 261.296875,
+        "tag": "IMG",
+        "text": "6 of Diamonds",
+        "w": 66.296875,
+        "x": 195,
+        "y": 395.75
+      },
+      {
+        "bottom": 501.828125,
+        "h": 106.078125,
+        "right": 330.59375,
+        "tag": "IMG",
+        "text": "Queen of Hearts",
+        "w": 66.296875,
+        "x": 264.296875,
+        "y": 395.75
+      }
+    ],
+    "scrollHeight": 844,
+    "scrollWidth": 390,
+    "vh": 844,
+    "vw": 390,
+    "name": "playing-three-cards-390"
+  },
+  {
+    "elements": [
+      {
+        "bottom": 45.25,
+        "h": 45.25,
+        "right": 50,
+        "tag": "IMG",
+        "text": "Forty Fives Logo",
+        "w": 50,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "bottom": 73.25,
+        "h": 28,
+        "right": 390,
+        "tag": "H1",
+        "text": "Scoring",
+        "w": 390,
+        "x": 0,
+        "y": 45.25
+      }
+    ],
+    "scrollHeight": 933,
+    "scrollWidth": 390,
+    "vh": 844,
+    "vw": 390,
+    "name": "scoring-390"
+  }
+]

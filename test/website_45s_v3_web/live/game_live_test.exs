@@ -9,6 +9,7 @@ defmodule Website45sV3Web.GameLiveTest do
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.GameController
   alias Website45sV3.Game.GameSupervisor
+  alias Website45sV3.Game.PrivateQueueManager
 
   defp unique(prefix), do: prefix <> Integer.to_string(System.unique_integer([:positive]))
 
@@ -81,6 +82,7 @@ defmodule Website45sV3Web.GameLiveTest do
           current_player_id: user_id,
           winning_bid: {20, bidder, :hearts},
           bids_placed: 3,
+          actions: ["Cat passed"],
           bagged: false
       }
     end)
@@ -130,12 +132,10 @@ defmodule Website45sV3Web.GameLiveTest do
         refute html =~ ~s(data-card-value="#{Card.encode(card)}")
       end
 
-      # Cards are keyboard operable: Enter (keydown) and Space (keyup) both
-      # dispatch the click the CardSelection hook listens for.
+      # Native buttons provide Enter/Space activation through one click path.
       [card | _] = state.hands[user]
-      assert html =~ ~s(phx-keydown="[[&quot;dispatch&quot;)
-      assert html =~ ~s(phx-key="Enter")
-      assert html =~ ~s(phx-key=" ")
+      assert html =~ ~s(class="card-button")
+      assert html =~ ~s(aria-pressed="false")
       assert html =~ ~s(id="hand-card-#{Card.encode(card)}")
     end
 
@@ -297,7 +297,8 @@ defmodule Website45sV3Web.GameLiveTest do
 
       assert html =~ ~s(data-phase="Discard")
       assert html =~ ~s(data-confirm-discard-clicked="true")
-      assert html =~ "Waiting for other players..."
+      assert html =~ "Waiting for others"
+      assert html =~ ~s(id="seat-chip-1")
       assert html =~ ~s(id="confirm-discard-button")
       assert html =~ ~r/id="confirm-discard-button"[^>]*disabled/
       # only the kept cards are shown
@@ -312,8 +313,9 @@ defmodule Website45sV3Web.GameLiveTest do
       {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
 
       assert html =~ ~s(data-confirm-discard-clicked="false")
-      assert html =~ "Select the cards you want to keep"
-      refute html =~ ~r/id="confirm-discard-button"[^>]*disabled/
+      assert html =~ "Choose cards to keep"
+      # The local selection hook enables confirmation after a valid selection.
+      assert html =~ ~r/id="confirm-discard-button"[^>]*disabled/
     end
   end
 
@@ -363,7 +365,9 @@ defmodule Website45sV3Web.GameLiveTest do
 
       {:ok, view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
 
-      assert html =~ "As dealer you may hold at 20"
+      assert html =~ "You can hold at 20."
+      assert html =~ ~r/High bid:\s*<span class="facts-name">Ann<\/span>20/
+      assert html =~ "Dealer: You"
       assert html =~ ~s(data-dealer="true")
       assert html =~ ~s(data-current-bid="20")
       # 15 is below the bid, 20 is the hold, 25 raises
@@ -402,7 +406,7 @@ defmodule Website45sV3Web.GameLiveTest do
 
       {:ok, view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
 
-      refute html =~ "you may hold"
+      refute html =~ "You can hold"
       assert html =~ ~r/phx-value-bid-number="20"[^>]*disabled/
       refute html =~ ~r/phx-value-bid-number="25"[^>]*disabled/
 
@@ -415,6 +419,196 @@ defmodule Website45sV3Web.GameLiveTest do
       assert {20, bidder, :hearts} = state.winning_bid
       assert bidder != user
       assert state.current_player_id == user
+    end
+  end
+
+  describe "mobile game controls" do
+    test "a rejected discard does not falsely lock the player's hand", %{conn: conn} do
+      user = unique("mobile_user_")
+      {game_name, pid} = start_game(user)
+      drive_to_discard(pid)
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+
+      render_hook(view, "confirm_discard", %{"cards" => ["not-a-card"]})
+      html = render_hook(view, "refresh_hand", %{})
+      assert html =~ ~s(data-confirm-discard-clicked="false")
+      refute user in GameController.get_game_state(pid).received_discards_from
+
+      [card | _] = GameController.get_game_state(pid).hands[user]
+      render_hook(view, "confirm_discard", %{"cards" => [Card.encode(card)]})
+      html = render_hook(view, "refresh_hand", %{})
+      assert html =~ ~s(data-confirm-discard-clicked="true")
+    end
+
+    test "scores and rules have one explicit close path", %{conn: conn} do
+      user = unique("mobile_user_")
+      {game_name, _} = start_game(user)
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      view |> element("#open-scores") |> render_click()
+      assert has_element?(view, "[role=dialog]", "Scores")
+      assert has_element?(view, "#close-score-overlay")
+      render_click(view, "close_game_dialog")
+      refute has_element?(view, "#game-dialog")
+      view |> element("#open-rules") |> render_click()
+      assert has_element?(view, ".quick-rules", "Keep")
+      view |> element("#close-score-overlay") |> render_click()
+      refute has_element?(view, "#game-dialog")
+    end
+
+    test "final results respect the bidding team when both teams reach 120", %{conn: conn} do
+      user = unique("mobile_user_")
+      {game_name, pid} = start_game(user)
+
+      :sys.replace_state(pid, fn state ->
+        %{
+          state
+          | phase: "Final Scoring",
+            team_scores: %{team1: 130, team2: 120},
+            winning_bid: {15, Enum.at(state.player_ids, 1), :hearts},
+            team_1_history: List.duplicate("10 (+5)", 30),
+            team_2_history: List.duplicate("15 (+10)", 30)
+        }
+      end)
+
+      {:ok, view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      assert html =~ "Opponents win"
+      assert has_element?(view, ".score-history tbody tr:nth-child(30)")
+      assert has_element?(view, "button[phx-click=exit_game]", "Back to lobby")
+      view |> element("#open-scores") |> render_click()
+      assert length(Regex.scan(~r/id="scoring-countdown"/, render(view))) == 1
+    end
+  end
+
+  describe "table information" do
+    test "a pass only goes in on Confirm, and a bid replaces it", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      :sys.replace_state(pid, &%{&1 | current_player_id: user, dealing_player_id: "nobody"})
+
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+
+      html = view |> element("#pass-bid-button") |> render_click()
+      assert html =~ "Confirm Pass"
+      assert GameController.get_game_state(pid).bids_placed == 0
+
+      html = view |> element(~s(button[phx-value-bid-number="20"])) |> render_click()
+      assert html =~ "Confirm Bid"
+
+      assert html =~ ~s(aria-pressed="false" disabled id="pass-bid-button") or
+               html =~ ~r/id="pass-bid-button"[^>]*aria-pressed="false"/
+
+      view |> element("#pass-bid-button") |> render_click()
+      view |> element("#confirm-bid-button") |> render_click()
+      wait_until(fn -> GameController.get_game_state(pid).bids[user] == {0, :pass} end)
+
+      html = render(view)
+      refute html =~ "Confirm Pass"
+    end
+
+    test "other players' bids show at their seats", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      state = GameController.get_game_state(pid)
+      [_me, ann, ben, _cat] = state.player_ids
+
+      :sys.replace_state(pid, fn state ->
+        %{state | bids: %{ann => {20, :spades}, ben => {0, :pass}}}
+      end)
+
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      # Ann sits to the left, Ben (partner) across.
+      assert html =~ ~r/id="seat-chip-1".*Ann.*20.*♠/s
+      assert html =~ ~r/id="seat-chip-2".*Ben.*partner.*Pass/s
+    end
+
+    test "the hand is sorted: trump first, best to worst", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      drive_to_playing(pid)
+
+      hand = [
+        Card.new(2, :clubs),
+        Card.new(13, :diamonds),
+        Card.new(1, :hearts),
+        Card.new(5, :spades),
+        Card.new(11, :spades)
+      ]
+
+      :sys.replace_state(pid, fn state ->
+        %{state | trump: :spades, hands: Map.put(state.hands, user, hand)}
+      end)
+
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+
+      order =
+        ~r/data-card-value="([^"]+)"/
+        |> Regex.scan(html, capture: :all_but_first)
+        |> List.flatten()
+
+      # 5 and J of trump, then the ace of hearts (always trump), then the
+      # other suits alternating colour.
+      assert order == ["5_spades", "11_spades", "1_hearts", "2_clubs", "13_diamonds"]
+    end
+
+    test "on your turn the countdown knows when a bot takes over", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      :sys.replace_state(pid, &%{&1 | current_player_id: user})
+
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      [ms] = Regex.run(~r/data-ms-left="(\d+)"/, html, capture: :all_but_first)
+      assert String.to_integer(ms) in 1..GameController.timing(:idle_timeout)
+    end
+
+    test "a finished trick names and marks its winner", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      drive_to_playing(pid)
+      state = GameController.get_game_state(pid)
+      [_me, ann | _] = state.player_ids
+      card = Card.new(5, :hearts)
+
+      :sys.replace_state(pid, fn state ->
+        %{
+          state
+          | current_player_id: nil,
+            played_cards: [%{player_id: ann, card: card}],
+            trick_winning_cards: [%{player_id: ann, card: card}]
+        }
+      end)
+
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      assert html =~ "Ann won the trick"
+      assert html =~ "trick-done"
+      assert html =~ ~r/id="seat-1"[^>]*trick-winner/
+      assert html =~ "Tricks: You 0 · Them 1"
+    end
+
+    test "a private table can play again in one shared lobby", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      rematch_id = Ecto.UUID.generate()
+      send(pid, {:private_table, rematch_id})
+
+      :sys.replace_state(pid, fn state ->
+        %{
+          state
+          | phase: "Final Scoring",
+            team_scores: %{team1: 125, team2: 40},
+            team_1_history: ["125 +25"],
+            team_2_history: ["40 -20"]
+        }
+      end)
+
+      {:ok, view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      assert html =~ "Your team wins!"
+      assert html =~ "−20"
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               view |> element("#play-again-button") |> render_click()
+
+      assert to == "/play/private/#{rematch_id}"
+      assert PrivateQueueManager.queue_exists?(rematch_id)
     end
   end
 end

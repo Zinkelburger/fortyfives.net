@@ -261,14 +261,30 @@ class MobileCheck:
                     time.sleep(.05)
                     continue
                 version = current.find_element(By.ID, 'player-hand').get_attribute('data-selection-version')
-                # Right after a reconnect the hand stays locked until the
-                # server confirms state, so a tap can be ignored; tap again.
-                card_id = cards[0].get_attribute('id')
-                self.wait(lambda: len(self.selected(current)) == 1 or current.find_element(By.ID, card_id).click())
-                if 'playing-selected' not in self.checked:
-                    self.capture(current, 'playing-selected-390')
-                    self.checked.add('playing-selected')
-                self.click(current, '#play-card-button')
+                # Turn broadcasts reach the four browsers at different times.
+                # A patch may legitimately clear selection between a tap and
+                # confirmation. Re-enter the main loop on a new hand version;
+                # retry selection only, and submit the move at most once.
+                def select_and_confirm():
+                    hand = current.find_element(By.ID, 'player-hand')
+                    if hand.get_attribute('data-selection-version') != version:
+                        return 'changed'
+                    if not self.selected(current):
+                        available = current.find_elements(By.CSS_SELECTOR, 'button[data-card]:not(:disabled)')
+                        if available:
+                            available[0].click()
+                        return False
+                    action = current.find_element(By.ID, 'play-card-button')
+                    if not action.is_enabled():
+                        return False
+                    if 'playing-selected' not in self.checked:
+                        self.capture(current, 'playing-selected-390')
+                        self.checked.add('playing-selected')
+                    action.click()
+                    return 'submitted'
+
+                if self.wait(select_and_confirm) == 'changed':
+                    continue
                 self.wait(lambda: self.state(current).get('phase') != 'Playing' or current.find_element(By.ID, 'player-hand').get_attribute('data-selection-version') != version)
         raise AssertionError('Game did not finish in ten minutes')
 

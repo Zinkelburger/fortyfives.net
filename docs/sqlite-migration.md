@@ -67,3 +67,58 @@ starting Postgres, recreating the old web container, and reloading nginx. After
 SQLite accepts writes, do not blindly switch back: that would lose new accounts,
 tokens and analytics. Pause writes and reconcile those records first, or fix the
 app while continuing to use SQLite. Never delete either data volume during rollback.
+
+## Deployed result
+
+Release `v2.0.1.16` is live at https://fortyfives.net, pinned to
+`docker.io/thwar/fortyfives.net@sha256:63a03893e3633b35ad1b476899229190495fa5f49d6691e6f040c9c06651bfd6`.
+App writes stopped at 17:36:28 UTC and the new release was activated at
+17:38:17 UTC on 2026-10-02 (1 minute 49 seconds).
+
+Final import and pre-smoke production counts matched exactly:
+
+| Table | Rows |
+| --- | ---: |
+| users | 49 |
+| users_tokens | 17 |
+| game_logs | 3,408 |
+| replays | 327 |
+| replay_chunks | 10,112 |
+| replay_clicks | 27,256 |
+| site_events | 2,737 |
+| **Total** | **43,906** |
+
+Every decoded field matched, including password hashes, tokens, timestamps,
+JSON, and compressed recordings. Both ends of the file transfer had SHA-256
+`ea6ec1624d9887dc9237bb93228366d057fd7c2a4a1f6a6f93932b2d95b62de4`.
+The running release reports `Ecto.Adapters.SQLite3`, the expected file path,
+three connections, and full synchronization. Integrity and foreign keys pass.
+
+Validation: 471 ExUnit tests, 10 JavaScript tests, seven local Selenium gameplay
+scenarios, the ten-viewport local mobile game, public-page layout checks, and a
+restore into a separate production container passed. The published image was
+also pulled and booted locally before deployment. CI's build, unit, audit,
+release gameplay and UI checks passed. Existing dependency advisories were
+fixed in Mint/HPAX, lazy_html, and the Python test tool's urllib3. A controller
+rate-limit test was separated from its flaky 300ms wall-clock boundary; the
+limiter's dedicated expiry test still verifies rollover.
+
+Production's `/` and `/healthz` return 200. Its backup service published and
+verified its first backup at 17:38:17 UTC; both app and backup containers are
+healthy with Postgres stopped. Production's custom nginx/certbot configuration
+was preserved. The old database service remains under the `postgres-rollback`
+profile, and its volume is external.
+
+On the host, `/home/fortyfives/backups/sqlite-cutover/` contains the saved compose
+and environment, rehearsal and final dumps, imported SQLite file, activation
+script and timestamps. Private local copies and validation logs are in the
+ignored `tmp/sqlite-migration/` directory. Retain the Postgres volume and old
+image through at least 2026-10-16. Automatic nightly backups are on the VPS;
+only the cutover copies have also been saved off-host to this workstation.
+
+The live public-page layout check also passed at desktop, phone and small-phone
+sizes. A real-network mobile smoke test exposed a test-driver race between
+selection and a turn broadcast; its driver now restarts selection on a changed
+hand version without resending submitted moves. The revised driver completed
+its local full-game check. This follow-up changes the test script only, not the
+already deployed application.

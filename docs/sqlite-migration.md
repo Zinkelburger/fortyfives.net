@@ -122,3 +122,9 @@ selection and a turn broadcast; its driver now restarts selection on a changed
 hand version without resending submitted moves. The revised driver completed
 its local full-game check. This follow-up changes the test script only, not the
 already deployed application.
+
+The revised mobile smoke test then completed a full game on the live site,
+including final scoring and return to the lobby, across all ten viewports.
+Production's app and backup health checks remained healthy with no database
+errors. All runtime source, assets, configuration and dependency locks on main
+match the deployed release; subsequent commits contain test/report follow-ups.

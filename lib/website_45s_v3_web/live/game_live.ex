@@ -427,12 +427,14 @@ defmodule Website45sV3Web.GameLive do
         >?</button>
       </header>
 
-      <div class="game-status">
-        <h1 class="sr-only">{@game_state.phase}</h1>
-        <div class="turn-line">
-          <p class="turn-text" aria-live="polite" title={turn_message(assigns)}>
-            {turn_message(assigns)}
-          </p>
+      <div
+        id="game-status"
+        class="game-status"
+        phx-hook="ResumeAnywhere"
+        data-auto-playing={to_string(@auto_playing)}
+      >
+        <div class="phase-heading">
+          <h1 class="phase-title" aria-live="polite">{phase_title(@game_state.phase)}</h1>
           <span
             id="turn-clock"
             class="turn-clock"
@@ -440,6 +442,11 @@ defmodule Website45sV3Web.GameLive do
             data-ms-left={@turn_ms_left}
             role="timer"
           ></span>
+        </div>
+        <div class="turn-line">
+          <p class="turn-text" aria-live="polite" title={turn_message(assigns)}>
+            {turn_message(assigns)}
+          </p>
         </div>
         {render_facts(assigns)}
         <p
@@ -596,12 +603,25 @@ defmodule Website45sV3Web.GameLive do
     %{you: count.(teams.you), them: count.(teams.them)}
   end
 
-  defp turn_message(%{auto_playing: true}), do: "A bot is playing for you"
+  defp phase_title("Discard"), do: "Discarding"
+  defp phase_title("Scoring"), do: "Hand results"
+  defp phase_title("Final Scoring"), do: "Game over"
+  defp phase_title(phase), do: phase
+
+  defp turn_message(%{auto_playing: true}), do: "Bot playing · Tap anywhere to resume"
 
   defp turn_message(%{game_state: %{phase: "Discard"}, confirm_discard_clicked: true}),
-    do: "Waiting for others"
+    do: "Cards kept · Waiting for others"
 
-  defp turn_message(%{game_state: %{phase: "Discard"}}), do: "Choose cards to keep"
+  defp turn_message(%{game_state: %{phase: "Discard"}}), do: "Tap the cards you want to keep"
+
+  defp turn_message(%{game_state: %{phase: "Bidding", bagged: true}} = assigns)
+       when assigns.user_id == assigns.game_state.current_player_id,
+       do: "Your bid is 15 · Choose trump"
+
+  defp turn_message(%{game_state: %{phase: "Bidding"}} = assigns)
+       when assigns.user_id == assigns.game_state.current_player_id,
+       do: "Your turn · Choose a bid and trump"
 
   defp turn_message(%{game_state: %{phase: "Scoring"}} = assigns) do
     teams = team_summary(assigns)
@@ -627,7 +647,7 @@ defmodule Website45sV3Web.GameLive do
   defp turn_message(assigns) do
     case assigns.game_state.current_player_id do
       nil -> ""
-      id when id == assigns.user_id -> "Your turn"
+      id when id == assigns.user_id -> "Your turn · Choose a card"
       id -> "#{assigns.game_state.player_map[id]}'s turn"
     end
   end
@@ -711,7 +731,6 @@ defmodule Website45sV3Web.GameLive do
       assigns
       |> assign(:current_bid, current_bid)
       |> assign(:can_control, is_current_player and not assigns.auto_playing)
-      |> assign(:can_hold, assigns.dealer and is_current_player and current_bid > 0)
       |> assign(:bid_values, @bid_values)
       |> assign(:suit_symbols, @suit_symbols)
       |> then(fn a ->
@@ -720,12 +739,6 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div class="bidding-panel">
-      <p :if={@game_state.bagged and @can_control} class="game-hint">
-        You're bagged: choose trump for 15.
-      </p>
-      <p :if={@can_hold and @can_control and not @game_state.bagged} class="game-hint">
-        You can hold at {@current_bid}.
-      </p>
       <div class="bid-options">
         <div class="bid-numbers" role="group" aria-label="Bid amount">
           <%= for bid <- @bid_values do %>
@@ -886,7 +899,7 @@ defmodule Website45sV3Web.GameLive do
   end
 
   # The one action under the hand: Resume while a bot has the seat, Pass and
-  # Confirm while bidding, otherwise Confirm Keep or Play Card.
+  # Confirm while bidding, otherwise keep/discard counts or Play Card.
   defp render_hand_action(assigns) do
     ~H"""
     <%= cond do %>
@@ -928,7 +941,7 @@ defmodule Website45sV3Web.GameLive do
           class="blue-button hand-action"
           data-hand-action="confirm_discard"
           disabled
-        >Confirm Keep</button>
+        >Choose cards to keep</button>
         <button
           :if={@game_state.phase == "Playing"}
           type="button"

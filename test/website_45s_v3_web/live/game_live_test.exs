@@ -365,7 +365,7 @@ defmodule Website45sV3Web.GameLiveTest do
 
       {:ok, view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
 
-      assert html =~ "You can hold at 20."
+      refute html =~ "You can hold at"
       assert html =~ ~r/High bid:\s*<span class="facts-name">Ann<\/span>20/
       assert html =~ "Dealer: You"
       assert html =~ ~s(data-dealer="true")

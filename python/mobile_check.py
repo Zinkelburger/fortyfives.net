@@ -13,6 +13,7 @@ from pathlib import Path
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import StaleElementReferenceException
 
 from tbot import get_driver, live_socket_connected
 
@@ -30,7 +31,8 @@ class MobileCheck:
         self.measurements = []
 
     def wait(self, fn):
-        return WebDriverWait(self.drivers[0], 20, poll_frequency=.1).until(lambda _: fn())
+        return WebDriverWait(self.drivers[0], 20, poll_frequency=.1,
+                             ignored_exceptions=(StaleElementReferenceException,)).until(lambda _: fn())
 
     def viewport(self, d, w=390, h=844):
         d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',
@@ -141,6 +143,9 @@ class MobileCheck:
         buttons[7].send_keys(Keys.SPACE)
         for button in buttons[:3]:
             button.click()
+        assert d.find_element(By.ID, 'confirm-discard-button').text == 'Keep 3 · Discard 5'
+        self.layout(d, 'discard-selected', 320, 480)
+        self.viewport(d)
         self.capture(d, 'discard-selected-390')
         keep = self.selected(d)
         self.viewport(d, 844, 390)
@@ -228,6 +233,9 @@ class MobileCheck:
                 if state.get('currentBid') == '0' or state.get('bagged') == 'true':
                     self.click(current, '[phx-value-bid-number="15"]')
                     self.click(current, '[phx-value-bid-suit="hearts"]')
+                    if 'bidding-selected' not in self.checked:
+                        self.wait(lambda: current.find_element(By.ID, 'confirm-bid-button').is_enabled())
+                        self.matrix(current, 'bidding-selected')
                     self.click(current, '#confirm-bid-button')
                 else:
                     self.click(current, '#pass-bid-button')

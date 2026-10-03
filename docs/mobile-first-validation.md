@@ -4,6 +4,12 @@ Portrait phone is the base layout; landscape and desktop build on it.
 
 ## Changes
 
+- Prominent phase headings with the current instruction underneath. The discard
+  action names both outcomes (for example, “Keep 3 · Discard 5”); selected cards
+  are always the ones kept. Dealer hold remains available without the extra hint.
+- During bot takeover, a tap anywhere resumes playing, including on disabled
+  cards and inside dialogs. The resume gesture cannot also submit a game action;
+  the visible Resume button remains available for keyboard users.
 - Header: logo, team scores, Scores, rules.
 - Bidding and keeping: the four seats sit where the trick is played, with bids
   or Ready in each seat. Short screens collapse to one row of the other three.

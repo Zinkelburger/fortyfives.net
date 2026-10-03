@@ -41,6 +41,19 @@ test('an eight-card hand keeps at most five without silently replacing a choice'
   assert.equal(f.action.disabled, false)
 })
 
+test('discard confirmation distinguishes the kept cards from the discarded cards', t => {
+  const f = fixture(t)
+  assert.equal(f.action.textContent, 'Choose cards to keep')
+  f.click(0)
+  assert.equal(f.action.textContent, 'Keep 1 · Discard 7')
+  f.click(1); f.click(2)
+  assert.equal(f.action.textContent, 'Keep 3 · Discard 5')
+  assert.equal(f.summary.textContent, 'Checked cards stay in your hand')
+  f.cards.splice(5)
+  f.click(3); f.click(4)
+  assert.equal(f.action.textContent, 'Keep all 5 cards')
+})
+
 test('playing selects exactly one card and toggling it off disables confirmation', t => {
   const f = fixture(t, 'Playing')
   f.click(0); f.click(1)

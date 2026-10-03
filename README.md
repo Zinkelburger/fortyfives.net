@@ -104,6 +104,33 @@ mix sobelow
 mix test --cover
 ```
 
+### Dependency maintenance
+
+Dependabot version updates, security update PRs, and alerts are disabled for
+this repository. Keep `.github/dependabot.yml` absent and leave both Dependabot
+security settings disabled in GitHub. The Security Audit workflow still checks
+Hex and Python dependencies on pushes and pull requests.
+
+Update and audit dependencies manually:
+
+```sh
+mix deps.update --all
+mix hex.outdated --all
+mix hex.audit
+mix deps.audit
+python3 -m venv /tmp/fortyfives-dependency-tools
+/tmp/fortyfives-dependency-tools/bin/pip install pip-tools pip-audit
+/tmp/fortyfives-dependency-tools/bin/pip-compile --upgrade --strip-extras --output-file=python/requirements.txt python/requirements.in
+/tmp/fortyfives-dependency-tools/bin/pip-audit -r python/requirements.txt
+mix assets.build
+```
+
+Run the quality checks above after upgrades. Asset compiler versions live in
+`config/config.exs`; GitHub Actions and container images are pinned separately.
+Tailwind stays on the latest 3.4 release for the existing stylesheet and browser
+support; a Tailwind 4 migration needs its own layout and browser validation.
+Elixir/OTP upgrades must keep `.tool-versions`, CI, and both Dockerfiles aligned.
+
 ## Deploying
 
 1. Copy `.env.example` to `.env` and replace every `CHANGE_ME` value.

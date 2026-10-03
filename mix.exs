@@ -42,7 +42,7 @@ defmodule Website45sV3.MixProject do
   defp deps do
     [
       {:bcrypt_elixir, "~> 3.2"},
-      {:phoenix, "~> 1.8.9"},
+      {:phoenix, "~> 1.8.15"},
       {:phoenix_ecto, "~> 4.7.0"},
       {:ecto_sql, "~> 3.14"},
       {:ecto_sqlite3, "~> 0.25.0"},
@@ -59,13 +59,13 @@ defmodule Website45sV3.MixProject do
       {:bamboo_ses, "~> 0.5.0"},
       {:ueberauth, "~> 0.10"},
       {:ueberauth_google, "~> 0.11"},
-      {:finch, "~> 0.23"},
+      {:finch, "~> 0.24"},
       {:telemetry_metrics, "~> 1.2"},
       {:telemetry_poller, "~> 1.3"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.12"},
-      {:sobelow, "~> 0.15", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.16", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
     ]

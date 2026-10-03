@@ -86,9 +86,12 @@ export const CardSelection = {
     const action = this.el.querySelector('[data-hand-action]')
     if (!action) return
     const confirmed = this.el.dataset.confirmed === 'true'
+    const count = this.selectedCards.size
+    const total = this.el.querySelectorAll('button[data-card]').length
     action.disabled = this.locked() || !this.selectedCards.size
     action.textContent = this.pending ? 'Sending…' : confirmed ? 'Cards kept' :
-      this.el.dataset.phase === 'Discard' ? 'Confirm Keep' : 'Play Card'
+      this.el.dataset.phase === 'Discard' ?
+        (count ? (count === total ? `Keep all ${count} cards` : `Keep ${count} · Discard ${total - count}`) : 'Choose cards to keep') : 'Play Card'
     const summary = this.el.querySelector('#selection-summary')
     if (!summary) return
     // The status line already says whose turn it is and when the table is
@@ -96,8 +99,7 @@ export const CardSelection = {
     if (this.notice && this.connected && !this.pending) summary.textContent = this.notice
     else if (this.locked() || confirmed) summary.textContent = ''
     else if (this.el.dataset.phase === 'Discard') {
-      const count = this.selectedCards.size
-      summary.textContent = count ? `Keep ${count} of ${this.el.querySelectorAll('button[data-card]').length}` : 'Keep 1–5 cards'
+      summary.textContent = count ? 'Checked cards stay in your hand' : 'Select 1–5 cards; the rest will be discarded'
     } else {
       const selected = [...this.el.querySelectorAll('button[data-card]')].find(b => this.selectedCards.has(b.dataset.card))
       summary.textContent = selected ? `Play ${selected.getAttribute('aria-label')}?` : ''

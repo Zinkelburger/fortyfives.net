@@ -10,6 +10,7 @@ import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {record} from "../vendor/rrweb-record"
 import {CardSelection} from "./card_selection.mjs"
+import {ResumeAnywhere} from "./resume_anywhere.mjs"
 import {createSessionRecorder} from "./session_recorder.mjs"
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
@@ -122,6 +123,7 @@ Hooks.CopyShareLink = {
 }
 
 Hooks.CardSelection = CardSelection
+Hooks.ResumeAnywhere = ResumeAnywhere
 
 // Drains the progress bar of a flash message and then clicks it away. Only
 // real, visible flashes get this hook (see CoreComponents.flash/1); the

@@ -55,7 +55,7 @@ config :website_45s_v3, Website45sV3.Mailer, adapter: Bamboo.LocalAdapter
 
 # Configure esbuild (the version is required)
 config :esbuild,
-  version: "0.25.9",
+  version: "0.28.2",
   default: [
     args:
       ~w(js/app.js js/admin.js --bundle --target=es2017 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
@@ -65,7 +65,7 @@ config :esbuild,
 
 # Configure tailwind (the version is required)
 config :tailwind,
-  version: "3.4.17",
+  version: "3.4.19",
   default: [
     args: ~w(
       --config=tailwind.config.js

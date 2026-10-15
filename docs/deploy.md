@@ -81,6 +81,33 @@ front. Everything below happens on the host in a checkout of this repository
 (`Website45sV3.Release.migrate`) and then `bin/server`. `nginx` only starts
 once `web` reports healthy on `GET /healthz`.
 
+## Live sign-in check
+
+The "Live sign-in check" workflow (`.github/workflows/live-check.yml`) runs
+`python/live_check.py` against production every 30 minutes and on demand
+(Actions → Live sign-in check → Run workflow). Run it after every deploy and
+after changing any credential. It checks:
+
+- `GET /healthz/auth`: Cloudflare accepts `TURNSTILE_SECRET`; the latest real
+  Turnstile verification did not fail on the secret; Google accepts
+  `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+- `/auth/google` leads to Google's sign-in page, not its error page.
+- The Turnstile widget loads on the sign-in, registration and password-reset
+  forms (a wrong site key or domain shows up as `error <code>`).
+
+It cannot complete a real password or Google sign-in: Turnstile shows a
+script-driven browser an interactive challenge, and Google blocks automated
+sign-in. A secret that Cloudflare accepts but that belongs to a different
+widget only shows up once a visitor submits a form; `/healthz/auth` then
+reports `turnstile_verifications` as failing until a token verifies again.
+
+To run it locally: `python python/live_check.py --url https://fortyfives.net`.
+
+### Replacing the Turnstile widget
+
+Set `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET` in `.env` together (they must
+belong to the same widget), recreate `web`, then run the live check.
+
 ## Day 2
 
 - **Logs:** `docker compose -f docker-compose-nginx.yml logs -f web` (json-file

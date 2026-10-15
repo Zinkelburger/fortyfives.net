@@ -78,13 +78,21 @@ defmodule Website45sV3.TurnstileTest do
     end
 
     test "accepts every configured hostname" do
-      for hostname <- ["fortyfives.net", "www.fortyfives.net", "localhost"] do
+      for hostname <- ["fortyfives.net", "www.fortyfives.net"] do
         TurnstileStub.with_siteverify(fn _params ->
           {:ok, 200, TurnstileStub.success_body(%{"hostname" => hostname})}
         end)
 
         assert :ok = Turnstile.verify("token"), "#{hostname} should be accepted"
       end
+    end
+
+    test "refuses a production-key token solved on localhost" do
+      TurnstileStub.with_siteverify(fn _params ->
+        {:ok, 200, TurnstileStub.success_body(%{"hostname" => "localhost"})}
+      end)
+
+      assert {:error, :turnstile_failed} = Turnstile.verify("token")
     end
 
     test "the hostname allowlist is configurable" do
@@ -159,6 +167,77 @@ defmodule Website45sV3.TurnstileTest do
     test "refuses an unparseable body" do
       TurnstileStub.with_siteverify(fn _params -> {:ok, 200, "<html>"} end)
       assert {:error, :turnstile_failed} = Turnstile.verify("token")
+    end
+  end
+
+  describe "last_outcome/0" do
+    setup do
+      Turnstile.reset_last_outcome()
+      on_exit(&Turnstile.reset_last_outcome/0)
+    end
+
+    defp siteverify_codes(codes) do
+      TurnstileStub.with_siteverify(fn _params ->
+        {:ok, 200, Jason.encode!(%{"success" => false, "error-codes" => codes})}
+      end)
+    end
+
+    test "is nil before any verification" do
+      assert Turnstile.last_outcome() == nil
+    end
+
+    test "records a rejected secret and clears it once a token verifies" do
+      siteverify_codes(["invalid-input-secret"])
+      assert {:error, :turnstile_failed} = Turnstile.verify("token")
+
+      assert {{:config_error, ["invalid-input-secret"]}, %DateTime{} = since} =
+               Turnstile.last_outcome()
+
+      # A repeat keeps the time the failure began.
+      Turnstile.verify("token")
+      assert {{:config_error, _codes}, ^since} = Turnstile.last_outcome()
+
+      TurnstileStub.with_siteverify(fn _params -> {:ok, 200, TurnstileStub.success_body()} end)
+      assert :ok = Turnstile.verify("token")
+      assert {:ok, %DateTime{}} = Turnstile.last_outcome()
+    end
+
+    test "a visitor's bad token is not a configuration error" do
+      siteverify_codes(["timeout-or-duplicate"])
+      assert {:error, :turnstile_failed} = Turnstile.verify("token")
+      assert Turnstile.last_outcome() == nil
+    end
+  end
+
+  describe "check_secret/0" do
+    test "accepts the answer a valid secret gives the dummy token" do
+      TurnstileStub.with_siteverify(fn params ->
+        assert params["response"] == "XXXX.DUMMY.TOKEN.XXXX"
+        assert params["secret"] == "test-secret"
+
+        {:ok, 200,
+         Jason.encode!(%{"success" => false, "error-codes" => ["invalid-input-response"]})}
+      end)
+
+      assert :ok = Turnstile.check_secret()
+    end
+
+    test "reports a rejected secret" do
+      TurnstileStub.with_siteverify(fn _params ->
+        {:ok, 200,
+         Jason.encode!(%{"success" => false, "error-codes" => ["invalid-input-secret"]})}
+      end)
+
+      assert {:error, "invalid-input-secret"} = Turnstile.check_secret()
+    end
+
+    test "reports an unreachable Cloudflare" do
+      TurnstileStub.with_siteverify(fn _params -> {:error, :timeout} end)
+      assert {:error, "siteverify :timeout"} = Turnstile.check_secret()
+    end
+
+    test "is disabled without a site key" do
+      assert Turnstile.check_secret() == :disabled
     end
   end
 

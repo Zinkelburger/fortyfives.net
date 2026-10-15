@@ -9,17 +9,25 @@ defmodule Website45sV3.Turnstile do
   Configuration:
 
     * `:turnstile_site_key` — public site key, set per environment. `nil`
-      disables both the widget and verification entirely (test env).
+      disables both the widget and verification entirely (test env). In
+      production the `TURNSTILE_SITE_KEY` environment variable overrides it.
     * `:turnstile_secret` — siteverify secret. In production it comes from
       the `TURNSTILE_SECRET` environment variable via `config/runtime.exs`.
       Production refuses to start without it. Verification fails closed if a
       site key is configured without a secret in any other environment.
     * `:turnstile_hostnames` — hostnames a token may have been solved on.
-      Defaults to `#{inspect(["fortyfives.net", "www.fortyfives.net", "localhost"])}`.
+      Defaults to `#{inspect(["fortyfives.net", "www.fortyfives.net"])}`; dev's
+      testing keys skip the hostname check, so localhost is never needed.
       A token minted for any other site is refused even if Cloudflare accepts
       it, so a leaked secret cannot be paired with a widget elsewhere.
     * `:turnstile_http_client` — module implementing `post/4`; defaults to
       `Website45sV3.Turnstile.FinchClient`. Tests swap in a stub.
+
+  `check_secret/0` asks Cloudflare whether the secret is valid, using its
+  dummy token. A secret can pass that and still have every real token
+  rejected with `invalid-input-secret`, as happened from August to October
+  2026. No visitor can fix that, so it is logged as an error and kept as
+  `last_outcome/0` for `/healthz/auth` until a later token verifies.
 
   Besides `success`, the siteverify response's `hostname` and `action` are
   checked. Cloudflare's documented testing keys answer with
@@ -36,9 +44,18 @@ defmodule Website45sV3.Turnstile do
   # `Website45sV3Web.CoreComponents.turnstile/1`.
   @expected_action "turnstile-spin-v2"
 
-  @default_hostnames ["fortyfives.net", "www.fortyfives.net", "localhost"]
+  @default_hostnames ["fortyfives.net", "www.fortyfives.net"]
 
   @request_timeout_ms 5_000
+
+  # Error codes that mean the server, not the visitor, is misconfigured.
+  @config_error_codes ["missing-input-secret", "invalid-input-secret"]
+
+  # Cloudflare's documented dummy token: a valid secret answers it with
+  # `invalid-input-response`, an invalid one with `invalid-input-secret`.
+  @dummy_token "XXXX.DUMMY.TOKEN.XXXX"
+
+  @outcome_key {__MODULE__, :last_outcome}
 
   defmodule FinchClient do
     @moduledoc false
@@ -115,10 +132,16 @@ defmodule Website45sV3.Turnstile do
          {:ok, %{"success" => true} = response} <- Jason.decode(body),
          :ok <- check_hostname(response),
          :ok <- check_action(response) do
-      :ok
+      record_outcome(:ok)
     else
       {:ok, %{"error-codes" => codes}} ->
-        Logger.warning("Turnstile verification failed: #{inspect(codes)}")
+        if Enum.any?(codes, &(&1 in @config_error_codes)) do
+          Logger.error("Turnstile secret rejected by Cloudflare: #{inspect(codes)}")
+          record_outcome({:config_error, codes})
+        else
+          Logger.warning("Turnstile verification failed: #{inspect(codes)}")
+        end
+
         {:error, :turnstile_failed}
 
       {:error, {:unexpected_hostname, hostname}} ->
@@ -139,6 +162,64 @@ defmodule Website45sV3.Turnstile do
     Logger.warning("Turnstile token missing from request")
     {:error, :turnstile_failed}
   end
+
+  @doc """
+  The most recent verification that either succeeded or hit a server-side
+  configuration error, with the time that state began: `{:ok, at}`,
+  `{{:config_error, codes}, at}`, or `nil` before the first one since boot.
+  """
+  def last_outcome, do: :persistent_term.get(@outcome_key, nil)
+
+  # Writing a persistent term is costly, so only a change of state is stored.
+  # Always returns `:ok` so a successful `verify/2` can end with it.
+  defp record_outcome(outcome) do
+    case last_outcome() do
+      {^outcome, _at} -> :ok
+      _ -> :persistent_term.put(@outcome_key, {outcome, DateTime.utc_now()})
+    end
+
+    :ok
+  end
+
+  @doc false
+  def reset_last_outcome, do: :persistent_term.erase(@outcome_key)
+
+  @doc """
+  Asks Cloudflare whether the configured secret is valid by verifying the
+  dummy token. Returns `:ok`, `:disabled` when no site key is configured, or
+  `{:error, reason}`. It cannot tell whether the secret belongs to the
+  configured site key's widget; `last_outcome/0` shows that once a visitor
+  submits a real token.
+  """
+  def check_secret do
+    cond do
+      is_nil(site_key()) ->
+        :disabled
+
+      secret() in [nil, ""] ->
+        {:error, "missing-input-secret"}
+
+      true ->
+        body = URI.encode_query(%{"secret" => secret(), "response" => @dummy_token})
+        headers = [{"content-type", "application/x-www-form-urlencoded"}]
+
+        case http_client().post(@siteverify_url, headers, body, @request_timeout_ms) do
+          {:ok, 200, body} -> dummy_result(Jason.decode(body))
+          {:ok, status, _body} -> {:error, "siteverify status #{status}"}
+          {:error, reason} -> {:error, "siteverify #{inspect(reason)}"}
+        end
+    end
+  end
+
+  # Dev's testing secret accepts every token, the dummy one included.
+  defp dummy_result({:ok, %{"error-codes" => ["invalid-input-response"]}}), do: :ok
+
+  defp dummy_result({:ok, %{"success" => true} = response}) do
+    if testing_key_response?(response), do: :ok, else: {:error, "dummy token accepted"}
+  end
+
+  defp dummy_result({:ok, %{"error-codes" => codes}}), do: {:error, Enum.join(codes, ",")}
+  defp dummy_result(_other), do: {:error, "unparseable siteverify response"}
 
   defp testing_key_response?(%{"metadata" => %{"result_with_testing_key" => true}}), do: true
   defp testing_key_response?(_response), do: false

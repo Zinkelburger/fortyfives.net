@@ -50,6 +50,12 @@ Hooks.Turnstile = {
       this.widgetId = null;
     }
   },
+  // Callbacks can fire during render(), before "rendered" would overwrite them.
+  setState(state) {
+    if (state !== "rendered" || !this.el.dataset.turnstileState) {
+      this.el.dataset.turnstileState = state;
+    }
+  },
   renderWidget() {
     if (this.widgetId !== null) return;
     if (window.turnstile) {
@@ -60,7 +66,16 @@ Hooks.Turnstile = {
         theme: "dark",
         size: this.widgetSize,
         "response-field-name": "cf-turnstile-response",
+        // data-turnstile-state lets python/live_check.py see whether the
+        // widget loaded: a script-driven browser is shown the interactive
+        // challenge, a wrong site key or domain reports an error code.
+        callback: () => this.setState("solved"),
+        "before-interactive-callback": () => this.setState("interactive"),
+        "expired-callback": () => this.setState("expired"),
+        "unsupported-callback": () => this.setState("unsupported"),
+        "error-callback": (code) => this.setState(`error ${code}`),
       });
+      this.setState("rendered");
     } else if (document.body.contains(this.el)) {
       this.retryTimer = setTimeout(() => this.renderWidget(), 100);
     }

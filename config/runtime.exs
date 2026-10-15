@@ -53,6 +53,12 @@ if config_env() == :prod do
 
   config :website_45s_v3, :turnstile_secret, turnstile_secret
 
+  # The site key and secret must belong to the same Turnstile widget. Setting
+  # both in `.env` lets a widget be replaced without rebuilding the image.
+  if site_key = System.get_env("TURNSTILE_SITE_KEY") do
+    config :website_45s_v3, :turnstile_site_key, site_key
+  end
+
   config :website_45s_v3, Website45sV3.Repo,
     database: System.fetch_env!("DATABASE_PATH"),
     pool_size: 3,

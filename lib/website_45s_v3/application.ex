@@ -26,6 +26,7 @@ defmodule Website45sV3.Application do
       # Start Finch
       {Finch, name: Website45sV3.Finch},
       Website45sV3.Security.RateLimiter,
+      Website45sV3.AuthHealth,
       # Game processes must be up before the Endpoint accepts requests: the
       # lobby and game LiveViews call into them on mount.
       Website45sV3.Game.ActiveGames,

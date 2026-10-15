@@ -26,6 +26,7 @@ defmodule Website45sV3Web.Router do
   # churn from monitors that never send one back.
   scope "/", Website45sV3Web do
     get "/healthz", HealthController, :index
+    get "/healthz/auth", HealthController, :auth
   end
 
   defp put_content_security_policy(conn, _opts) do

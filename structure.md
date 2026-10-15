@@ -40,6 +40,7 @@ username is shown instead of "Anonymous".
 | Path | Notes |
 | --- | --- |
 | `/healthz` | Health check for the container / load balancer |
+| `/healthz/auth` | Sign-in health (Turnstile secret and recent verifications, Google OAuth credentials) as JSON; 503 when any fails. Polled by the "Live sign-in check" workflow |
 | `/dev/dashboard` | Phoenix LiveDashboard, development only (`dev_routes`) |
 | `/dev/mailbox` | Bamboo sent-email viewer, development only |
 

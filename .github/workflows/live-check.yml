@@ -1,0 +1,52 @@
+name: Live sign-in check
+
+# Checks the production site's sign-in setup (Turnstile, Google OAuth) every
+# 30 minutes. A failed run emails whoever last edited this schedule. GitHub
+# pauses scheduled workflows after 60 days without repository activity.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Site to check
+        default: https://fortyfives.net
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  live-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: python/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r python/requirements.txt
+
+      - name: Check sign-in on the live site
+        env:
+          SITE_URL: ${{ inputs.url || 'https://fortyfives.net' }}
+        run: python -u python/live_check.py --url "$SITE_URL" --out artifacts/live
+
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-check-screenshots
+          path: artifacts/live/**
+          if-no-files-found: ignore

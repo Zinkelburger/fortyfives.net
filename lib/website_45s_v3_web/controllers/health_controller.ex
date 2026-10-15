@@ -5,6 +5,11 @@ defmodule Website45sV3Web.HealthController do
   Answers `200 ok` when the application is up and the database answers a
   trivial query, `503 unavailable` otherwise. Plain text, no session, no
   layout.
+
+  `GET /healthz/auth` reports whether sign-in can work (see
+  `Website45sV3.AuthHealth`): JSON with one entry per check, `200` when all
+  pass and `503` when any fails. It is not the container healthcheck, since a
+  Cloudflare or Google outage must not take the site down.
   """
 
   use Website45sV3Web, :controller
@@ -19,6 +24,14 @@ defmodule Website45sV3Web.HealthController do
       :ok -> send_resp(conn, 200, "ok")
       :error -> send_resp(conn, 503, "unavailable")
     end
+  end
+
+  def auth(conn, _params) do
+    {overall, checks} = Website45sV3.AuthHealth.status()
+
+    conn
+    |> put_status(if overall == :ok, do: 200, else: 503)
+    |> json(%{status: overall, checks: checks})
   end
 
   # A pool with no free connection raises rather than returning an error

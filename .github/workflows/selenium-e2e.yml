@@ -94,6 +94,7 @@ jobs:
 
           python/run_e2e.sh
           python -u python/mobile_check.py --url http://localhost:4000 --out artifacts/mobile
+          python -u python/auth_e2e.py --url http://localhost:4000
 
       - name: Dump app logs on failure
         if: failure()
@@ -106,5 +107,6 @@ jobs:
           name: selenium-e2e-artifacts
           path: |
             tbot_*.log
+            auth_e2e_failure.png
             artifacts/**
           if-no-files-found: ignore

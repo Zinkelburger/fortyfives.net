@@ -7,9 +7,10 @@ Read-only: creates no accounts and submits no forms. Checks
     verifications, Google OAuth client id and secret; see AuthHealth),
   * that /auth/google sends visitors to a Google sign-in page rather than
     Google's error page,
-  * that the Turnstile widget loads on every auth form. A script-driven
-    browser gets Cloudflare's interactive challenge, so the widget reaching
-    that point is the pass; a wrong site key or domain reports an error code.
+  * when Turnstile is enabled, that its widget loads on every auth form. A
+    script-driven browser gets Cloudflare's interactive challenge, so the
+    widget reaching that point is the pass; a wrong site key or domain
+    reports an error code. With Turnstile off, the forms must have no widget.
 
 Exits non-zero if any check fails, and writes a table to $GITHUB_STEP_SUMMARY
 when set.
@@ -43,13 +44,18 @@ def check_healthz(base):
     return r.status_code == 200 and r.text == "ok", f"{r.status_code} {r.text[:60]}"
 
 
+TURNSTILE_ENABLED = None  # learned from /healthz/auth
+
+
 def check_auth_health(base):
+    global TURNSTILE_ENABLED
     r = requests.get(f"{base}/healthz/auth", timeout=30, headers=SITE_HEADERS)
     try:
         body = r.json()
     except ValueError:
         return False, f"{r.status_code}, not JSON"
     checks = body.get("checks", {})
+    TURNSTILE_ENABLED = checks.get("turnstile_secret") != "disabled"
     detail = ", ".join(f"{name} {result}" for name, result in sorted(checks.items()))
     return r.status_code == 200 and body.get("status") == "ok", detail
 
@@ -94,6 +100,11 @@ def google_auth_error(url):
 
 def check_turnstile(driver, base, path, out):
     driver.get(f"{base}{path}")
+    if TURNSTILE_ENABLED is False:
+        time.sleep(1)
+        widgets = driver.find_elements(By.CSS_SELECTOR, ".cf-turnstile")
+        forms = driver.find_elements(By.TAG_NAME, "form")
+        return (not widgets and bool(forms)), "Turnstile off, form shown without a widget"
     deadline = time.time() + 30
     state = None
     while time.time() < deadline:

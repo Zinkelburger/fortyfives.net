@@ -16,10 +16,11 @@ front. Everything below happens on the host in a checkout of this repository
 
 ## One-time host bootstrap
 
-1. **Environment.** `cp .env.example .env`, fill in every value. All third-party
-   credentials (`TURNSTILE_SECRET`, `AWS_*`, `GOOGLE_*`) are required and must
-   be non-empty; the release refuses to boot without them. `CF_API_TOKEN` is a
-   Cloudflare API token scoped to the `fortyfives.net` zone with
+1. **Environment.** `cp .env.example .env`, fill in every value. The
+   third-party credentials `AWS_*` and `GOOGLE_*` are required and must be
+   non-empty; the release refuses to boot without them. `TURNSTILE_SECRET` is
+   required only with `TURNSTILE_ENABLED=true` (see [Turnstile](#turnstile)).
+   `CF_API_TOKEN` is a Cloudflare API token scoped to the `fortyfives.net` zone with
    `Zone:DNS:Edit` and `Zone:Zone:Read`; certbot uses it for DNS-01 challenges.
 
 2. **Database volume.** The data volume is declared `external` so that
@@ -88,16 +89,18 @@ The "Live sign-in check" workflow (`.github/workflows/live-check.yml`) runs
 (Actions → Live sign-in check → Run workflow). Run it after every deploy and
 after changing any credential. It checks:
 
-- `GET /healthz/auth`: Cloudflare accepts `TURNSTILE_SECRET`; the latest real
-  Turnstile verification did not fail on the secret; Google accepts
-  `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+- `GET /healthz/auth`: Google accepts `GOOGLE_CLIENT_ID` and
+  `GOOGLE_CLIENT_SECRET`; with Turnstile on, Cloudflare accepts
+  `TURNSTILE_SECRET` and the latest real verification did not fail on it.
 - `/auth/google` leads to Google's sign-in page, not its error page.
-- The Turnstile widget loads on the sign-in, registration and password-reset
-  forms (a wrong site key or domain shows up as `error <code>`).
+- With Turnstile on, its widget loads on the sign-in, registration and
+  password-reset forms (a wrong site key or domain shows up as
+  `error <code>`); with it off, the forms show no widget.
 
-It cannot complete a real password or Google sign-in: Turnstile shows a
-script-driven browser an interactive challenge, and Google blocks automated
-sign-in. A secret that Cloudflare accepts but that belongs to a different
+It does not sign in: it creates no accounts, Google blocks automated
+sign-in, and Turnstile shows a script-driven browser an interactive
+challenge. The full sign-up and password sign-in flow runs in the e2e
+workflow (`python/auth_e2e.py`) instead. With Turnstile on, a secret that Cloudflare accepts but that belongs to a different
 widget only shows up once a visitor submits a form; `/healthz/auth` then
 reports `turnstile_verifications` as failing until a token verifies again.
 
@@ -112,10 +115,15 @@ rules, Super Bot Fight Mode, Browser Integrity Check and Security Level
 selected. Plain Bot Fight Mode on the Free plan cannot be skipped by a rule;
 if it is on, turn it off (Security → Bots) or the check cannot pass.
 
-### Replacing the Turnstile widget
+### Turnstile
 
-Set `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET` in `.env` together (they must
-belong to the same widget), recreate `web`, then run the live check.
+Cloudflare Turnstile on the sign-in, sign-up, password-reset and
+confirmation-resend forms is off by default; the per-IP and per-account
+rate limits in `config/config.exs` apply either way. To turn it on during a
+bot wave, set `TURNSTILE_ENABLED=true` in `.env` (with `TURNSTILE_SECRET`,
+and `TURNSTILE_SITE_KEY` when not the one in `config/config.exs`), run
+`docker compose -f docker-compose-nginx.yml up -d web`, then run the live
+check. The site key and secret must belong to the same widget.
 
 ## Day 2
 

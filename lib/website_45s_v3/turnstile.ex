@@ -9,11 +9,13 @@ defmodule Website45sV3.Turnstile do
   Configuration:
 
     * `:turnstile_site_key` — public site key, set per environment. `nil`
-      disables both the widget and verification entirely (test env). In
-      production the `TURNSTILE_SITE_KEY` environment variable overrides it.
+      disables both the widget and verification entirely (test env, and
+      production unless `TURNSTILE_ENABLED=true`). In production the
+      `TURNSTILE_SITE_KEY` environment variable overrides it.
     * `:turnstile_secret` — siteverify secret. In production it comes from
       the `TURNSTILE_SECRET` environment variable via `config/runtime.exs`.
-      Production refuses to start without it. Verification fails closed if a
+      Production refuses to start without it when Turnstile is enabled.
+      Verification fails closed if a
       site key is configured without a secret in any other environment.
     * `:turnstile_hostnames` — hostnames a token may have been solved on.
       Defaults to `#{inspect(["fortyfives.net", "www.fortyfives.net"])}`; dev's

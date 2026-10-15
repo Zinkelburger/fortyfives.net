@@ -2,9 +2,11 @@
 
     python python/auth_e2e.py --url http://localhost:4000
 
-Needs Cloudflare's always-pass testing keys (the dev config), which headless
-Chrome solves without a challenge. Production's widget shows a script-driven
-browser an interactive challenge; python/live_check.py covers production.
+With Turnstile on it needs Cloudflare's always-pass testing keys (the dev
+config), which headless Chrome solves without a challenge; production's real
+widget shows a script-driven browser an interactive challenge. Each run
+creates an account, so against production pass --email-domain
+simulator.amazonses.com (SES's mailbox simulator) and delete it afterwards.
 """
 import argparse
 import secrets
@@ -37,7 +39,9 @@ def fill(d, name, value):
 
 
 def token_ready(d):
+    """True once the Turnstile token is in the form, or if there is no widget."""
     return d.execute_script(
+        "if (!document.querySelector('.cf-turnstile')) return 'no widget';"
         "return (document.querySelector('[name=cf-turnstile-response]') || {}).value")
 
 
@@ -48,6 +52,7 @@ def submit(d, label):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--url", default="http://localhost:4000")
+    parser.add_argument("--email-domain", default="example.com")
     args = parser.parse_args()
     base = args.url.rstrip("/")
 
@@ -57,7 +62,8 @@ def main():
     try:
         d.get(f"{base}/users/register")
         fill(d, "user[username]", username)
-        fill(d, "user[email]", f"{username}@example.com")
+        fill(d, "user[email]", f"{username}@{args.email_domain}")
+        print(f"account: {username}")
         fill(d, "user[password]", password)
         wait_for(lambda: token_ready(d), "Turnstile token on /users/register")
         submit(d, "Create an account")

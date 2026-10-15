@@ -13,6 +13,10 @@ Read-only: creates no accounts and submits no forms. Checks
 
 Exits non-zero if any check fails, and writes a table to $GITHUB_STEP_SUMMARY
 when set.
+
+Cloudflare challenges datacenter IPs such as GitHub's runners. When
+LIVE_CHECK_TOKEN is set it is sent as the X-Live-Check header, which a
+Cloudflare custom rule lets past the bot checks (see docs/deploy.md).
 """
 import argparse
 import base64
@@ -29,15 +33,18 @@ from tbot import get_driver
 
 TURNSTILE_FORMS = ["/users/log_in", "/users/register", "/users/reset_password"]
 BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64) fortyfives-live-check"
+LIVE_CHECK_TOKEN = os.getenv("LIVE_CHECK_TOKEN", "")
+# Only for requests to the site itself; never sent to Google.
+SITE_HEADERS = {"X-Live-Check": LIVE_CHECK_TOKEN} if LIVE_CHECK_TOKEN else {}
 
 
 def check_healthz(base):
-    r = requests.get(f"{base}/healthz", timeout=15)
+    r = requests.get(f"{base}/healthz", timeout=15, headers=SITE_HEADERS)
     return r.status_code == 200 and r.text == "ok", f"{r.status_code} {r.text[:60]}"
 
 
 def check_auth_health(base):
-    r = requests.get(f"{base}/healthz/auth", timeout=30)
+    r = requests.get(f"{base}/healthz/auth", timeout=30, headers=SITE_HEADERS)
     try:
         body = r.json()
     except ValueError:
@@ -49,7 +56,7 @@ def check_auth_health(base):
 
 def check_google_redirect(base):
     r = requests.get(f"{base}/auth/google", allow_redirects=False, timeout=15,
-                     headers={"User-Agent": BROWSER_UA})
+                     headers={"User-Agent": BROWSER_UA, **SITE_HEADERS})
     location = r.headers.get("location", "")
     target = urlparse(location)
     if r.status_code != 302 or target.hostname != "accounts.google.com":
@@ -131,6 +138,11 @@ def main():
 
     if not args.skip_browser:
         driver = get_driver()
+        if SITE_HEADERS:
+            # Sent with every request the page makes; it loads only this site
+            # and challenges.cloudflare.com.
+            driver.execute_cdp_cmd("Network.enable", {})
+            driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {"headers": SITE_HEADERS})
         try:
             for path in TURNSTILE_FORMS:
                 run(f"Turnstile on {path}", check_turnstile, driver, base, path, args.out)

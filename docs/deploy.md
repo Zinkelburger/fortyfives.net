@@ -103,6 +103,15 @@ reports `turnstile_verifications` as failing until a token verifies again.
 
 To run it locally: `python python/live_check.py --url https://fortyfives.net`.
 
+Cloudflare challenges GitHub's runners ("Just a moment..."), so the workflow
+sends the repository secret `LIVE_CHECK_TOKEN` as an `X-Live-Check` header,
+and a Cloudflare custom rule (Security → WAF → Custom rules) lets it through:
+expression `(http.host eq "fortyfives.net" and any(http.request.headers["x-live-check"][*] eq "<token>"))`,
+action *Skip* with all remaining custom rules, rate limiting rules, managed
+rules, Super Bot Fight Mode, Browser Integrity Check and Security Level
+selected. Plain Bot Fight Mode on the Free plan cannot be skipped by a rule;
+if it is on, turn it off (Security → Bots) or the check cannot pass.
+
 ### Replacing the Turnstile widget
 
 Set `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET` in `.env` together (they must

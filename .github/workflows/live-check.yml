@@ -41,6 +41,7 @@ jobs:
       - name: Check sign-in on the live site
         env:
           SITE_URL: ${{ inputs.url || 'https://fortyfives.net' }}
+          LIVE_CHECK_TOKEN: ${{ secrets.LIVE_CHECK_TOKEN }}
         run: python -u python/live_check.py --url "$SITE_URL" --out artifacts/live
 
       - name: Upload screenshots

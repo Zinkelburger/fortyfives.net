@@ -23,13 +23,18 @@ defmodule Website45sV3.Turnstile do
       A token minted for any other site is refused even if Cloudflare accepts
       it, so a leaked secret cannot be paired with a widget elsewhere.
     * `:turnstile_http_client` — module implementing `post/4`; defaults to
-      `Website45sV3.Turnstile.FinchClient`. Tests swap in a stub.
+      `Website45sV3.HTTPClient`. Tests swap in a stub.
 
   `check_secret/0` asks Cloudflare whether the secret is valid, using its
   dummy token. A secret can pass that and still have every real token
   rejected with `invalid-input-secret`, as happened from August to October
-  2026. No visitor can fix that, so it is logged as an error and kept as
+  2026. No visitor can fix that, so it is logged as an error and reported by
   `last_outcome/0` for `/healthz/auth` until a later token verifies.
+
+  A token solved on someone else's widget is rejected the same way, so one
+  visitor could fake that state. It is only reported once tokens from
+  `@config_error_sources` different client IPs have been rejected since the
+  last success. Outcomes live in an ETS table owned by `Outcomes`.
 
   Besides `success`, the siteverify response's `hostname` and `action` are
   checked. Cloudflare's documented testing keys answer with
@@ -57,26 +62,24 @@ defmodule Website45sV3.Turnstile do
   # `invalid-input-response`, an invalid one with `invalid-input-secret`.
   @dummy_token "XXXX.DUMMY.TOKEN.XXXX"
 
-  @outcome_key {__MODULE__, :last_outcome}
+  @outcomes __MODULE__.Outcomes
 
-  defmodule FinchClient do
+  # Client IPs whose tokens must be rejected for the secret before it is
+  # reported, and the most rejected IPs kept between successes.
+  @config_error_sources 3
+  @max_config_error_entries 16
+
+  defmodule Outcomes do
     @moduledoc false
+    # Owns the public ETS table `Turnstile` writes verification outcomes to.
+    use GenServer
 
-    @doc """
-    POSTs a form body and returns `{:ok, status, body}` or `{:error, reason}`.
-    Both the pool checkout and the response wait are bounded so a slow
-    Cloudflare cannot hold a request process indefinitely.
-    """
-    def post(url, headers, body, timeout_ms) do
-      request = Finch.build(:post, url, headers, body)
+    def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-      case Finch.request(request, Website45sV3.Finch,
-             pool_timeout: timeout_ms,
-             receive_timeout: timeout_ms
-           ) do
-        {:ok, %Finch.Response{status: status, body: body}} -> {:ok, status, body}
-        {:error, reason} -> {:error, reason}
-      end
+    @impl true
+    def init(_opts) do
+      :ets.new(__MODULE__, [:named_table, :public, :set, write_concurrency: true])
+      {:ok, nil}
     end
   end
 
@@ -95,7 +98,11 @@ defmodule Website45sV3.Turnstile do
   defp secret, do: Application.get_env(:website_45s_v3, :turnstile_secret)
 
   defp http_client do
-    Application.get_env(:website_45s_v3, :turnstile_http_client, FinchClient)
+    Application.get_env(:website_45s_v3, :turnstile_http_client, Website45sV3.HTTPClient)
+  end
+
+  defp siteverify(params) do
+    Website45sV3.HTTPClient.post_form(http_client(), @siteverify_url, params, @request_timeout_ms)
   end
 
   @doc """
@@ -122,24 +129,17 @@ defmodule Website45sV3.Turnstile do
   defp do_verify(token, remote_ip) when is_binary(token) and token != "" do
     params = %{"secret" => secret(), "response" => token}
     params = if remote_ip, do: Map.put(params, "remoteip", remote_ip), else: params
-    headers = [{"content-type", "application/x-www-form-urlencoded"}]
 
-    with {:ok, 200, body} <-
-           http_client().post(
-             @siteverify_url,
-             headers,
-             URI.encode_query(params),
-             @request_timeout_ms
-           ),
+    with {:ok, 200, body} <- siteverify(params),
          {:ok, %{"success" => true} = response} <- Jason.decode(body),
          :ok <- check_hostname(response),
          :ok <- check_action(response) do
-      record_outcome(:ok)
+      record_success()
     else
       {:ok, %{"error-codes" => codes}} ->
         if Enum.any?(codes, &(&1 in @config_error_codes)) do
           Logger.error("Turnstile secret rejected by Cloudflare: #{inspect(codes)}")
-          record_outcome({:config_error, codes})
+          record_config_error(codes, remote_ip)
         else
           Logger.warning("Turnstile verification failed: #{inspect(codes)}")
         end
@@ -166,25 +166,40 @@ defmodule Website45sV3.Turnstile do
   end
 
   @doc """
-  The most recent verification that either succeeded or hit a server-side
-  configuration error, with the time that state began: `{:ok, at}`,
-  `{{:config_error, codes}, at}`, or `nil` before the first one since boot.
+  `{{:config_error, codes}, since}` once tokens from enough client IPs have
+  been rejected for the secret since the last success, else `{:ok, at}` for
+  the last success, or `nil` before the first one since boot.
   """
-  def last_outcome, do: :persistent_term.get(@outcome_key, nil)
+  def last_outcome do
+    errors = :ets.match_object(@outcomes, {{:config_error, :_}, :_, :_})
 
-  # Writing a persistent term is costly, so only a change of state is stored.
-  # Always returns `:ok` so a successful `verify/2` can end with it.
-  defp record_outcome(outcome) do
-    case last_outcome() do
-      {^outcome, _at} -> :ok
-      _ -> :persistent_term.put(@outcome_key, {outcome, DateTime.utc_now()})
+    if length(errors) >= @config_error_sources do
+      {_key, codes, since} = Enum.min_by(errors, &elem(&1, 2), DateTime)
+      {{:config_error, codes}, since}
+    else
+      case :ets.lookup(@outcomes, :last_ok) do
+        [{:last_ok, at}] -> {:ok, at}
+        [] -> nil
+      end
     end
+  end
 
+  # Returns `:ok` so a successful `verify/2` can end with it.
+  defp record_success do
+    :ets.insert(@outcomes, {:last_ok, DateTime.utc_now()})
+    :ets.match_delete(@outcomes, {{:config_error, :_}, :_, :_})
     :ok
   end
 
+  # The first rejection per IP keeps its time, so `since` is when it began.
+  defp record_config_error(codes, remote_ip) do
+    if :ets.info(@outcomes, :size) <= @max_config_error_entries do
+      :ets.insert_new(@outcomes, {{:config_error, remote_ip}, codes, DateTime.utc_now()})
+    end
+  end
+
   @doc false
-  def reset_last_outcome, do: :persistent_term.erase(@outcome_key)
+  def reset_last_outcome, do: :ets.delete_all_objects(@outcomes)
 
   @doc """
   Asks Cloudflare whether the configured secret is valid by verifying the
@@ -202,10 +217,7 @@ defmodule Website45sV3.Turnstile do
         {:error, "missing-input-secret"}
 
       true ->
-        body = URI.encode_query(%{"secret" => secret(), "response" => @dummy_token})
-        headers = [{"content-type", "application/x-www-form-urlencoded"}]
-
-        case http_client().post(@siteverify_url, headers, body, @request_timeout_ms) do
+        case siteverify(%{"secret" => secret(), "response" => @dummy_token}) do
           {:ok, 200, body} -> dummy_result(Jason.decode(body))
           {:ok, status, _body} -> {:error, "siteverify status #{status}"}
           {:error, reason} -> {:error, "siteverify #{inspect(reason)}"}

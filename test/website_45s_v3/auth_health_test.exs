@@ -101,10 +101,35 @@ defmodule Website45sV3.AuthHealthTest do
       {:ok, 200, Jason.encode!(%{"success" => false, "error-codes" => ["invalid-input-secret"]})}
     end)
 
-    Turnstile.verify("visitor-token")
+    for ip <- ["192.0.2.1", "192.0.2.2", "192.0.2.3"], do: Turnstile.verify("visitor-token", ip)
 
     assert {:fail, %{"turnstile_verifications" => "fail: invalid-input-secret since " <> _}} =
              AuthHealth.status()
+  end
+
+  test "a check that hangs fails without holding up the other" do
+    valid_turnstile_secret()
+    Application.put_env(:website_45s_v3, :auth_health_check_timeout_ms, 200)
+    on_exit(fn -> Application.delete_env(:website_45s_v3, :auth_health_check_timeout_ms) end)
+
+    Application.put_env(:website_45s_v3, :google_stub, %{
+      responder: fn -> Process.sleep(:infinity) end,
+      test_pid: self()
+    })
+
+    assert {:fail, %{"google_oauth" => "fail: timed out", "turnstile_secret" => "ok"}} =
+             AuthHealth.status()
+  end
+
+  test "a check that raises fails" do
+    valid_turnstile_secret()
+
+    Application.put_env(:website_45s_v3, :google_stub, %{
+      responder: fn -> raise "boom" end,
+      test_pid: self()
+    })
+
+    assert {:fail, %{"google_oauth" => "fail: boom"}} = AuthHealth.status()
   end
 
   test "external checks are cached" do

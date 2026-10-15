@@ -188,18 +188,30 @@ defmodule Website45sV3.TurnstileTest do
 
     test "records a rejected secret and clears it once a token verifies" do
       siteverify_codes(["invalid-input-secret"])
-      assert {:error, :turnstile_failed} = Turnstile.verify("token")
+
+      for ip <- ["192.0.2.1", "192.0.2.2", "192.0.2.3"] do
+        assert {:error, :turnstile_failed} = Turnstile.verify("token", ip)
+      end
 
       assert {{:config_error, ["invalid-input-secret"]}, %DateTime{} = since} =
                Turnstile.last_outcome()
 
       # A repeat keeps the time the failure began.
-      Turnstile.verify("token")
+      Turnstile.verify("token", "192.0.2.4")
+      Turnstile.verify("token", "192.0.2.1")
       assert {{:config_error, _codes}, ^since} = Turnstile.last_outcome()
 
       TurnstileStub.with_siteverify(fn _params -> {:ok, 200, TurnstileStub.success_body()} end)
       assert :ok = Turnstile.verify("token")
       assert {:ok, %DateTime{}} = Turnstile.last_outcome()
+    end
+
+    test "rejections from one client IP are not reported" do
+      siteverify_codes(["invalid-input-secret"])
+
+      for _ <- 1..5, do: Turnstile.verify("foreign-widget-token", "192.0.2.9")
+
+      assert Turnstile.last_outcome() == nil
     end
 
     test "a visitor's bad token is not a configuration error" do

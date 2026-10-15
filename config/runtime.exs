@@ -48,20 +48,30 @@ if config_env() == :prod do
   # Turnstile is off unless TURNSTILE_ENABLED=true; the rate limits in
   # config.exs apply either way. With it off, no widget is shown and nothing
   # is verified (a nil site key), so a bot wave can be met by setting the
-  # flag and recreating `web`.
-  if System.get_env("TURNSTILE_ENABLED") in ["true", "1"] do
-    turnstile_secret = System.get_env("TURNSTILE_SECRET", "")
+  # flag and recreating `web`. A value that is neither on nor off stops the
+  # boot rather than silently leaving the forms unprotected.
+  turnstile_enabled =
+    case System.get_env("TURNSTILE_ENABLED", "") |> String.trim() |> String.downcase() do
+      value when value in ["true", "1", "yes", "on"] -> true
+      value when value in ["", "false", "0", "no", "off"] -> false
+      value -> raise "TURNSTILE_ENABLED must be true or false, got #{inspect(value)}"
+    end
 
-    if String.trim(turnstile_secret) == "" do
+  if turnstile_enabled do
+    turnstile_secret = String.trim(System.get_env("TURNSTILE_SECRET", ""))
+
+    if turnstile_secret == "" do
       raise "TURNSTILE_ENABLED is set but TURNSTILE_SECRET is empty"
     end
 
     config :website_45s_v3, :turnstile_secret, turnstile_secret
 
     # The site key and secret must belong to the same Turnstile widget.
-    # Setting both in `.env` lets a widget be replaced without a rebuild.
-    if site_key = System.get_env("TURNSTILE_SITE_KEY") do
-      config :website_45s_v3, :turnstile_site_key, site_key
+    # Setting both in `.env` lets a widget be replaced without a rebuild. A
+    # blank value keeps the site key from config.exs.
+    case String.trim(System.get_env("TURNSTILE_SITE_KEY", "")) do
+      "" -> :ok
+      site_key -> config :website_45s_v3, :turnstile_site_key, site_key
     end
   else
     config :website_45s_v3, :turnstile_site_key, nil

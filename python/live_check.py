@@ -100,7 +100,13 @@ def google_auth_error(url):
 
 def check_turnstile(driver, base, path, out):
     driver.get(f"{base}{path}")
-    if TURNSTILE_ENABLED is False:
+    enabled = TURNSTILE_ENABLED
+    if enabled is None:
+        # /healthz/auth gave no answer; the layout loads api.js only when on.
+        time.sleep(1)
+        enabled = bool(driver.find_elements(
+            By.CSS_SELECTOR, 'script[src*="challenges.cloudflare.com/turnstile"]'))
+    if not enabled:
         time.sleep(1)
         widgets = driver.find_elements(By.CSS_SELECTOR, ".cf-turnstile")
         forms = driver.find_elements(By.TAG_NAME, "form")

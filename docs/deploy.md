@@ -101,8 +101,10 @@ It does not sign in: it creates no accounts, Google blocks automated
 sign-in, and Turnstile shows a script-driven browser an interactive
 challenge. The full sign-up and password sign-in flow runs in the e2e
 workflow (`python/auth_e2e.py`) instead. With Turnstile on, a secret that Cloudflare accepts but that belongs to a different
-widget only shows up once a visitor submits a form; `/healthz/auth` then
-reports `turnstile_verifications` as failing until a token verifies again.
+widget only shows up once visitors submit forms; `/healthz/auth` reports
+`turnstile_verifications` as failing once tokens from three different IPs
+have been rejected for the secret, until a token verifies again. A failed
+check is cached for 30 seconds, a passing one for 5 minutes.
 
 To run it locally: `python python/live_check.py --url https://fortyfives.net`.
 
@@ -124,6 +126,9 @@ bot wave, set `TURNSTILE_ENABLED=true` in `.env` (with `TURNSTILE_SECRET`,
 and `TURNSTILE_SITE_KEY` when not the one in `config/config.exs`), run
 `docker compose -f docker-compose-nginx.yml up -d web`, then run the live
 check. The site key and secret must belong to the same widget.
+`TURNSTILE_ENABLED` accepts `true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off`
+(any case, or empty for off); any other value stops the release from
+booting. An empty `TURNSTILE_SITE_KEY` keeps the one in `config/config.exs`.
 
 ## Day 2
 

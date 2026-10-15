@@ -47,3 +47,25 @@ test('the widget state is recorded on the element', t => {
   f.options['error-callback'](110200)
   assert.equal(f.el.dataset.turnstileState, 'error 110200')
 })
+
+test('a hook remounted on a kept element reuses its widget', async t => {
+  const f = fixture(t)
+  f.hook.destroyed()
+  const again = {...Turnstile, el: f.el, handleEvent() {}}
+  again.mounted()
+  await tick(5)
+  assert.deepEqual(f.calls, ['render'])
+  assert.equal(again.widgetId, 'widget-1')
+})
+
+test('a reset clears the previous widget state', t => {
+  let reset
+  const f = fixture(t)
+  const hook = {...Turnstile, el: f.el, handleEvent(_name, fn) { reset = fn }}
+  f.hook.destroyed()
+  hook.mounted()
+  f.options['error-callback']('110200')
+  assert.equal(f.el.dataset.turnstileState, 'error 110200')
+  reset()
+  assert.equal(f.el.dataset.turnstileState, 'rendered')
+})

@@ -4,10 +4,14 @@
 // submit so the retry gets a fresh token instead of timeout-or-duplicate.
 export const Turnstile = {
   mounted() {
-    this.widgetId = null
+    // A hook can be destroyed and remounted on an element LiveView kept
+    // (phx-update="ignore"); reuse the widget already rendered into it.
+    this.widgetId = this.el.turnstileWidgetId ?? null
     this.handleEvent("turnstile:reset", () => {
       if (this.widgetId !== null && window.turnstile) {
+        delete this.el.dataset.turnstileState
         window.turnstile.reset(this.widgetId)
+        this.setState("rendered")
       }
     })
     this.renderWidget()
@@ -18,6 +22,7 @@ export const Turnstile = {
       if (this.widgetId !== null && this.widgetSize === 'flexible' && this.el.clientWidth < 300) {
         window.turnstile.remove(this.widgetId)
         this.widgetId = null
+        delete this.el.turnstileWidgetId
         this.renderWidget()
       }
     })
@@ -34,7 +39,10 @@ export const Turnstile = {
     const widgetId = this.widgetId
     this.widgetId = null
     setTimeout(() => {
-      if (!this.el.isConnected && window.turnstile) window.turnstile.remove(widgetId)
+      if (!this.el.isConnected && window.turnstile) {
+        window.turnstile.remove(widgetId)
+        delete this.el.turnstileWidgetId
+      }
     }, 0)
   },
   // Callbacks can fire during render(), before "rendered" would overwrite them.
@@ -47,6 +55,7 @@ export const Turnstile = {
     if (this.widgetId !== null) return
     if (window.turnstile) {
       this.widgetSize = this.widgetSize === 'compact' || this.el.clientWidth < 300 ? 'compact' : 'flexible'
+      delete this.el.dataset.turnstileState
       this.widgetId = window.turnstile.render(this.el, {
         sitekey: this.el.dataset.sitekey,
         action: this.el.dataset.action,
@@ -62,6 +71,7 @@ export const Turnstile = {
         "unsupported-callback": () => this.setState("unsupported"),
         "error-callback": (code) => this.setState(`error ${code}`),
       })
+      this.el.turnstileWidgetId = this.widgetId
       this.setState("rendered")
     } else if (document.body.contains(this.el)) {
       this.retryTimer = setTimeout(() => this.renderWidget(), 100)

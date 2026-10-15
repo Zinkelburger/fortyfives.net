@@ -1,6 +1,6 @@
 defmodule Website45sV3.TurnstileStub do
   @moduledoc """
-  Stand-in for `Website45sV3.Turnstile.FinchClient` so tests can script the
+  Stand-in for `Website45sV3.HTTPClient` so tests can script the
   siteverify response without touching the network.
 
   `with_siteverify/1` configures a site key and secret (so verification is

@@ -35,8 +35,13 @@ After changing anything on the host, copy the file back here and commit it.
 - TLS: Let's Encrypt certificates in `/etc/letsencrypt` on the host, renewed
   by `certbot` over HTTP (webroot `./certbot/www`, served by nginx at
   `/.well-known/acme-challenge/`). nginx reloads every 24h to pick them up.
-- Cloudflare proxies the site. nginx does not set real client IPs; Phoenix
-  reads `CF-Connecting-IP` from the trusted proxy (`Turnstile.client_ip/1`).
+- Cloudflare proxies the site, but the server also answers direct requests.
+  nginx trusts `CF-Connecting-IP` only from Cloudflare's ranges (listed in
+  `site.conf`) and overwrites `CF-Connecting-IP`, `X-Forwarded-For` and
+  `X-Real-IP` with the result, which Phoenix uses as the client IP
+  (`Turnstile.client_ip/1`) for rate limits. If Cloudflare adds ranges
+  (https://www.cloudflare.com/ips), visitors on them share their edge's IP
+  until the list is updated.
 
 ## Deploying a release
 

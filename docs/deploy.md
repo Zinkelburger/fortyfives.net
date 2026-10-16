@@ -4,6 +4,10 @@ The site runs as a Phoenix release in Docker behind nginx, with Cloudflare in
 front. Everything below happens on the host in a checkout of this repository
 (or a directory containing `docker-compose-nginx.yml`, `nginx.conf` and `.env`).
 
+The live site on the Contabo host does not run this stack yet: it runs the
+older setup copied in [`deploy/contabo/`](../deploy/contabo/README.md), which
+also has its release and rebuild steps.
+
 ## Files
 
 | File | Purpose |

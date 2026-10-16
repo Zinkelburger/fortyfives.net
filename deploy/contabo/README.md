@@ -83,5 +83,31 @@ in `docker-compose.yml` and run `docker compose up -d web db_backup`.
 6. `docker compose up -d`, point Cloudflare's DNS at the new IP, and run the
    checks in step 5 of the release steps above.
 
-Database backups are kept on the host itself, so a lost host takes them
-with it unless they were copied elsewhere.
+## Off-host backups
+
+The host keeps 14 days of daily backups in `fortyfives_sqlite_backups`; each
+is a full copy of the database (about 175 MB in October 2026, nearly all of
+it session replays, which the app stores gzipped and keeps 60 days).
+
+`scripts/pull-prod-backups.sh` copies the newest one into a restic
+repository at `~/Backups/fortyfives.net/restic` on the machine it runs on,
+after `PRAGMA integrity_check`. restic stores each piece of data once, so a
+weekly snapshot only adds what changed rather than another full copy. It
+keeps one snapshot per week for a year and one per month for five years, so
+replays outlive production's 60 days. The repository has no password (the
+laptop disk is encrypted). Log: `~/Backups/fortyfives.net/pull.log`.
+
+Restore the newest snapshot:
+
+```sh
+restic -r ~/Backups/fortyfives.net/restic --insecure-no-password snapshots
+restic -r ~/Backups/fortyfives.net/restic --insecure-no-password restore latest --target /tmp/restore
+```
+
+On Andrew's laptop it runs weekly through a per-user anacron, which catches
+up after the laptop was off:
+
+- crontab: `@hourly /usr/bin/anacron -s -t $HOME/.config/anacron/anacrontab -S $HOME/.local/state/anacron`
+- `~/.config/anacron/anacrontab`: `7  10  fortyfives-backups  /home/anbernal/Projects/fortyfives.net/scripts/pull-prod-backups.sh`
+
+It needs passphrase-less SSH to `twic-vps` (no agent under cron).

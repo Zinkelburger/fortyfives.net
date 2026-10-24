@@ -24,7 +24,7 @@ services:
         max-size: 10m
         max-file: '3'
   db:
-    image: docker.io/library/postgres:15.18-trixie@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+    image: docker.io/library/postgres:15.19-trixie@sha256:baa22e6286bf832cb147b8bb5aa9d8bc999846d69c21d11bf63f58fbeed1fa48
     restart: unless-stopped
     env_file:
     - .env
@@ -33,7 +33,7 @@ services:
     profiles:
     - postgres-rollback
   nginx:
-    image: nginx:stable-alpine
+    image: docker.io/library/nginx:1.30.6-alpine3.24@sha256:47928bf67eb62a1863cb08d9ecb52d3e704304ba614eaee17884204677702951
     restart: unless-stopped
     ports:
     - 80:80
@@ -47,7 +47,7 @@ services:
     depends_on:
     - web
   certbot:
-    image: certbot/certbot
+    image: docker.io/certbot/certbot:v5.8.0@sha256:f70ad0adbb7e117f0fe42a63c553f28ea451edabc0148757b6efcd9735acaa20
     restart: unless-stopped
     volumes:
     - /etc/letsencrypt:/etc/letsencrypt

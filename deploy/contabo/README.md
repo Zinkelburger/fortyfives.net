@@ -100,6 +100,22 @@ renewal and reload nginx straight away:
 Rollback: put the previous digest (`backups/release-vX/previous-image`) back
 in `docker-compose.yml` and run `docker compose up -d web db_backup`.
 
+## Updating nginx, certbot and postgres
+
+These images are pinned by tag and digest, so they only change when the
+compose file does. To pick up security fixes:
+
+1. Find the new tag's digest, e.g.
+   `skopeo inspect --raw docker://docker.io/library/nginx:1.30.6-alpine3.24 | sha256sum`
+   (nginx: the newest stable `1.<even>.x-alpine` tag).
+2. Copy `docker-compose.yml` into `backups/maint-<date>/`, then replace only
+   the `image:` lines. Keep `restart: unless-stopped` on certbot.
+3. `docker compose pull nginx certbot`, then
+   `docker compose run --rm --no-deps -T nginx nginx -t` (tests the live
+   config with the new image), then `docker compose up -d --no-deps nginx certbot`.
+4. Check `/healthz`, `docker compose exec -T certbot certbot renew --dry-run`,
+   and copy `docker-compose.yml` back here.
+
 ## Rebuilding the host
 
 1. Install Docker with the Compose plugin. Create `/home/fortyfives` with

@@ -1,6 +1,6 @@
 services:
   web:
-    image: docker.io/thwar/fortyfives.net@sha256:f34103e72f76310d3dcb08eab093b73e8f4cd974377123fd1a5916ef3f5c8e5d
+    image: docker.io/thwar/fortyfives.net@sha256:8cfcb36dc837d154f7829026912b325a9ec508f554bb21ed3e74ff609944cad6
     restart: unless-stopped
     env_file:
     - .env
@@ -55,7 +55,7 @@ services:
     entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w
       /var/www/certbot; sleep 12h & wait $${!}; done;'
   db_backup:
-    image: docker.io/thwar/fortyfives.net@sha256:f34103e72f76310d3dcb08eab093b73e8f4cd974377123fd1a5916ef3f5c8e5d
+    image: docker.io/thwar/fortyfives.net@sha256:8cfcb36dc837d154f7829026912b325a9ec508f554bb21ed3e74ff609944cad6
     restart: unless-stopped
     user: root
     environment:

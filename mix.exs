@@ -45,7 +45,7 @@ defmodule Website45sV3.MixProject do
       {:phoenix, "~> 1.8.15"},
       {:phoenix_ecto, "~> 4.7.0"},
       {:ecto_sql, "~> 3.14"},
-      {:ecto_sqlite3, "~> 0.25.0"},
+      {:ecto_sqlite3, "~> 0.26.0"},
       # Only the one-off PostgreSQL importer needs this driver.
       {:postgrex, "~> 0.22.4", only: :dev, runtime: false},
       {:phoenix_html, "~> 4.3.0"},
@@ -57,7 +57,9 @@ defmodule Website45sV3.MixProject do
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:bamboo, "~> 2.3"},
       {:bamboo_ses, "~> 0.5.0"},
-      {:ueberauth, "~> 0.10"},
+      # ueberauth_google 0.12.1 still declares ~> 0.10.0; 0.11 signs the OAuth
+      # state cookie (CSRF hardening) and the strategy works unchanged.
+      {:ueberauth, "~> 0.11", override: true},
       {:ueberauth_google, "~> 0.11"},
       {:finch, "~> 0.24"},
       {:telemetry_metrics, "~> 1.2"},

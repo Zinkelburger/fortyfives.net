@@ -18,6 +18,9 @@ defmodule Website45sV3Web.UserSettingsLive do
         <p style="color: #d2e8f9">
           Change your username
         </p>
+        <p style="color: #a9c4dc; font-size: 0.95rem;">
+          This is the name other players see at the table.
+        </p>
         <.simple_form
           for={@username_form}
           id="username_form"

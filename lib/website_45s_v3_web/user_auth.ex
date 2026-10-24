@@ -209,6 +209,27 @@ defmodule Website45sV3Web.UserAuth do
     end
   end
 
+  # Sends a Google sign-up still on its generated name to /users/welcome,
+  # which returns them here afterwards. Runs after `:mount_current_user`. The
+  # redirect happens in handle_params, where the requested path is known.
+  # Only the lobby pages use it: a game in progress is never interrupted.
+  def on_mount(:offer_username, _params, _session, socket) do
+    case socket.assigns.current_user do
+      %{username_pending: true} when socket.router != nil ->
+        {:cont,
+         Phoenix.LiveView.attach_hook(socket, :offer_username, :handle_params, fn
+           _params, uri, socket ->
+             %URI{path: path} = URI.parse(uri)
+
+             {:halt,
+              Phoenix.LiveView.redirect(socket, to: ~p"/users/welcome?#{[return_to: path]}")}
+         end)}
+
+      _ ->
+        {:cont, socket}
+    end
+  end
+
   def on_mount(:redirect_if_user_is_authenticated, _params, session, socket) do
     socket = mount_current_user(socket, session)
 

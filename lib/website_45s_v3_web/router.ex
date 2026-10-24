@@ -112,6 +112,7 @@ defmodule Website45sV3Web.Router do
       ] do
       live "/users/settings", UserSettingsLive, :edit
       live "/users/settings/confirm_email/:token", UserSettingsLive, :confirm_email
+      live "/users/welcome", UserWelcomeLive, :edit
     end
   end
 
@@ -122,6 +123,7 @@ defmodule Website45sV3Web.Router do
     live_session :default,
       on_mount: [
         {Website45sV3Web.UserAuth, :mount_current_user},
+        {Website45sV3Web.UserAuth, :offer_username},
         {Website45sV3Web.SiteTracking, :default}
       ],
       root_layout: {Website45sV3Web.Layouts, :root} do

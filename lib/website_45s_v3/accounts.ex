@@ -131,6 +131,17 @@ defmodule Website45sV3.Accounts do
   def update_user_username(user, attrs) do
     user
     |> User.username_changeset(attrs)
+    |> Ecto.Changeset.put_change(:username_pending, false)
+    |> Repo.update()
+  end
+
+  @doc """
+  Records that a Google sign-up chose to keep their generated username, so
+  they are not offered to pick one again.
+  """
+  def keep_username(%User{} = user) do
+    user
+    |> Ecto.Changeset.change(username_pending: false)
     |> Repo.update()
   end
 
@@ -532,7 +543,7 @@ defmodule Website45sV3.Accounts do
 
     %User{}
     |> User.registration_changeset(%{email: email, username: username, password: password})
-    |> Ecto.Changeset.change(google_uid: uid)
+    |> Ecto.Changeset.change(google_uid: uid, username_pending: true)
     |> User.confirm_changeset()
     |> Ecto.Changeset.unique_constraint(:google_uid)
     |> Repo.insert()
@@ -547,8 +558,8 @@ defmodule Website45sV3.Accounts do
 
   @doc """
   A random, currently unused `player_xxxxxxx` username. Given to Google
-  sign-ups, which never pick a name themselves; they can change it in
-  settings. Never derived from the email address: the username is shown to
+  sign-ups, which do not pick a name to sign in; they are offered to choose
+  one afterwards (`/users/welcome`) and can change it in settings. Never derived from the email address: the username is shown to
   strangers at the table.
   """
   def random_username do

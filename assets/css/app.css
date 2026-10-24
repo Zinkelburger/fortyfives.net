@@ -411,6 +411,46 @@ input[type='checkbox'], input[type='radio'] {
         margin-right: 10px;
 }
 
+/* Username welcome page (Google sign-ups) */
+
+.welcome-card {
+        background-color: #071f31;
+        border: 2px solid #d2e8f9;
+        border-radius: 10px;
+        padding: 0 10px 14px;
+}
+
+.welcome-keep {
+        display: block;
+        width: 100%;
+        min-height: 44px;
+        background: none;
+        border: none;
+        color: #d2e8f9;
+        font-size: 1.05rem;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        overflow-wrap: anywhere;
+        cursor: pointer;
+}
+
+.welcome-keep:hover {
+        color: #ffffff;
+}
+
+.welcome-note {
+        margin: 6px 0 0;
+        color: #a9c4dc;
+        font-size: 0.95rem;
+        text-align: center;
+}
+
+.welcome-note-link {
+        color: #d2e8f9;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+}
+
 /* Home and learn pages */
 
 .home-container {

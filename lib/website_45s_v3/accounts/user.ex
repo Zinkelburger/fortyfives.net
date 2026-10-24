@@ -84,6 +84,9 @@ defmodule Website45sV3.Accounts.User do
     field :password, :string, virtual: true, redact: true
     field :hashed_password, :string, redact: true
     field :confirmed_at, :naive_datetime
+    # A Google sign-up still on its generated name who has not yet been
+    # offered the chance to pick one (see `Website45sV3Web.UserWelcomeLive`).
+    field :username_pending, :boolean, default: false
 
     timestamps()
   end

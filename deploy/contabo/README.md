@@ -25,6 +25,7 @@ After changing anything on the host, copy the file back here and commit it.
 | `nginx/conf.d/site.conf` | `deploy/contabo/nginx/conf.d/site.conf` | Single-file bind mount: edit in place (`cat new > site.conf`), not `sed -i` or `mv`, then `nginx -t` and `nginx -s reload`. |
 | `scripts/backup-sqlite.sh` | `scripts/backup-sqlite.sh` | Daily SQLite online backup, 14 days kept. |
 | `.env` | `deploy/contabo/env.keys` (key names only) | Secrets stay on the host. |
+| `/etc/letsencrypt/renewal/fortyfives.net.conf` | `deploy/contabo/letsencrypt/renewal/fortyfives.net.conf` | Written by certbot; the drift check compares only `[renewalparams]` and below. Keys and certificates stay on the host. |
 | `backups/release-vX/` | — | Per-release record: `docker-compose.before.yml`, `env.before`, `previous-image`, `new-image`, `started`, `activated` (UTC). |
 | `docker-compose.sqlite.yml` | — | Leftover from the SQLite cutover; not used. |
 
@@ -32,9 +33,8 @@ After changing anything on the host, copy the file back here and commit it.
   database, `/data/fortyfives.db` in `web`), `fortyfives_sqlite_backups`
   (`/backups` in `db_backup`), `fortyfives_db_data` (old PostgreSQL data,
   only for the `postgres-rollback` profile).
-- TLS: Let's Encrypt certificates in `/etc/letsencrypt` on the host, renewed
-  by `certbot` over HTTP (webroot `./certbot/www`, served by nginx at
-  `/.well-known/acme-challenge/`). nginx reloads every 24h to pick them up.
+- TLS: Let's Encrypt, renewed by the `certbot` container (see
+  [TLS certificate](#tls-certificate)).
 - Cloudflare proxies the site, but the server also answers direct requests.
   nginx trusts `CF-Connecting-IP` only from Cloudflare's ranges (listed in
   `site.conf`) and overwrites `CF-Connecting-IP`, `X-Forwarded-For` and
@@ -42,6 +42,44 @@ After changing anything on the host, copy the file back here and commit it.
   (`Turnstile.client_ip/1`) for rate limits. If Cloudflare adds ranges
   (https://www.cloudflare.com/ips), visitors on them share their edge's IP
   until the list is updated.
+
+## TLS certificate
+
+One ECDSA Let's Encrypt certificate covers `fortyfives.net` and
+`www.fortyfives.net`. It lives in `/etc/letsencrypt` on the host (not a Docker
+volume) and is bind-mounted read-only into nginx. Nothing on the host itself
+renews it: there is no host certbot, cron job or systemd timer. The `certbot`
+service in `docker-compose.yml` is the only renewer.
+
+- **Renewal:** the container runs `certbot renew --webroot -w /var/www/certbot`
+  every 12 hours. certbot renews once the certificate has 30 days left
+  (certificates last 90 days). Renewal settings are in
+  `/etc/letsencrypt/renewal/fortyfives.net.conf`; a copy is in
+  `letsencrypt/renewal/` here (the ACME account key under `accounts/` is not).
+- **Challenge:** HTTP-01 over the webroot. certbot writes the token to
+  `./certbot/www`, and nginx serves it on port 80 at
+  `/.well-known/acme-challenge/` without redirecting to HTTPS. This works
+  through Cloudflare for both names. If that changes (an "Always Use HTTPS"
+  rule, or a block on port 80), renewals fail.
+- **Pickup:** there are no deploy hooks (`renewal-hooks/` is empty). nginx
+  reloads itself every 24 hours, so a renewed certificate is served within a
+  day.
+- **The service must keep `restart: unless-stopped`.** Without it the
+  container stays stopped after a host reboot, and the certificate quietly
+  expires. That happened on the 2026-10-19 reboot and was caught on
+  2026-10-24, with 55 days left.
+
+Check:
+
+```sh
+ssh twic-vps 'docker ps --filter name=fortyfives-certbot-1 --format "{{.Status}}"'      # should be Up
+ssh twic-vps 'openssl x509 -noout -enddate -in /etc/letsencrypt/live/fortyfives.net/cert.pem'
+ssh twic-vps 'cd /home/fortyfives && docker compose exec -T certbot certbot renew --dry-run'  # staging; waits up to ~8 min first
+```
+
+If the certificate has already expired, or `renew` keeps failing, force a
+renewal and reload nginx straight away:
+`docker compose exec certbot certbot renew --force-renewal && docker compose exec nginx nginx -s reload`.
 
 ## Deploying a release
 

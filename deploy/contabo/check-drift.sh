@@ -27,6 +27,26 @@ compare docker-compose.yml "$here/docker-compose.yml"
 compare nginx/conf.d/site.conf "$here/nginx/conf.d/site.conf"
 compare scripts/backup-sqlite.sh "$repo/scripts/backup-sqlite.sh"
 
+# certbot rewrites its version and ACME renewal-info timestamps on every run;
+# only the renewal parameters are ours.
+params() { sed -n '/^\[renewalparams\]/,/^\[acme_renewal_info\]/p'; }
+renewal=/etc/letsencrypt/renewal/fortyfives.net.conf
+local_params=$(mktemp)
+params < "$here/letsencrypt/renewal/fortyfives.net.conf" > "$local_params"
+if ssh "$host" "cat $renewal" | params | diff -u --label "host:$renewal" --label "repo:letsencrypt/renewal" - "$local_params"; then
+  echo "same: $renewal"
+else
+  status=1
+fi
+rm -f "$local_params"
+
+if [ "$(ssh "$host" "docker inspect -f '{{.State.Running}}' fortyfives-certbot-1")" = true ]; then
+  echo "running: certbot"
+else
+  echo "NOT RUNNING: certbot (nothing else renews the TLS certificate)"
+  status=1
+fi
+
 local_keys=$(mktemp)
 trap 'rm -f "$local_keys"' EXIT
 keys < "$here/env.keys" > "$local_keys"

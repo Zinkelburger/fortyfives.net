@@ -13,6 +13,7 @@ import secrets
 import sys
 import time
 
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 
 from tbot import get_driver
@@ -29,7 +30,12 @@ def wait_for(fn, what, timeout=20):
 
 
 def page_text(d):
-    return d.find_element(By.TAG_NAME, "body").text
+    # Every form here posts and redirects; a <body> found just before the
+    # navigation is gone by the time its text is read. Read again next poll.
+    try:
+        return d.find_element(By.TAG_NAME, "body").text
+    except StaleElementReferenceException:
+        return ""
 
 
 def fill(d, name, value):

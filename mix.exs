@@ -66,7 +66,7 @@ defmodule Website45sV3.MixProject do
       {:telemetry_poller, "~> 1.3"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.4"},
-      {:bandit, "~> 1.13"},
+      {:bandit, "~> 1.14"},
       {:sobelow, "~> 0.16", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}

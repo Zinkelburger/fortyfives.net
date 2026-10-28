@@ -1,7 +1,8 @@
 defmodule Website45sV3.Analytics.Pruner do
   @moduledoc """
   Runs `Website45sV3.Analytics.prune/0` on a schedule so replay storage and
-  game event logs stay bounded (see the retention config there).
+  game event logs stay bounded (see the retention config there), and logs
+  the day's `Website45sV3.Analytics.Health` summary.
 
   Options: `:interval_ms` (default 24 hours) and `:initial_delay_ms`
   (default 5 minutes).
@@ -12,6 +13,7 @@ defmodule Website45sV3.Analytics.Pruner do
   require Logger
 
   alias Website45sV3.Analytics
+  alias Website45sV3.Analytics.Health
 
   @default_interval_ms 24 * 60 * 60 * 1000
   @default_initial_delay_ms 5 * 60 * 1000
@@ -42,9 +44,18 @@ defmodule Website45sV3.Analytics.Pruner do
       Logger.info("Analytics pruner: #{inspect(result)}")
     end
 
+    log_health()
     Process.send_after(self(), :prune, state.interval_ms)
     {:noreply, state}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # A failing summary must not stop the pruning.
+  defp log_health do
+    summary = Health.text(days: 1)
+    Logger.info("Daily health: " <> (summary |> String.trim() |> String.replace("\n", ";")))
+  rescue
+    error -> Logger.warning("Daily health summary failed: #{Exception.message(error)}")
+  end
 end

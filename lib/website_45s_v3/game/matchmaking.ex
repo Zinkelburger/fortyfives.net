@@ -6,6 +6,7 @@ defmodule Website45sV3.Game.Matchmaking do
   require Logger
 
   alias Website45sV3.Game.GameController
+  alias Website45sV3.Game.QueueHolders
 
   @doc """
   Assigns a display name to a joining player. Anonymous players get a unique
@@ -44,13 +45,21 @@ defmodule Website45sV3.Game.Matchmaking do
   (in which case no players were redirected).
 
   A private table passes `rematch_id:`, the lobby its players can gather in
-  again once the game is over.
+  again once the game is over. `queue:` names the queue in the log line.
   """
   def start_game(players, opts \\ []) do
     game_name = create_unique_game_name()
 
     case GameController.start_game(game_name, players) do
       {:ok, _pid} ->
+        {bots, humans} = Enum.split_with(players, fn {_name, id} -> bot_id?(id) end)
+        human_ids = Enum.map_join(humans, ", ", fn {_name, id} -> QueueHolders.short_id(id) end)
+
+        Logger.info(
+          "Game #{game_name} starting from the #{opts[:queue] || "public"} queue: " <>
+            "#{length(humans)} human(s) [#{human_ids}], #{length(bots)} bot(s)"
+        )
+
         # Sent before anyone is redirected, so every seat's first view has it.
         if rematch_id = opts[:rematch_id] do
           GameController.dispatch(game_name, {:private_table, rematch_id})
@@ -71,6 +80,9 @@ defmodule Website45sV3.Game.Matchmaking do
         {:error, reason}
     end
   end
+
+  defp bot_id?("bot_" <> _), do: true
+  defp bot_id?(_id), do: false
 
   @doc """
   Generates a random 12-character game name that is not currently registered.

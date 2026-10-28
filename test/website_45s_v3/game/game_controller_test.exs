@@ -1,6 +1,7 @@
 defmodule Website45sV3.Game.GameControllerTest do
   use ExUnit.Case
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.GameController
@@ -434,6 +435,53 @@ defmodule Website45sV3.Game.GameControllerTest do
 
       state = drive!(pid, fn state -> state.phase == "Scoring" end)
       assert state.team_scores == %{team1: 15, team2: 10}
+    end
+  end
+
+  describe "no-show seats" do
+    import ExUnit.CaptureLog
+
+    # Ending a game writes its log.
+    setup do
+      owner = Sandbox.start_owner!(Website45sV3.Repo, shared: true)
+      on_exit(fn -> Sandbox.stop_owner(owner) end)
+    end
+
+    test "warns about human seats that never connect, and names them at the end" do
+      override_timings(no_show_check: 20)
+      players = [{"Alice", "show_h1"}, {"Bob", "noshow_h2"}, {"Bot1", "bot_a"}, {"Bot2", "bot_b"}]
+      # The end-of-game line is info level, below the test default.
+      level = Logger.level()
+      Logger.configure(level: :info)
+      on_exit(fn -> Logger.configure(level: level) end)
+
+      log =
+        capture_log(fn ->
+          pid = start_test_game(players)
+          join_presence(pid, ["show_h1"])
+          Process.sleep(60)
+          GenServer.stop(pid, :normal)
+        end)
+
+      assert log =~ ~r/human seat\(s\) 1 not connected/
+
+      assert log =~
+               ~r/ended: abandoned after 0 hand\(s\), \d+s, 2 human\(s\), seat\(s\) 1 never connected/
+    end
+
+    test "says nothing once every human has connected" do
+      override_timings(no_show_check: 20)
+
+      log =
+        capture_log(fn ->
+          pid = start_test_game(@humans)
+          join_presence(pid, Enum.map(@humans, &elem(&1, 1)))
+          Process.sleep(60)
+          GenServer.stop(pid, :normal)
+        end)
+
+      refute log =~ "not connected"
+      refute log =~ "never connected"
     end
   end
 

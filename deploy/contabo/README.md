@@ -100,6 +100,35 @@ renewal and reload nginx straight away:
 Rollback: put the previous digest (`backups/release-vX/previous-image`) back
 in `docker-compose.yml` and run `docker compose up -d web db_backup`.
 
+## Checking that players are fine
+
+The database and the logs together answer "did anyone run into trouble?".
+
+Summary of the last N days (games, no-show seats, queue departures,
+sign-ups and sign-ins); the app also logs the last day's as "Daily health"
+once a day:
+
+```sh
+ssh twic-vps 'docker exec fortyfives-web-1 bin/website_45s_v3 rpc "IO.puts(Website45sV3.Analytics.Health.text(days: 7))"'
+```
+
+- **crashed** should be 0.
+- **no-show seats** are humans seated at a table whose page never connected,
+  so bots played their seat. Until v2.0.1.26 these were mostly players who
+  had left the queue by navigating to another page, then got matched anyway.
+  Any new one is worth a look at the logs around that game's start.
+
+What to grep for in `docker logs fortyfives-web-1 2>&1`:
+
+| Line | Meaning |
+|---|---|
+| `[error]` | A crash: a LiveView, a game (`GameController crashed`) or a failed email. Should be rare. |
+| `human seat(s) N not connected 60s after the start` | A no-show (see above). |
+| `Game X starting from the public queue: …` / `Game X ended: …` | One of each per game; the end line says how it ended and names seats that never connected. |
+| `Queue: <id> joined / left / dropped: its page closed without leaving` | Queue movements. `<id>` is the first 8 characters of `site_events.player_id`. |
+| `Google sign-in ok` / `refused` / `failed`, `Password sign-in ok` / `refused: <message>` | Every sign-in attempt. |
+| `Daily health: …` | The summary above, once a day. |
+
 ## Updating nginx, certbot and postgres
 
 These images are pinned by tag and digest, so they only change when the

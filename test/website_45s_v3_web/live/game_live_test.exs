@@ -142,12 +142,12 @@ defmodule Website45sV3Web.GameLiveTest do
     test "a user who is not seated is sent back to the lobby", %{conn: conn} do
       {game_name, _pid} = start_game(unique("glt_user_"))
 
-      assert {:error, {:live_redirect, %{to: "/play"}}} =
+      assert {:error, {:redirect, %{to: "/play"}}} =
                conn |> anon_conn(unique("stranger_")) |> live(~p"/game/#{game_name}")
     end
 
     test "an unknown game is sent back to the lobby", %{conn: conn} do
-      assert {:error, {:live_redirect, %{to: "/play"}}} =
+      assert {:error, {:redirect, %{to: "/play"}}} =
                conn |> anon_conn(unique("glt_user_")) |> live(~p"/game/nope")
     end
   end
@@ -604,7 +604,7 @@ defmodule Website45sV3Web.GameLiveTest do
       assert html =~ "Your team wins!"
       assert html =~ "−20"
 
-      assert {:error, {:live_redirect, %{to: to}}} =
+      assert {:error, {:redirect, %{to: to}}} =
                view |> element("#play-again-button") |> render_click()
 
       assert to == "/play/private/#{rematch_id}"

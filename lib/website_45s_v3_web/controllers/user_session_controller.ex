@@ -1,6 +1,8 @@
 defmodule Website45sV3Web.UserSessionController do
   use Website45sV3Web, :controller
 
+  require Logger
+
   alias Website45sV3.Accounts
   alias Website45sV3.Security.RateLimiter
   alias Website45sV3.Turnstile
@@ -105,6 +107,7 @@ defmodule Website45sV3Web.UserSessionController do
 
   defp succeed(conn, user, user_params, info, account_key) do
     RateLimiter.reset_login_account(account_key)
+    Logger.info("Password sign-in ok: user #{user.id}")
 
     conn
     |> put_flash(:info, info)
@@ -184,6 +187,8 @@ defmodule Website45sV3Web.UserSessionController do
   defp invalid_credentials_message(_identifier), do: "Invalid username or password"
 
   defp login_error(conn, identifier, message) do
+    Logger.info("Password sign-in refused: #{message}")
+
     conn
     |> put_flash(:error, message)
     |> put_flash(:username_or_email, String.slice(identifier || "", 0, 160))

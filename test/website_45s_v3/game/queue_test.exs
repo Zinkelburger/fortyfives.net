@@ -36,6 +36,37 @@ defmodule Website45sV3.Game.QueueTest do
     private_id
   end
 
+  # Runs `join` in a fresh process that then stays alive, as a lobby tab
+  # would, and returns the process with join's result.
+  defp tab(join) do
+    test = self()
+
+    pid =
+      spawn(fn ->
+        send(test, {:joined, self(), join.()})
+        serve_tab(test)
+      end)
+
+    on_exit(fn -> Process.exit(pid, :kill) end)
+    assert_receive {:joined, ^pid, result}
+    {pid, result}
+  end
+
+  defp serve_tab(test) do
+    receive do
+      {:run, fun} -> send(test, {:ran, self(), fun.()})
+    end
+
+    serve_tab(test)
+  end
+
+  # Runs `fun` inside a tab started by `tab/1`.
+  defp in_tab(pid, fun) do
+    send(pid, {:run, fun})
+    assert_receive {:ran, ^pid, result}
+    result
+  end
+
   defp wait_until(fun, tries \\ 200) do
     cond do
       fun.() ->
@@ -82,9 +113,94 @@ defmodule Website45sV3.Game.QueueTest do
       assert {:error, :already_in_game} = QueueStarter.add_player({"Alice", user_id})
       assert QueueStarter.player_count() == before
     end
+
+    test "a player whose tab dies without leaving is dropped from the queue" do
+      user_id = unique("queue_user_")
+      test = self()
+      before = QueueStarter.player_count()
+
+      {pid, :ok} =
+        tab(fn ->
+          QueueStarter.add_player({"Alice", user_id}, nil,
+            on_drop: fn -> send(test, {:dropped, user_id}) end
+          )
+        end)
+
+      assert QueueStarter.player_count() == before + 1
+
+      # What Phoenix does to a LiveView on a live navigation: an exit signal
+      # it does not trap, so terminate/2 never runs.
+      Process.exit(pid, :kill)
+
+      wait_until(fn -> QueueStarter.player_count() == before end)
+      assert_receive {:dropped, ^user_id}
+    end
+
+    test "a player stays queued while any of their tabs is open" do
+      user_id = unique("queue_user_")
+      before = QueueStarter.player_count()
+
+      {tab_a, :ok} = tab(fn -> QueueStarter.add_player({"Alice", user_id}) end)
+      {tab_b, :ok} = tab(fn -> QueueStarter.add_player({"Alice", user_id}) end)
+      assert QueueStarter.player_count() == before + 1
+
+      assert :held_elsewhere = in_tab(tab_a, fn -> QueueStarter.release_player(user_id) end)
+      assert QueueStarter.player_count() == before + 1
+
+      Process.exit(tab_b, :kill)
+      wait_until(fn -> QueueStarter.player_count() == before end)
+    end
+
+    test "the last tab releasing its place leaves the queue" do
+      user_id = unique("queue_user_")
+      before = QueueStarter.player_count()
+
+      {tab_a, :ok} = tab(fn -> QueueStarter.add_player({"Alice", user_id}) end)
+      {tab_b, :ok} = tab(fn -> QueueStarter.add_player({"Alice", user_id}) end)
+
+      Process.exit(tab_a, :kill)
+      assert :ok = in_tab(tab_b, fn -> QueueStarter.release_player(user_id) end)
+      assert QueueStarter.player_count() == before
+      assert :not_queued = in_tab(tab_b, fn -> QueueStarter.release_player(user_id) end)
+    end
   end
 
   describe "PrivateQueueManager" do
+    test "a player whose tab dies without leaving loses their seat" do
+      private_id = create_lobby()
+      user_id = unique("user_")
+      test = self()
+
+      {pid, :ok} =
+        tab(fn ->
+          PrivateQueueManager.add_player(private_id, {"Alice", user_id}, nil,
+            on_drop: fn -> send(test, {:dropped, user_id}) end
+          )
+        end)
+
+      assert [{_, ^user_id}] = PrivateQueueManager.queue_players(private_id)
+
+      Process.exit(pid, :kill)
+
+      wait_until(fn -> PrivateQueueManager.queue_players(private_id) == [] end)
+      assert_receive {:dropped, ^user_id}
+      assert PrivateQueueManager.queue_exists?(private_id)
+    end
+
+    test "a seat is kept while another tab of the player holds it" do
+      private_id = create_lobby()
+      user_id = unique("user_")
+
+      {tab_a, :ok} = tab(fn -> PrivateQueueManager.add_player(private_id, {"Alice", user_id}) end)
+      {tab_b, :ok} = tab(fn -> PrivateQueueManager.add_player(private_id, {"Alice", user_id}) end)
+
+      assert :held_elsewhere =
+               in_tab(tab_a, fn -> PrivateQueueManager.release_player(private_id, user_id) end)
+
+      Process.exit(tab_b, :kill)
+      wait_until(fn -> PrivateQueueManager.queue_players(private_id) == [] end)
+    end
+
     test "creating lobbies is rate limited per owner" do
       owner = unique("owner_")
 
@@ -164,7 +280,8 @@ defmodule Website45sV3.Game.QueueTest do
             empty_since: nil
           }
         },
-        last_created: %{}
+        last_created: %{},
+        holders: %{}
       }
 
       {:noreply, state} = PrivateQueueManager.handle_info(:sweep, state)
@@ -262,7 +379,8 @@ defmodule Website45sV3.Game.QueueTest do
             created_at: System.monotonic_time(:millisecond)
           }
         },
-        last_created: %{"someone" => 0}
+        last_created: %{"someone" => 0},
+        holders: %{}
       }
 
       {:noreply, state} = PrivateQueueManager.handle_info(:sweep, state)

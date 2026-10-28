@@ -43,7 +43,6 @@ defmodule Website45sV3Web.QueueLive do
         client_ip: client_ip(socket) || "session:#{user_id}",
         in_queue: false,
         queue_joined_at: nil,
-        presence_ref: nil,
         private_id: nil,
         tab: "public"
       )
@@ -105,25 +104,16 @@ defmodule Website45sV3Web.QueueLive do
   defp tab_from_params(_params), do: "public"
 
   # Runs for aborted mounts too (an invalid private link redirects straight
-  # out of `mount/3`), hence the tolerant `assigns[...]` read. Only a LiveView
-  # that joined the queue itself may remove the player, and only when no other
-  # tab of the same session is still tracked on the topic; otherwise closing a
-  # second tab evicted the first tab's entry while it still said "in queue".
+  # out of `mount/3`), hence the tolerant `assigns[...]` read. Not guaranteed
+  # to run at all: a live navigation to another lobby page kills this process
+  # without it. The queue monitors this process for that case (see
+  # `QueueHolders`), so this is only the polite path.
   def terminate(_reason, socket) do
-    if socket.assigns[:in_queue] and not other_tabs_in_queue?(socket) do
+    if socket.assigns[:in_queue] do
       leave_queue(socket, "disconnect")
     end
 
     :ok
-  end
-
-  defp other_tabs_in_queue?(socket) do
-    %{user_id: user_id, presence_ref: ref} = socket.assigns
-
-    case Presence.get_by_key(queue_topic(socket), user_id) do
-      %{metas: metas} -> Enum.any?(metas, &(&1.phx_ref != ref))
-      [] -> false
-    end
   end
 
   def handle_event("join", _params, %{assigns: %{in_queue: true}} = socket) do
@@ -138,11 +128,11 @@ defmodule Website45sV3Web.QueueLive do
     topic = queue_topic(socket)
     Presence.untrack(self(), topic, socket.assigns.user_id)
 
-    if socket.assigns.in_queue and not other_tabs_in_queue?(socket) do
+    if socket.assigns.in_queue do
       leave_queue(socket, "explicit")
     end
 
-    {:noreply, assign(socket, in_queue: false, presence_ref: nil, queue: Presence.list(topic))}
+    {:noreply, assign(socket, in_queue: false, queue: Presence.list(topic))}
   end
 
   def handle_event("create_private", _params, socket) do
@@ -227,7 +217,7 @@ defmodule Website45sV3Web.QueueLive do
   def handle_info(:queue_closed, socket) do
     {:noreply,
      socket
-     |> assign(in_queue: false, presence_ref: nil)
+     |> assign(in_queue: false)
      |> put_flash(:error, "This game lobby has expired. Please create a new one.")}
   end
 
@@ -272,22 +262,25 @@ defmodule Website45sV3Web.QueueLive do
   defp join_queue(socket) do
     %{display_name: display_name, user_id: user_id} = socket.assigns
 
+    opts = [on_drop: departure_recorder(socket)]
+
     result =
       case socket.assigns.live_action do
         :private_game ->
           PrivateQueueManager.add_player(
             socket.assigns.private_id,
             {display_name, user_id},
-            socket.assigns.client_ip
+            socket.assigns.client_ip,
+            opts
           )
 
         _ ->
-          QueueStarter.add_player({display_name, user_id}, socket.assigns.client_ip)
+          QueueStarter.add_player({display_name, user_id}, socket.assigns.client_ip, opts)
       end
 
     case result do
       :ok ->
-        {:ok, ref} =
+        {:ok, _ref} =
           Presence.track(self(), queue_topic(socket), user_id, %{display_name: display_name})
 
         SiteTracking.track(socket, "queue_join", %{
@@ -296,7 +289,6 @@ defmodule Website45sV3Web.QueueLive do
 
         assign(socket,
           in_queue: true,
-          presence_ref: ref,
           queue_joined_at: System.monotonic_time(:millisecond)
         )
 
@@ -327,22 +319,42 @@ defmodule Website45sV3Web.QueueLive do
 
   defp queue_waited_ms(_socket), do: nil
 
-  # The queue process decides atomically whether this was a departure.
-  # A matched player is already removed before their redirect arrives.
+  # The queue process decides atomically whether this was a departure: it is
+  # not while another tab of this session still holds the place, and a
+  # matched player is already removed before their redirect arrives.
   defp leave_queue(socket, reason) do
-    if remove_from_queue(socket) == :ok do
+    if release_from_queue(socket) == :ok do
       SiteTracking.track(socket, "queue_leave", %{
         data: %{queue: queue_kind(socket), waited_ms: queue_waited_ms(socket), reason: reason}
       })
     end
   end
 
-  defp remove_from_queue(%{assigns: %{live_action: :private_game} = assigns}) do
-    PrivateQueueManager.remove_player(assigns.private_id, assigns.user_id)
+  defp release_from_queue(%{assigns: %{live_action: :private_game} = assigns}) do
+    PrivateQueueManager.release_player(assigns.private_id, assigns.user_id)
   end
 
-  defp remove_from_queue(%{assigns: assigns}) do
-    QueueStarter.remove_player({assigns.display_name, assigns.user_id})
+  defp release_from_queue(%{assigns: assigns}) do
+    QueueStarter.release_player(assigns.user_id)
+  end
+
+  # Records the departure if the queue drops this player because this
+  # process died without `terminate/2`. Runs in another process, so it
+  # captures plain values rather than the socket.
+  defp departure_recorder(socket) do
+    context = SiteTracking.context_of(socket)
+    queue = queue_kind(socket)
+    joined_at = System.monotonic_time(:millisecond)
+
+    fn ->
+      SiteTracking.record(context, "queue_leave", %{
+        data: %{
+          queue: queue,
+          waited_ms: System.monotonic_time(:millisecond) - joined_at,
+          reason: "disconnect"
+        }
+      })
+    end
   end
 
   defp client_ip(socket) do

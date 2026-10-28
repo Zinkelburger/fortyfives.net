@@ -3,12 +3,17 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   Private lobbies: invite-only queues identified by a UUID in a share link.
   A lobby starts its game when four players are seated and is swept when it
   expires or sits empty for too long.
+
+  As in the public queue, the process that adds a player holds their seat
+  (see `QueueHolders`): once every tab holding it has released it or exited,
+  the player leaves the lobby.
   """
   use GenServer
   require Logger
 
   alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Matchmaking
+  alias Website45sV3.Game.QueueHolders
   alias Website45sV3.Security.RateLimiter
 
   # How long an unfilled private lobby lives before it is cleaned up.
@@ -25,7 +30,11 @@ defmodule Website45sV3.Game.PrivateQueueManager do
 
   # Client API
   def start_link(_args) do
-    GenServer.start_link(__MODULE__, %{queues: %{}, last_created: %{}}, name: __MODULE__)
+    GenServer.start_link(
+      __MODULE__,
+      %{queues: %{}, last_created: %{}, holders: QueueHolders.new()},
+      name: __MODULE__
+    )
   end
 
   def create_queue(id, owner_id, remote_ip \\ nil) do
@@ -41,13 +50,28 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     GenServer.call(__MODULE__, {:reopen_queue, id, owner_id})
   end
 
-  def add_player(id, {name, user_id}, remote_ip \\ nil) do
-    GenServer.call(__MODULE__, {:add_player, id, {name, user_id}, remote_ip})
+  @doc """
+  Seats a player in a lobby, held by the calling process. Options:
+  `on_drop:` — run if the player is dropped because every process holding
+  them exited (see `QueueHolders`).
+  """
+  def add_player(id, {name, user_id}, remote_ip \\ nil, opts \\ []) do
+    GenServer.call(__MODULE__, {:add_player, id, {name, user_id}, remote_ip, opts})
   end
 
-  # Returns :not_queued after a match, expiry or an earlier removal.
+  # Removes the player outright, whoever holds them. Returns :not_queued
+  # after a match, expiry or an earlier removal.
   def remove_player(id, user_id) do
     GenServer.call(__MODULE__, {:remove_player, id, user_id})
+  end
+
+  @doc """
+  The calling process stops holding the player's seat. The player leaves the
+  lobby (`:ok`) unless another of their tabs still holds it
+  (`:held_elsewhere`); `:not_queued` after a match, expiry or a removal.
+  """
+  def release_player(id, user_id) do
+    GenServer.call(__MODULE__, {:release_player, id, user_id})
   end
 
   def queue_players(id) do
@@ -86,27 +110,29 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     end
   end
 
-  def handle_call({:add_player, id, {incoming_name, user_id}, remote_ip}, _from, state) do
-    handle_add_player(id, incoming_name, user_id, remote_ip, state)
+  def handle_call({:add_player, id, {incoming_name, user_id}, remote_ip, opts}, from, state) do
+    handle_add_player(id, incoming_name, user_id, remote_ip, {from, opts}, state)
   end
 
   def handle_call({:remove_player, id, user_id}, _from, state) do
-    case Map.fetch(state.queues, id) do
-      {:ok, queue} ->
-        updated_players = Enum.reject(queue.players, fn {_n, id2} -> id2 == user_id end)
+    {result, state} = remove(state, id, user_id, "left")
+    {:reply, result, state}
+  end
 
-        # An empty lobby is *not* destroyed here. Every unmount of the lobby
-        # LiveView calls this — including a plain page refresh by the owner, who
-        # has not joined yet — so deleting on empty would make the share link
-        # die the moment anyone reloaded it or the last player left to rejoin.
-        # Empty lobbies are reaped by the sweeper instead, after a grace period.
-        state = put_in(state.queues[id], mark_empty(queue, updated_players))
+  def handle_call({:release_player, id, user_id}, {caller, _tag}, state) do
+    holders = QueueHolders.release(state.holders, caller, {id, user_id})
+    state = %{state | holders: holders}
 
-        result = if updated_players == queue.players, do: :not_queued, else: :ok
-        {:reply, result, state}
-
-      :error ->
+    cond do
+      not seated?(state, id, user_id) ->
         {:reply, :not_queued, state}
+
+      QueueHolders.held?(holders, {id, user_id}) ->
+        {:reply, :held_elsewhere, state}
+
+      true ->
+        {result, state} = remove(state, id, user_id, "left")
+        {:reply, result, state}
     end
   end
 
@@ -146,19 +172,21 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     end
   end
 
-  defp handle_add_player(id, incoming_name, user_id, remote_ip, state) do
+  defp handle_add_player(id, incoming_name, user_id, remote_ip, holder, state) do
     case Map.fetch(state.queues, id) do
-      {:ok, queue} -> admit_player(id, queue, incoming_name, user_id, remote_ip, state)
+      {:ok, queue} -> admit_player(id, queue, incoming_name, user_id, remote_ip, holder, state)
       :error -> {:reply, {:error, :queue_not_found}, state}
     end
   end
 
-  defp admit_player(id, queue, incoming_name, user_id, remote_ip, state) do
+  defp admit_player(id, queue, incoming_name, user_id, remote_ip, holder, state) do
     players = queue.players
+    {{caller, _tag}, opts} = holder
 
     cond do
       Enum.any?(players, fn {_n, id2} -> id2 == user_id end) ->
-        {:reply, :ok, state}
+        holders = QueueHolders.hold(state.holders, caller, {id, user_id}, opts[:on_drop])
+        {:reply, :ok, %{state | holders: holders}}
 
       ActiveGames.find_game(user_id) != nil ->
         # One game per session: rejoin (or abandon) the running game first.
@@ -170,14 +198,23 @@ defmodule Website45sV3.Game.PrivateQueueManager do
       true ->
         assigned_name = Matchmaking.assign_display_name(incoming_name, players)
         updated_players = players ++ [{assigned_name, user_id}]
-        {:reply, :ok, seat_players(id, queue, updated_players, state)}
+
+        Logger.info(
+          "Private lobby: #{QueueHolders.short_id(user_id)} joined " <>
+            "(#{length(updated_players)} seated)"
+        )
+
+        holders = QueueHolders.hold(state.holders, caller, {id, user_id}, opts[:on_drop])
+
+        state = seat_players(id, queue, updated_players, %{state | holders: holders})
+        {:reply, :ok, prune_holders(state)}
     end
   end
 
   # Stores the updated seating, starting (and removing) the lobby once it is
   # full. If the game could not start everyone stays seated for a retry.
   defp seat_players(id, queue, players, state) when length(players) >= 4 do
-    case Matchmaking.start_game(players, rematch_id: Ecto.UUID.generate()) do
+    case Matchmaking.start_game(players, rematch_id: Ecto.UUID.generate(), queue: "private") do
       :ok -> %{state | queues: Map.delete(state.queues, id)}
       {:error, _reason} -> put_in(state.queues[id], mark_empty(queue, players))
     end
@@ -187,7 +224,24 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     put_in(state.queues[id], mark_empty(queue, players))
   end
 
+  # A process holding a seat exited. If it was the last one holding that
+  # player, they are gone: free the seat before a game starts with it.
   @impl true
+  def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
+    {entry, holders} = QueueHolders.down(state.holders, pid, ref)
+    state = %{state | holders: holders}
+
+    with %{key: {id, user_id} = key} <- entry,
+         true <- seated?(state, id, user_id),
+         false <- QueueHolders.held?(holders, key) do
+      {_result, state} = remove(state, id, user_id, "dropped: its page closed without leaving")
+      QueueHolders.notify_drop(entry)
+      {:noreply, state}
+    else
+      _ -> {:noreply, state}
+    end
+  end
+
   def handle_info(:sweep, state) do
     now = System.monotonic_time(:millisecond)
 
@@ -215,10 +269,52 @@ defmodule Website45sV3.Game.PrivateQueueManager do
       |> Map.new()
 
     schedule_sweep()
-    {:noreply, %{state | queues: live, last_created: last_created}}
+    {:noreply, prune_holders(%{state | queues: live, last_created: last_created})}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # An empty lobby is *not* destroyed here. Every unmount of the lobby
+  # LiveView ends up here, including a plain page refresh by the owner, who
+  # has not joined yet, so deleting on empty would make the share link die
+  # the moment anyone reloaded it or the last player left to rejoin. Empty
+  # lobbies are reaped by the sweeper instead, after a grace period.
+  defp remove(state, id, user_id, how) do
+    case Map.fetch(state.queues, id) do
+      {:ok, queue} ->
+        updated_players = Enum.reject(queue.players, fn {_n, id2} -> id2 == user_id end)
+        state = put_in(state.queues[id], mark_empty(queue, updated_players))
+
+        if updated_players == queue.players do
+          {:not_queued, state}
+        else
+          Logger.info(
+            "Private lobby: #{QueueHolders.short_id(user_id)} #{how} " <>
+              "(#{length(updated_players)} seated)"
+          )
+
+          {:ok, prune_holders(state)}
+        end
+
+      :error ->
+        {:not_queued, state}
+    end
+  end
+
+  defp seated?(state, id, user_id) do
+    case Map.fetch(state.queues, id) do
+      {:ok, queue} -> Enum.any?(queue.players, fn {_n, id2} -> id2 == user_id end)
+      :error -> false
+    end
+  end
+
+  # Forgets the holders of players no longer seated in a live lobby.
+  defp prune_holders(state) do
+    holders =
+      QueueHolders.prune(state.holders, fn {id, user_id} -> seated?(state, id, user_id) end)
+
+    %{state | holders: holders}
+  end
 
   defp new_queue(owner_id) do
     now = System.monotonic_time(:millisecond)

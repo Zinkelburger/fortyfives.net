@@ -112,9 +112,18 @@ defmodule Website45sV3.Game.GameEvents do
     ErlangError -> {:error, :corrupt}
   end
 
-  defp ended(_state, {:error, _}), do: "crash"
-  defp ended(%{phase: "Final Scoring"}, _reason), do: "finished"
-  defp ended(_state, _reason), do: "abandoned"
+  @doc """
+  How the game ended, as stored in `game_logs.ended`: "finished", "abandoned"
+  or "crash".
+  """
+  def ended(_state, {:error, _}), do: "crash"
+  def ended(%{phase: "Final Scoring"}, _reason), do: "finished"
+  def ended(_state, _reason), do: "abandoned"
+
+  @doc """
+  Milliseconds since the game started.
+  """
+  def elapsed_ms(state), do: System.monotonic_time(:millisecond) - state.started_at
 
   # The game decides the winner (`Rules.score_round/4`: when both teams
   # cross the line in one hand the bidders win, whatever the scores say),
@@ -127,6 +136,4 @@ defmodule Website45sV3.Game.GameEvents do
   end
 
   defp winner(_state), do: nil
-
-  defp elapsed_ms(state), do: System.monotonic_time(:millisecond) - state.started_at
 end

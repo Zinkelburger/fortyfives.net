@@ -13,9 +13,12 @@ defmodule Website45sV3Web.AuthController do
   def callback(%{assigns: %{ueberauth_auth: auth}} = conn, _params) do
     case Accounts.get_or_create_google_user(auth) do
       {:ok, user} ->
+        Logger.info("Google sign-in ok: user #{user.id}")
         UserAuth.log_in_user(conn, user)
 
       {:error, reason} ->
+        Logger.info("Google sign-in refused: #{inspect(reason)}")
+
         conn
         |> put_flash(:error, failure_message(reason))
         |> redirect(to: ~p"/users/log_in")

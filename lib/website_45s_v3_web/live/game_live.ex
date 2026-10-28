@@ -52,7 +52,7 @@ defmodule Website45sV3Web.GameLive do
       # Not seated (or abandoned), or the game is gone: back to the lobby.
       _ ->
         Logger.info("User #{user_id} cannot join game #{game_id}, redirecting to /play")
-        {:ok, push_navigate(socket, to: ~p"/play")}
+        {:ok, redirect(socket, to: ~p"/play")}
     end
   end
 
@@ -124,7 +124,7 @@ defmodule Website45sV3Web.GameLive do
   def handle_info(:game_crash, socket), do: game_crashed(socket)
 
   def handle_info(:game_end, socket) do
-    {:noreply, push_navigate(socket, to: after_game_path(socket), replace: :replace)}
+    {:noreply, redirect(socket, to: after_game_path(socket))}
   end
 
   # The table's own status line says a bot has the seat; no toast.
@@ -143,7 +143,7 @@ defmodule Website45sV3Web.GameLive do
     {:noreply,
      socket
      |> put_flash(:error, "Game ended unexpectedly")
-     |> push_navigate(to: ~p"/play")}
+     |> redirect(to: ~p"/play")}
   end
 
   # Called when the client requests to play a card. The payload contains a
@@ -236,7 +236,7 @@ defmodule Website45sV3Web.GameLive do
          {:ok, state} <- GameController.get_player_view(pid, socket.assigns.user_id) do
       {:noreply, assign_game_state(socket, state)}
     else
-      _ -> {:noreply, push_navigate(socket, to: ~p"/play")}
+      _ -> {:noreply, redirect(socket, to: ~p"/play")}
     end
   end
 
@@ -269,6 +269,10 @@ defmodule Website45sV3Web.GameLive do
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
+  # The lobby pages are in another live_session, so every way back from the
+  # table is a full `redirect`: `push_navigate` would log a warning and fall
+  # back to the same page reload.
+  #
   # Leaving for good: free this session for new games. If the game process
   # is still running (final scoring screen), a bot owns the seat from here.
   # The dispatch is async, so also clear the seat record synchronously —
@@ -282,7 +286,7 @@ defmodule Website45sV3Web.GameLive do
       data: %{from: from, phase: socket.assigns.game_state[:phase]}
     })
 
-    push_navigate(socket, to: path)
+    redirect(socket, to: path)
   end
 
   defp after_game_path(socket) do
@@ -1187,7 +1191,7 @@ defmodule Website45sV3Web.GameLive do
       {:error, :game_not_found} ->
         socket
         |> put_flash(:error, "Game no longer exists.")
-        |> push_navigate(to: ~p"/play")
+        |> redirect(to: ~p"/play")
     end
   end
 

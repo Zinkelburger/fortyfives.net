@@ -249,6 +249,23 @@ defmodule Website45sV3Web.QueueLiveTest do
       assert [%{data: %{"reason" => "disconnect", "queue" => "public"}}] = departures(user)
     end
 
+    test "a lobby killed without terminate/2 still leaves the queue", %{conn: conn} do
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+      user = unique("qlt_user_")
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/play")
+      render_click(view, "join")
+      assert QueueStarter.player_count() == 1
+
+      # A live navigation to another lobby page: Phoenix shuts the old
+      # LiveView down with an exit signal, and terminate/2 does not run.
+      Process.flag(:trap_exit, true)
+      Process.exit(view.pid, :kill)
+
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+      wait_until(fn -> departures(user) != [] end)
+      assert [%{data: %{"reason" => "disconnect", "queue" => "public"}}] = departures(user)
+    end
+
     test "only the last tab closing records a departure with its wait", %{conn: conn} do
       user = unique("qlt_user_")
       private_id = create_private_lobby(user)
@@ -376,7 +393,7 @@ defmodule Website45sV3Web.QueueLiveTest do
       send(game_pid, {:abandon_game, user})
       assert_receive {:DOWN, ^ref, :process, ^game_pid, :normal}, 500
 
-      assert {:error, {:live_redirect, %{to: "/play"}}} =
+      assert {:error, {:redirect, %{to: "/play"}}} =
                conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
     end
   end

@@ -38,7 +38,8 @@ defmodule Website45sV3.Game.GameController do
     final_scoring_timeout: 60_000,
     game_max_lifetime: 7_200_000,
     all_bot_timeout: 300_000,
-    unattended_timeout: 60_000
+    unattended_timeout: 60_000,
+    no_show_check: 60_000
   }
 
   @doc """
@@ -203,7 +204,9 @@ defmodule Website45sV3.Game.GameController do
             # The lobby a private table's players are offered for another
             # game (see Matchmaking.start_game/2); nil for public games.
             rematch_id: nil,
-            game_name: game_name
+            game_name: game_name,
+            # Humans whose page has connected to this table at least once.
+            seen_players: MapSet.new()
           })
           |> Map.merge(GameEvents.init())
           |> log_deal()
@@ -213,6 +216,7 @@ defmodule Website45sV3.Game.GameController do
         # answer "which game is this user in?". Cleaned up by ActiveGames'
         # monitor when this process exits.
         ActiveGames.register_game(self(), game_name, player_ids)
+        Process.send_after(self(), :no_show_check, timing(:no_show_check))
 
         state
         |> schedule_termination_timer(timing(:game_max_lifetime))
@@ -586,8 +590,34 @@ defmodule Website45sV3.Game.GameController do
       |> Repo.insert()
     end
 
-    Logger.info("GameController terminated with reason: #{inspect(termination_reason)}")
+    log_game_end(state, termination_reason)
     :ok
+  end
+
+  defp log_game_end(state, termination_reason) do
+    humans = length(state.player_ids) - MapSet.size(state.seat_bots)
+
+    no_shows =
+      case no_show_seats(state) do
+        [] -> ""
+        seats -> ", seat(s) #{Enum.join(seats, ", ")} never connected"
+      end
+
+    Logger.info(
+      "Game #{state.game_name} ended: #{GameEvents.ended(state, termination_reason)} after " <>
+        "#{length(state.team_1_history)} hand(s), #{div(GameEvents.elapsed_ms(state), 1000)}s, " <>
+        "#{humans} human(s)#{no_shows}"
+    )
+  end
+
+  # Seats (0-3) of humans who have not connected to the table yet and have
+  # not deliberately left it.
+  defp no_show_seats(state) do
+    for {id, seat} <- Enum.with_index(state.player_ids),
+        not seat_bot?(state, id),
+        not MapSet.member?(state.seen_players, id),
+        not abandoned?(state, id),
+        do: seat
   end
 
   defp end_reason_label(:normal), do: "normal"
@@ -643,6 +673,24 @@ defmodule Website45sV3.Game.GameController do
       other ->
         other
     end
+  end
+
+  # A human who was seated but whose page never connected: matched from a
+  # queue they had already left, or the redirect to the table never arrived.
+  # Bots play the seat; the log line makes it visible.
+  defp handle_message(:no_show_check, state) do
+    case no_show_seats(state) do
+      [] ->
+        :ok
+
+      seats ->
+        Logger.warning(
+          "Game #{state.game_name}: human seat(s) #{Enum.join(seats, ", ")} not connected " <>
+            "#{div(timing(:no_show_check), 1000)}s after the start"
+        )
+    end
+
+    {:noreply, state}
   end
 
   defp handle_message(:terminate_game, state) do
@@ -803,6 +851,8 @@ defmodule Website45sV3.Game.GameController do
           do: log(acc, "join", %{p: GameEvents.seat(acc, player)}),
           else: acc
       end)
+
+    state = %{state | seen_players: MapSet.union(state.seen_players, MapSet.new(joined_players))}
 
     new_state =
       joined_players

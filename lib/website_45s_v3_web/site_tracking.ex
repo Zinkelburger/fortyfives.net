@@ -35,7 +35,20 @@ defmodule Website45sV3Web.SiteTracking do
   """
   def track(socket, name, attrs \\ %{})
 
-  def track(%{assigns: %{site_tracking: %{} = context}}, name, attrs) do
+  def track(%{assigns: %{site_tracking: context}}, name, attrs), do: record(context, name, attrs)
+  def track(_socket, _name, _attrs), do: :ok
+
+  @doc """
+  The socket's tracking context, for recording an event after the LiveView
+  is gone (see `record/3`). `nil` when the socket is not tracked.
+  """
+  def context_of(%{assigns: %{site_tracking: %{} = context}}), do: context
+  def context_of(_socket), do: nil
+
+  @doc """
+  Records `name` with a context taken by `context_of/1`; a no-op for `nil`.
+  """
+  def record(%{} = context, name, attrs) do
     context
     |> Map.drop([:last_route])
     |> Map.merge(Map.new(attrs))
@@ -43,7 +56,7 @@ defmodule Website45sV3Web.SiteTracking do
     |> insert()
   end
 
-  def track(_socket, _name, _attrs), do: :ok
+  def record(_context, _name, _attrs), do: :ok
 
   defp context(socket, session) do
     user_agent = Phoenix.LiveView.get_connect_info(socket, :user_agent) || ""

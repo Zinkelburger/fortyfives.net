@@ -372,43 +372,54 @@ input[type='checkbox'], input[type='radio'] {
         box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.1);
 }
 
-.google-button {
-        cursor: pointer;
-        background-color: #ffffff;
-        color: #555555;
-        border: none;
-        outline: none;
-        font-size: 1.5rem;
-        line-height: 3rem;
-        font-weight: 500;
-        border-radius: 10px;
-        transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
-        padding: 0 15px;
-        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.15);
+/* Google's standard light "Sign in with Google" button */
+.google-button,
+.google-button:hover,
+.google-button:focus {
+        color: #1f1f1f;
+        text-decoration: none;
+}
 
+.google-button {
         display: flex;
         align-items: center;
         justify-content: center;
-        margin: 0rem auto;
-        margin-bottom: 0.5rem
+        gap: 12px;
+        box-sizing: border-box;
+        min-height: 48px;
+        margin: 0 auto 0.5rem;
+        padding: 0 12px;
+        background-color: #ffffff;
+        border: 1px solid #747775;
+        border-radius: 4px;
+        font-family: Roboto, arial, sans-serif;
+        font-size: 18px;
+        font-weight: 500;
+        line-height: 24px;
+        letter-spacing: 0.25px;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background-color 0.218s, box-shadow 0.218s;
 }
 
 .google-button:hover {
-        background-color: #f2f2f2;
-        transform: translateY(-1px);
-        box-shadow: 0 7px 15px rgba(0, 0, 0, 0.2);
+        background-color: #f7f7f7;
+        box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
 }
 
 .google-button:active {
-        background-color: #e6e6e6;
-        transform: translateY(1px);
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        background-color: #ebebeb;
+}
+
+.google-button:focus-visible {
+        outline: 2px solid #81cbf8;
+        outline-offset: 2px;
 }
 
 .google-button img {
-        width: 24px;
-        height: 24px;
-        margin-right: 10px;
+        width: 22px;
+        height: 22px;
+        flex: none;
 }
 
 /* Username welcome page (Google sign-ups) */
@@ -997,8 +1008,21 @@ body:not(.game-body) main { padding-inline: 12px; }
 .field-errors:empty { display: none; }
 .field-errors p { margin: 6px 0 0; }
 .form-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.form-actions .mt-4 { margin-top: 0; }
+.form-actions a { min-height: 44px; display: inline-flex; align-items: center; }
+/* Form submit buttons share the Google button's size and shape */
+.form-actions .green-button {
+  display: flex; align-items: center; justify-content: center; gap: 0.3em;
+  min-height: 48px; margin: 0; padding: 0 12px;
+  border: 0; border-radius: 4px;
+  background-color: #5e905a; color: #d2e8f9;
+  font-size: 18px; font-weight: 600; line-height: 24px; letter-spacing: 0.25px;
+  transition: background-color 0.218s, box-shadow 0.218s;
+}
+.form-actions .green-button:hover { background-color: #52904f; transform: none; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15); }
+.form-actions .green-button:active { background-color: #457d44; transform: none; box-shadow: none; }
 .password-field input { padding-right: 52px; }
-.password-toggle { position: absolute; top: 0; right: 0; width: 48px; height: 48px; min-height: 48px; display: grid; place-items: center; margin: 0; border-radius: 6px; }
+.password-toggle { position: absolute; top: 0; bottom: 0; right: 0; width: 48px; display: grid; place-items: center; margin: 0; border-radius: 6px; }
 .password-toggle img[hidden] { display: none; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #81cbf8; outline-offset: 2px; }
 [role="alert"].fixed { max-width: calc(100vw - 16px); }
@@ -1021,7 +1045,4 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   .home-hero { margin-bottom: 1rem; }
   .home-hero.py-9 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
   .home-hero h1 { font-size: clamp(2.5rem, 11vw, 3.5rem); }
-  .google-button { font-size: 1.1rem; min-height: 48px; line-height: 1.4; padding: 8px; }
-  .form-actions .mt-4 { margin-top: 0; }
-  .form-actions a { min-height: 44px; display: inline-flex; align-items: center; }
 }

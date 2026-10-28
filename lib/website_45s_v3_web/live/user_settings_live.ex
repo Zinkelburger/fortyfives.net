@@ -11,7 +11,7 @@ defmodule Website45sV3Web.UserSettingsLive do
   def render(assigns) do
     ~H"""
     <div
-      class="space-y-12 divide-y mx-auto max-w-sm mb-10"
+      class="space-y-12 divide-y mx-auto max-w-[400px] mb-10"
       style="border: 2px solid #d2e8f9; border-radius: 10px; padding:10px; background-color: #071f31; margin-top: 35px;"
     >
       <div>

@@ -7,7 +7,7 @@ defmodule Website45sV3Web.UserResetPasswordLive do
 
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-sm">
+    <div class="mx-auto max-w-[400px]">
       <.header class="text-center">Reset Password</.header>
 
       <.simple_form

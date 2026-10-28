@@ -13,7 +13,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
 
   def render(assigns) do
     ~H"""
-    <.header class="text-center mx-auto max-w-sm mt-3">
+    <.header class="text-center mx-auto max-w-[400px] mt-3">
       Register
       <:subtitle>
         Or
@@ -28,7 +28,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
       </:subtitle>
     </.header>
     <div
-      class="mx-auto max-w-sm"
+      class="mx-auto max-w-[400px]"
       style="background-color: #071f31; padding-right: 10px; padding-left: 10px; border-radius: 10px; margin-top:0px; margin-bottom: 0px; border: 2px #d2e8f9 solid;"
     >
       <.simple_form
@@ -87,7 +87,7 @@ defmodule Website45sV3Web.UserRegistrationLive do
             href={~p"/auth/google"}
             class="google-button w-full"
           >
-            <img src="/images/google_logo.svg" alt="Google logo" />
+            <img src="/images/google_logo.svg" alt="" />
             <span>Sign up with Google</span>
           </.link>
         </:actions>

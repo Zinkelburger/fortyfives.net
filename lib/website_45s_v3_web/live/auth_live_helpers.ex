@@ -85,15 +85,15 @@ defmodule Website45sV3Web.AuthLiveHelpers do
       )
 
     ~H"""
-    <div class="form-field" style="background-color: #071f31; color: #d2e8f9;">
+    <div class="form-field" style={"background-color: ##{@background_color}; color: #d2e8f9;"}>
       <.label for={@id}>{@label}</.label>
       <div id={"#{@id}-container"} class="password-field relative" phx-update="ignore">
         <input
           type="password"
           id={@id}
           name={@name}
-          class="mt-2 block w-full rounded-m text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6 border-zinc-300 focus:border-zinc-400"
-          style={"background-color: ##{@background_color}; color: #d2e8f9;"}
+          class="mt-2 block w-full rounded-md text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6 border-zinc-300 focus:border-zinc-400"
+          style="background-color: #041624; color: #d2e8f9;"
           {@rest}
         />
         <button

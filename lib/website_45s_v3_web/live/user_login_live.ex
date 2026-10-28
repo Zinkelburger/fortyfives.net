@@ -5,7 +5,7 @@ defmodule Website45sV3Web.UserLoginLive do
 
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-sm mt-3">
+    <div class="mx-auto max-w-[400px] mt-3">
       <.header class="text-center">
         Sign in
         <:subtitle>
@@ -17,7 +17,7 @@ defmodule Website45sV3Web.UserLoginLive do
       </.header>
 
       <div
-        class="mx-auto max-w-sm"
+        class="mx-auto max-w-[400px]"
         style="background-color: #071f31; padding-right: 10px; padding-left: 10px; border-radius: 10px; margin-top:0px; margin-bottom: 0px; border: 2px #d2e8f9 solid;"
       >
         <.simple_form for={@form} id="login_form" action={~p"/users/log_in"}>
@@ -39,15 +39,13 @@ defmodule Website45sV3Web.UserLoginLive do
           <.turnstile id="login-turnstile" />
           <:actions>
             <.input field={@form[:remember_me]} type="checkbox" label="Keep me logged in" />
-            <li style="margin-top: 0.25rem; margin-bottom: 0; list-style-type: none;">
-              <.link
-                href={~p"/users/reset_password"}
-                class="text-sm font-semibold"
-                style="text-decoration: underline;"
-              >
-                Forgot your password?
-              </.link>
-            </li>
+            <.link
+              href={~p"/users/reset_password"}
+              class="text-sm font-semibold"
+              style="text-decoration: underline;"
+            >
+              Forgot your password?
+            </.link>
           </:actions>
           <:actions>
             <.button
@@ -60,7 +58,7 @@ defmodule Website45sV3Web.UserLoginLive do
           </:actions>
           <:actions>
             <.link href={~p"/auth/google"} class="google-button w-full">
-              <img src="/images/google_logo.svg" alt="Google logo" />
+              <img src="/images/google_logo.svg" alt="" />
               <span>Sign in with Google</span>
             </.link>
           </:actions>

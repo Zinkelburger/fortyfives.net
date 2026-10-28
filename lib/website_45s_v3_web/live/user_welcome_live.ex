@@ -13,11 +13,11 @@ defmodule Website45sV3Web.UserWelcomeLive do
 
   def render(assigns) do
     ~H"""
-    <.header class="text-center mx-auto max-w-sm mt-3">
+    <.header class="text-center mx-auto max-w-[400px] mt-3">
       Welcome to Forty-Fives
       <:subtitle>Pick the name other players see at the table.</:subtitle>
     </.header>
-    <div class="welcome-card mx-auto max-w-sm">
+    <div class="welcome-card mx-auto max-w-[400px]">
       <.simple_form for={@form} id="welcome_form" phx-submit="save" phx-change="validate">
         <div style="padding-top: 5px;">
           <.input

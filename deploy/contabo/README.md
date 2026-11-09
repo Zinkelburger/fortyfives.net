@@ -118,14 +118,32 @@ ssh twic-vps 'docker exec fortyfives-web-1 bin/website_45s_v3 rpc "IO.puts(Websi
   had left the queue by navigating to another page, then got matched anyway.
   Any new one is worth a look at the logs around that game's start.
 
-What to grep for in `docker logs fortyfives-web-1 2>&1`:
+### Logs
+
+Since v2.0.1.29 every container logs to the host's journald (persistent, in
+`/var/log/journal`), tagged with its container name. The logs survive
+deploys and container recreation; before that, each deploy wiped them.
+`docker logs` still shows the current container's lines. For older runs:
+
+```sh
+ssh twic-vps 'journalctl -t fortyfives-web-1 --utc --since "2026-11-10 06:00" --until "2026-11-10 07:00" --no-pager'
+ssh twic-vps 'journalctl -t fortyfives-web-1 --utc --since -2d --no-pager | grep "Private lobby"'
+```
+
+Tags: `fortyfives-web-1`, `fortyfives-nginx-1`, `fortyfives-certbot-1`,
+`fortyfives-db_backup-1`. App lines carry only a time of day; use journald's
+timestamp for the date. Retention is journald's default (up to 4 GB for the
+whole host; the site writes about 3 MB a day).
+
+What to grep for in the web logs:
 
 | Line | Meaning |
 |---|---|
 | `[error]` | A crash: a LiveView, a game (`GameController crashed`) or a failed email. Should be rare. |
 | `human seat(s) N not connected 60s after the start` | A no-show (see above). |
-| `Game X starting from the public queue: …` / `Game X ended: …` | One of each per game; the end line says how it ended and names seats that never connected. |
+| `Game X starting from the public queue: …` / `Game X (public) ended: …` | One of each per game; the end line says how it ended and names seats that never connected. A private game says `private queue <lobby>` / `(private <lobby>)`. |
 | `Queue: <id> joined / left / dropped: its page closed without leaving` | Queue movements. `<id>` is the first 8 characters of `site_events.player_id`. |
+| `Private lobby <lobby>: created / reopened / <id> joined / left / dropped`, `Expiring private lobby <lobby> (N seated)`, `… link opened but the lobby is gone` | Private lobby movements. `<lobby>` is the first 8 characters of the lobby id, the same tag as `game_logs.lobby` and `site_events.data.lobby`. |
 | `Google sign-in ok` / `refused` / `failed`, `Password sign-in ok` / `refused: <message>` | Every sign-in attempt. |
 | `Daily health: …` | The summary above, once a day. |
 

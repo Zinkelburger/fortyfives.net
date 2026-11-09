@@ -47,7 +47,7 @@ services:
     logging: *default-logging
 
   nginx:
-    image: docker.io/library/nginx:1.31.8-alpine3.24@sha256:1ef7ca94d7879df82421428ce13bd1eaa412404953859cf7a5b6512c25e67a60
+    image: docker.io/library/nginx:1.31.8-alpine3.24@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
     restart: unless-stopped
     ports:
       - "80:80"
@@ -73,7 +73,7 @@ services:
   # token needs Zone:DNS:Edit + Zone:Zone:Read on the fortyfives.net zone.
   # First-run `certonly` command: see docs/deploy.md.
   certbot:
-    image: docker.io/certbot/dns-cloudflare:v5.8.0@sha256:c45edb002b883da1a1235abb205dff474a7a1a459d878e8d5fdc7f9d83073aea
+    image: docker.io/certbot/dns-cloudflare:v5.9.0@sha256:8216d4732d11772a9cf2fb30d022abf9eec7c83af2e33f002aa9e371c5192b67
     restart: unless-stopped
     environment:
       CF_API_TOKEN: ${CF_API_TOKEN:?Set CF_API_TOKEN in .env (Cloudflare DNS:Edit token for certbot)}

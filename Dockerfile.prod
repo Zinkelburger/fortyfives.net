@@ -1,5 +1,5 @@
-# Builder: the same Elixir/OTP as .tool-versions, on Alpine 3.24.3.
-FROM docker.io/hexpm/elixir:1.19.6-erlang-27.3.4.19-alpine-3.24.3@sha256:97f49c06689cae6411d430fa7658e2a7c8fb6b87951e85533c1a98dc85b6d043 AS build
+# Builder: the same Elixir/OTP as .tool-versions, on Alpine 3.24.4.
+FROM docker.io/hexpm/elixir:1.20.5-erlang-29.1.2-alpine-3.24.4@sha256:fdc3e2838224d974d854eb5c0ec4cd790da31761ebebf5fbdd22113f19eb0002 AS build
 
 # Install build dependencies
 RUN apk update && \
@@ -50,8 +50,8 @@ COPY rel rel
 RUN mix release
 
 # Runtime stage. Alpine version/digest must match the builder image's
-# /etc/alpine-release (3.24.3) so the release's shared libraries line up.
-FROM docker.io/library/alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+# /etc/alpine-release (3.24.4) so the release's shared libraries line up.
+FROM docker.io/library/alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # Install runtime dependencies (busybox wget is used by the HEALTHCHECK)
 RUN apk update && \

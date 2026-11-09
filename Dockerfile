@@ -1,4 +1,4 @@
-FROM docker.io/hexpm/elixir:1.19.6-erlang-27.3.4.19-alpine-3.24.3@sha256:97f49c06689cae6411d430fa7658e2a7c8fb6b87951e85533c1a98dc85b6d043
+FROM docker.io/hexpm/elixir:1.20.5-erlang-29.1.2-alpine-3.24.4@sha256:fdc3e2838224d974d854eb5c0ec4cd790da31761ebebf5fbdd22113f19eb0002
 
 # Install build dependencies
 RUN apk update && \

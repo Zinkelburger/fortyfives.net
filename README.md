@@ -5,7 +5,7 @@ A website for the card game 45s. <https://fortyfives.net>
 
 Prerequisites:
 
-- Elixir 1.19 and Erlang/OTP 27 — the exact versions are pinned in
+- Elixir 1.20 and Erlang/OTP 29 — the exact versions are pinned in
   `.tool-versions` (`asdf install` or `mise install` picks them up).
 - SQLite is embedded through `ecto_sqlite3`; no database server is needed.
   Development uses `priv/dev.db`; override with `DATABASE_PATH`. Tests use
@@ -127,8 +127,8 @@ mix assets.build
 
 Run the quality checks above after upgrades. Asset compiler versions live in
 `config/config.exs`; GitHub Actions and container images are pinned separately.
-Tailwind stays on the latest 3.4 release for the existing stylesheet and browser
-support; a Tailwind 4 migration needs its own layout and browser validation.
+Tailwind 4 officially targets Safari 16.4+, Chrome 111+ and Firefox 128+. The site
+uses few utilities and its own stylesheet, so check `python/ui_check.py` after upgrades.
 Elixir/OTP upgrades must keep `.tool-versions`, CI, and both Dockerfiles aligned.
 
 ## Deploying

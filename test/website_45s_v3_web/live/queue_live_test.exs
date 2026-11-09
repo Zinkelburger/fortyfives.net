@@ -94,6 +94,43 @@ defmodule Website45sV3Web.QueueLiveTest do
     |> Enum.map(&LazyHTML.text/1)
   end
 
+  describe "signing in from a lobby" do
+    test "the private lobby's links return to it, through registering and logging in",
+         %{conn: conn} do
+      lobby = "/play/private/#{create_private_lobby(unique("owner"))}"
+      query = URI.encode_query(return_to: lobby)
+
+      {:ok, _lv, html} = live(conn, lobby)
+      assert html =~ ~s(href="/users/register?#{Plug.HTML.html_escape(query)}")
+      assert html =~ ~s(href="/users/log_in?#{Plug.HTML.html_escape(query)}")
+
+      conn = get(conn, "/users/register?#{query}")
+      assert get_session(conn, :user_return_to) == lobby
+
+      user = Website45sV3.AccountsFixtures.user_fixture()
+
+      conn =
+        post(conn, ~p"/users/log_in", %{
+          "user" => %{
+            "username_or_email" => user.email,
+            "password" => Website45sV3.AccountsFixtures.valid_user_password()
+          }
+        })
+
+      assert redirected_to(conn) == lobby
+    end
+
+    test "the public lobby's links return to it", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/play")
+      assert html =~ "/users/log_in?return_to=%2Fplay"
+    end
+
+    test "other pages' links carry no lobby", %{conn: conn} do
+      {:ok, _lv, html} = live(conn, ~p"/learn")
+      assert html =~ ~s(href="/users/log_in")
+    end
+  end
+
   describe "session identity" do
     test "mounting without a session user id fails instead of sharing an identity" do
       conn = Phoenix.ConnTest.build_conn() |> Phoenix.ConnTest.init_test_session(%{})

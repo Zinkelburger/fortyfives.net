@@ -60,6 +60,7 @@ defmodule Website45sV3Web.QueueLive do
      assign(socket,
        queue: Presence.list("queue"),
        active_game: fetch_active_game(socket.assigns.user_id),
+       lobby_path: ~p"/play",
        page_title: @public_title
      )}
   end
@@ -74,6 +75,7 @@ defmodule Website45sV3Web.QueueLive do
          private_id: private_id,
          queue: Presence.list(topic),
          active_game: fetch_active_game(socket.assigns.user_id),
+         lobby_path: ~p"/play/private/#{private_id}",
          page_title: @private_title
        )}
     else

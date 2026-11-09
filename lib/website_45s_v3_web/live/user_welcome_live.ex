@@ -10,6 +10,7 @@ defmodule Website45sV3Web.UserWelcomeLive do
 
   alias Website45sV3.Accounts
   alias Website45sV3.Security.RateLimiter
+  alias Website45sV3Web.UserAuth
 
   def render(assigns) do
     ~H"""
@@ -113,13 +114,6 @@ defmodule Website45sV3Web.UserWelcomeLive do
     {:noreply, redirect(socket, to: socket.assigns.return_to)}
   end
 
-  # Only the lobby pages send people here, so only they are accepted back;
-  # anything else (another site, a path we did not issue) goes home.
-  defp safe_return_to(path) when path in ["/", "/play", "/learn"], do: path
-
-  defp safe_return_to("/play/private/" <> id = path) do
-    if id =~ ~r/\A[A-Za-z0-9_-]{1,64}\z/, do: path, else: ~p"/"
-  end
-
-  defp safe_return_to(_path), do: ~p"/"
+  # Only the lobby pages send people here, so only they are accepted back.
+  defp safe_return_to(path), do: UserAuth.lobby_path(path) || ~p"/"
 end

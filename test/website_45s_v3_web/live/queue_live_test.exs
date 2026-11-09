@@ -267,15 +267,43 @@ defmodule Website45sV3Web.QueueLiveTest do
     end
   end
 
-  defp departures(user) do
+  defp departures(user), do: site_events(user, "queue_leave")
+
+  defp site_events(user, name) do
     Website45sV3.Repo.all(
       from(e in Website45sV3.Analytics.SiteEvent,
-        where: e.player_id == ^user and e.name == "queue_leave"
+        where: e.player_id == ^user and e.name == ^name
       )
     )
   end
 
   describe "queue departure analytics" do
+    test "a private lobby's events carry its tag", %{conn: conn} do
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      tag = PrivateQueueManager.lobby_tag(private_id)
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+      render_click(view, "join")
+      render_click(view, "leave")
+
+      assert [%{data: %{"lobby" => ^tag}}] = site_events(user, "page_view")
+      assert [%{data: %{"lobby" => ^tag, "queue" => "private"}}] = site_events(user, "queue_join")
+
+      assert [%{data: %{"lobby" => ^tag, "reason" => "explicit"}}] =
+               site_events(user, "queue_leave")
+    end
+
+    test "creating a private lobby records its tag", %{conn: conn} do
+      user = unique("qlt_user_")
+      {:ok, view, _} = conn |> anon_conn(user) |> live(~p"/play?tab=private")
+
+      assert {:error, {:live_redirect, %{to: "/play/private/" <> private_id}}} =
+               render_click(view, "create_private")
+
+      tag = PrivateQueueManager.lobby_tag(private_id)
+      assert [%{data: %{"lobby" => ^tag}}] = site_events(user, "private_created")
+    end
+
     test "closing the public queue records the departure", %{conn: conn} do
       wait_until(fn -> QueueStarter.player_count() == 0 end)
       user = unique("qlt_user_")
@@ -404,6 +432,9 @@ defmodule Website45sV3Web.QueueLiveTest do
 
       assert render_click(view, "join") =~ "You already have a game in progress"
       assert QueueStarter.player_count() == 0
+
+      assert [%{data: %{"action" => "join", "reason" => "already_in_game", "queue" => "public"}}] =
+               site_events(user, "refused")
     end
 
     test "abandoning a game against bots ends it and frees the user to queue", %{conn: conn} do
@@ -499,6 +530,10 @@ defmodule Website45sV3Web.QueueLiveTest do
       assert user in state.player_ids
       assert MapSet.size(state.seat_bots) == 3
       assert ActiveGames.find_game(user) == game_name
+
+      # The game knows it came from this lobby, for its game log.
+      assert %{queue: "private", lobby: lobby} = :sys.get_state(game_pid)
+      assert lobby == PrivateQueueManager.lobby_tag(private_id)
     end
 
     test "adding a bot to the last seat starts a public game", %{conn: conn} do

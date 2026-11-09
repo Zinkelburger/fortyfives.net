@@ -18,6 +18,10 @@ defmodule Website45sV3.Game.GameLog do
     field :duration_ms, :integer
     field :hands, :integer
     field :human_count, :integer
+    # "public" | "private"; nil on rows from before it was recorded.
+    field :queue, :string
+    # A private game's lobby tag (`PrivateQueueManager.lobby_tag/1`).
+    field :lobby, :string
     # "team1" | "team2" | nil
     field :winner, :string
     field :team1_score, :integer
@@ -33,6 +37,8 @@ defmodule Website45sV3.Game.GameLog do
     :duration_ms,
     :hands,
     :human_count,
+    :queue,
+    :lobby,
     :winner,
     :team1_score,
     :team2_score,
@@ -46,5 +52,6 @@ defmodule Website45sV3.Game.GameLog do
     |> validate_required([:player_usernames])
     |> validate_inclusion(:ended, ["finished", "abandoned", "crash"])
     |> validate_inclusion(:winner, ["team1", "team2"])
+    |> validate_inclusion(:queue, ["public", "private"])
   end
 end

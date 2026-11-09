@@ -7,7 +7,7 @@ defmodule Website45sV3.Analytics.HealthTest do
 
   # A game log with `humans` at seats 0.., bots in the rest, and a join event
   # for each seat in `joined`.
-  defp game_log(game_name, ended, humans, joined) do
+  defp game_log(game_name, ended, humans, joined, extra \\ %{}) do
     players =
       for seat <- 0..3,
           do: %{"seat" => seat, "id" => "p#{seat}", "bot" => seat >= humans}
@@ -19,13 +19,18 @@ defmodule Website45sV3.Analytics.HealthTest do
     document = %{"v" => 1, "players" => players, "events" => events}
 
     %GameLog{}
-    |> GameLog.changeset(%{
-      player_usernames: ["a", "b", "c", "d"],
-      game_name: game_name,
-      ended: ended,
-      human_count: humans,
-      events: :zlib.gzip(Jason.encode!(document))
-    })
+    |> GameLog.changeset(
+      Map.merge(
+        %{
+          player_usernames: ["a", "b", "c", "d"],
+          game_name: game_name,
+          ended: ended,
+          human_count: humans,
+          events: :zlib.gzip(Jason.encode!(document))
+        },
+        extra
+      )
+    )
     |> Repo.insert!()
   end
 
@@ -56,6 +61,26 @@ defmodule Website45sV3.Analytics.HealthTest do
 
     assert %{joins: 2, departures: %{"disconnect" => 1, "explicit" => 1}} =
              Health.report(days: 1).queue
+  end
+
+  test "counts private lobbies, their games and refusals" do
+    site_event("private_created", %{"lobby" => "aaaa1111"})
+    site_event("refused", %{"action" => "join", "reason" => "already_in_game"})
+    site_event("refused", %{"action" => "join", "reason" => "already_in_game"})
+    game_log("PRIV1", "finished", 2, [0, 1], %{queue: "private", lobby: "aaaa1111"})
+    game_log("PRIV2", "abandoned", 1, [0], %{queue: "private", lobby: "aaaa1111"})
+    game_log("PUB", "finished", 1, [0], %{queue: "public"})
+
+    assert %{
+             lobbies: 1,
+             games: 2,
+             finished: 1,
+             abandoned: 1,
+             multi_human: 1,
+             refused: %{"join already_in_game" => 2}
+           } = Health.report(days: 1).private
+
+    assert Health.text(days: 1) =~ "refused: join already_in_game 2"
   end
 
   test "renders as text" do

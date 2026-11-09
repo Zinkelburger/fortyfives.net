@@ -9,6 +9,7 @@ defmodule Website45sV3Web.QueueLive do
   id so a player with two tabs open still shows as one card.
   """
   use Website45sV3Web, :live_view
+  require Logger
 
   alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.BotSupervisor
@@ -71,7 +72,9 @@ defmodule Website45sV3Web.QueueLive do
       if connected?(socket), do: Phoenix.PubSub.subscribe(Website45sV3.PubSub, topic)
 
       {:ok,
-       assign(socket,
+       socket
+       |> SiteTracking.put_data(%{lobby: PrivateQueueManager.lobby_tag(private_id)})
+       |> assign(
          private_id: private_id,
          queue: Presence.list(topic),
          active_game: fetch_active_game(socket.assigns.user_id),
@@ -79,6 +82,10 @@ defmodule Website45sV3Web.QueueLive do
          page_title: @private_title
        )}
     else
+      # The redirect happens on the first (disconnected) render, so the
+      # visitor never gets a tracked socket; the log is the only record.
+      Logger.info("Private lobby #{lobby_label(private_id)}: link opened but the lobby is gone")
+
       {:ok,
        socket
        |> put_flash(:error, @invalid_link_message)
@@ -90,6 +97,11 @@ defmodule Website45sV3Web.QueueLive do
   # which stores a per-session id. A missing id means that pipeline was
   # bypassed; failing loudly beats sharing one identity between every
   # anonymous player.
+  defp lobby_label(id) when is_binary(id) and byte_size(id) == 36,
+    do: PrivateQueueManager.lobby_tag(id)
+
+  defp lobby_label(_id), do: "(malformed link)"
+
   defp session_user_id(%{"user_id" => user_id}) when is_binary(user_id), do: user_id
   defp session_user_id(_session), do: raise("user_id missing from the session")
 
@@ -139,7 +151,10 @@ defmodule Website45sV3Web.QueueLive do
 
   def handle_event("create_private", _params, socket) do
     if socket.assigns.active_game do
-      {:noreply, put_flash(socket, :error, @active_game_message)}
+      {:noreply,
+       socket
+       |> track_refused("create", :already_in_game)
+       |> put_flash(:error, @active_game_message)}
     else
       create_private_queue(socket)
     end
@@ -148,12 +163,16 @@ defmodule Website45sV3Web.QueueLive do
   def handle_event("request_bot", _params, socket) do
     cond do
       socket.assigns.active_game ->
-        {:noreply, put_flash(socket, :error, @active_game_message)}
+        {:noreply,
+         socket
+         |> track_refused("bot", :already_in_game)
+         |> put_flash(:error, @active_game_message)}
 
       my_queued_bots(socket) >= @max_bots_per_requester ->
         {:noreply,
-         put_flash(
-           socket,
+         socket
+         |> track_refused("bot", :bot_cap)
+         |> put_flash(
            :error,
            "You already have #{@max_bots_per_requester} bots waiting — join to start the game."
          )}
@@ -191,21 +210,33 @@ defmodule Website45sV3Web.QueueLive do
            socket.assigns.client_ip
          ) do
       :ok ->
-        SiteTracking.track(socket, "private_created")
+        SiteTracking.track(socket, "private_created", %{
+          data: %{lobby: PrivateQueueManager.lobby_tag(private_id)}
+        })
+
         {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
 
-      {:error, :too_soon} ->
-        {:noreply, put_flash(socket, :error, "Please wait before creating another link")}
-
-      {:error, :too_many_lobbies} ->
-        {:noreply, put_flash(socket, :error, "Private games are temporarily at capacity")}
-
-      {:error, :rate_limited} ->
-        {:noreply, put_flash(socket, :error, "Too many private games created from your network")}
-
-      {:error, reason} when reason in [:invalid_id, :already_exists] ->
-        {:noreply, put_flash(socket, :error, "Unable to create a private game")}
+      {:error, reason} ->
+        {:noreply,
+         socket |> track_refused("create", reason) |> put_flash(:error, create_error(reason))}
     end
+  end
+
+  defp create_error(:too_soon), do: "Please wait before creating another link"
+  defp create_error(:too_many_lobbies), do: "Private games are temporarily at capacity"
+  defp create_error(:rate_limited), do: "Too many private games created from your network"
+
+  defp create_error(reason) when reason in [:invalid_id, :already_exists],
+    do: "Unable to create a private game"
+
+  # Records that the lobby turned the visitor down, so a group that could
+  # not get a game started shows up in the data and not only in a flash.
+  defp track_refused(socket, action, reason) do
+    SiteTracking.track(socket, "refused", %{
+      data: %{action: action, reason: to_string(reason), queue: queue_kind(socket)}
+    })
+
+    socket
   end
 
   # Ignore game updates that might still be broadcast to the user after they
@@ -296,18 +327,18 @@ defmodule Website45sV3Web.QueueLive do
 
       {:error, :already_in_game} ->
         socket
+        |> track_refused("join", :already_in_game)
         |> assign(active_game: fetch_active_game(user_id))
         |> put_flash(:error, "You already have a game in progress.")
 
       {:error, :rate_limited} ->
-        put_flash(
-          socket,
-          :error,
-          "Too many queue joins from your network. Please wait and try again."
-        )
+        socket
+        |> track_refused("join", :rate_limited)
+        |> put_flash(:error, "Too many queue joins from your network. Please wait and try again.")
 
       {:error, :queue_not_found} ->
         socket
+        |> track_refused("join", :queue_not_found)
         |> put_flash(:error, @invalid_link_message)
         |> push_navigate(to: ~p"/play")
     end
@@ -399,12 +430,15 @@ defmodule Website45sV3Web.QueueLive do
 
         {:error, :too_many_bots} ->
           {:halt,
-           put_flash(socket, :error, "Too many bots are playing right now. Try again soon.")}
+           socket
+           |> track_refused("bot", :too_many_bots)
+           |> put_flash(:error, "Too many bots are playing right now. Try again soon.")}
 
         {:error, :rate_limited} ->
           {:halt,
-           put_flash(
-             socket,
+           socket
+           |> track_refused("bot", :rate_limited)
+           |> put_flash(
              :error,
              "You've added a lot of bots recently. Try again in a few minutes."
            )}
@@ -412,14 +446,21 @@ defmodule Website45sV3Web.QueueLive do
         {:error, :queue_not_found} ->
           {:halt,
            socket
+           |> track_refused("bot", :queue_not_found)
            |> put_flash(:error, @invalid_link_message)
            |> push_navigate(to: ~p"/play")}
 
-        {:error, _reason} ->
-          {:halt, put_flash(socket, :error, "Could not add a bot. Try again.")}
+        {:error, reason} ->
+          {:halt,
+           socket
+           |> track_refused("bot", bot_error_reason(reason))
+           |> put_flash(:error, "Could not add a bot. Try again.")}
       end
     end)
   end
+
+  defp bot_error_reason(reason) when is_atom(reason), do: reason
+  defp bot_error_reason(_reason), do: :other
 
   # The per-session cap resets with a fresh cookie; this per-network budget
   # keeps a single client from taking the whole shared bot pool.

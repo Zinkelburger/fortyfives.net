@@ -39,6 +39,17 @@ defmodule Website45sV3Web.SiteTracking do
   def track(_socket, _name, _attrs), do: :ok
 
   @doc """
+  Merges `data` into the `data` of every event this socket records from now
+  on, page views included (a private lobby tags its events with the lobby).
+  """
+  def put_data(%{assigns: %{site_tracking: %{} = context}} = socket, data) do
+    context = Map.update(context, :data, data, &Map.merge(&1, data))
+    Phoenix.Component.assign(socket, :site_tracking, context)
+  end
+
+  def put_data(socket, _data), do: socket
+
+  @doc """
   The socket's tracking context, for recording an event after the LiveView
   is gone (see `record/3`). `nil` when the socket is not tracked.
   """
@@ -49,9 +60,12 @@ defmodule Website45sV3Web.SiteTracking do
   Records `name` with a context taken by `context_of/1`; a no-op for `nil`.
   """
   def record(%{} = context, name, attrs) do
+    {data, attrs} = attrs |> Map.new() |> Map.pop(:data, %{})
+
     context
     |> Map.drop([:last_route])
-    |> Map.merge(Map.new(attrs))
+    |> Map.merge(attrs)
+    |> Map.put(:data, Map.merge(Map.get(context, :data, %{}), data))
     |> Map.put(:name, name)
     |> insert()
   end

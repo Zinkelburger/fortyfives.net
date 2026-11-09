@@ -19,6 +19,7 @@ defmodule Website45sV3.Game.GameEvents do
   """
 
   alias Website45sV3.Game.Card
+  alias Website45sV3.Game.PrivateQueueManager
 
   @format_version 1
 
@@ -82,6 +83,11 @@ defmodule Website45sV3.Game.GameEvents do
             "bot" => MapSet.member?(state.seat_bots, id)
           }
         end),
+      "queue" => queue(state),
+      "lobby" => Map.get(state, :lobby),
+      # The lobby offered for another game; the next game's "lobby" when
+      # they take it, which chains a private table's games together.
+      "rematch_lobby" => lobby_tag(Map.get(state, :rematch_id)),
       "ended" => ended(state, reason),
       "winner" => winner,
       "events" => events
@@ -93,6 +99,8 @@ defmodule Website45sV3.Game.GameEvents do
       duration_ms: elapsed_ms(state),
       hands: length(state.team_1_history),
       human_count: length(state.player_ids) - MapSet.size(state.seat_bots),
+      queue: queue(state),
+      lobby: Map.get(state, :lobby),
       winner: winner,
       team1_score: state.team_scores.team1,
       team2_score: state.team_scores.team2,
@@ -119,6 +127,14 @@ defmodule Website45sV3.Game.GameEvents do
   def ended(_state, {:error, _}), do: "crash"
   def ended(%{phase: "Final Scoring"}, _reason), do: "finished"
   def ended(_state, _reason), do: "abandoned"
+
+  @doc """
+  The queue that started the game: "public" or "private".
+  """
+  def queue(state), do: Map.get(state, :queue, "public")
+
+  defp lobby_tag(nil), do: nil
+  defp lobby_tag(id), do: PrivateQueueManager.lobby_tag(id)
 
   @doc """
   Milliseconds since the game started.

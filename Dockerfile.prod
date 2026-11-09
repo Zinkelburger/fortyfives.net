@@ -53,7 +53,8 @@ RUN mix release
 # /etc/alpine-release (3.24.4) so the release's shared libraries line up.
 FROM docker.io/library/alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
-# Install runtime dependencies (busybox wget is used by the HEALTHCHECK)
+# Install runtime dependencies (busybox wget is used by the HEALTHCHECK).
+# OTP 29 warns on every VM start without libsctp, though nothing here uses SCTP.
 RUN apk update && \
     apk upgrade --no-cache && \
     apk add --no-cache \
@@ -61,7 +62,8 @@ RUN apk update && \
       openssl \
       ncurses-libs \
       sqlite \
-      libstdc++
+      libstdc++ \
+      lksctp-tools
 
 RUN addgroup -S app && adduser -S -G app -h /app app
 

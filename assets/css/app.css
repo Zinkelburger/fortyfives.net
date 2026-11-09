@@ -1,6 +1,31 @@
-@import "tailwindcss/base";
-@import "tailwindcss/components";
-@import "tailwindcss/utilities";
+@import "tailwindcss" source(none);
+
+@source "../js";
+@source "../../lib/website_45s_v3_web.ex";
+@source "../../lib/website_45s_v3_web";
+
+@plugin "@tailwindcss/forms";
+@plugin "../tailwind.heroicons.js";
+
+@custom-variant phx-click-loading (&:where(.phx-click-loading, .phx-click-loading *));
+@custom-variant phx-submit-loading (&:where(.phx-submit-loading, .phx-submit-loading *));
+@custom-variant phx-change-loading (&:where(.phx-change-loading, .phx-change-loading *));
+
+/* Tailwind 3 defaults this site was built on: Tailwind 4 changed them. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 /* Site palette
    navy #041624 (page), #071f31 (panels), ice #d2e8f9 (text), sky #81cbf8

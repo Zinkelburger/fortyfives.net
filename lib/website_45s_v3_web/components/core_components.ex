@@ -78,7 +78,7 @@ defmodule Website45sV3Web.CoreComponents do
       </p>
       <button
         type="button"
-        class="group absolute top-1 right-1 p-2 border border-zinc-300 rounded"
+        class="group absolute top-1 right-1 p-2 border border-zinc-300 rounded-sm"
         aria-label={gettext("close")}
       >
         <.icon
@@ -319,7 +319,7 @@ defmodule Website45sV3Web.CoreComponents do
           name={@name}
           value="true"
           checked={@checked}
-          class="mb-0 h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-0"
+          class="mb-0 h-4 w-4 rounded-sm border-zinc-300 text-zinc-900 focus:ring-0"
           style="color: #5e905a"
           {@rest}
         />
@@ -341,7 +341,7 @@ defmodule Website45sV3Web.CoreComponents do
       <select
         id={@id}
         name={@name}
-        class="mt-2 block w-full rounded-md border border-gray-300 bg-white shadow-sm focus:border-zinc-400 focus:ring-0 sm:text-sm"
+        class="mt-2 block w-full rounded-md border border-gray-300 bg-white shadow-xs focus:border-zinc-400 focus:ring-0 sm:text-sm"
         multiple={@multiple}
         {@rest}
       >
@@ -361,7 +361,7 @@ defmodule Website45sV3Web.CoreComponents do
         id={@id}
         name={@name}
         class={[
-          "mt-2 block w-full rounded-lg text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6 min-h-[6rem]",
+          "mt-2 block w-full rounded-lg text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6 min-h-24",
           @errors == [] && "border-zinc-300 focus:border-zinc-400",
           @errors != [] && "border-rose-400 focus:border-rose-400"
         ]}
@@ -472,7 +472,7 @@ defmodule Website45sV3Web.CoreComponents do
   width, height, and background color classes.
 
   Icons are extracted from your `assets/vendor/heroicons` directory and bundled
-  within your compiled app.css by the plugin in your `assets/tailwind.config.js`.
+  within your compiled app.css by the plugin in `assets/tailwind.heroicons.js`.
 
   ## Examples
 

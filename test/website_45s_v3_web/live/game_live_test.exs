@@ -8,6 +8,7 @@ defmodule Website45sV3Web.GameLiveTest do
   alias Ecto.Adapters.SQL.Sandbox
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.GameController
+  alias Website45sV3.Game.GameEvents
   alias Website45sV3.Game.GameSupervisor
   alias Website45sV3.Game.PrivateQueueManager
 
@@ -588,7 +589,14 @@ defmodule Website45sV3Web.GameLiveTest do
       user = unique("info_user_")
       {game_name, pid} = start_game(user)
       rematch_id = Ecto.UUID.generate()
-      send(pid, {:private_table, rematch_id})
+      send(pid, {:private_table, rematch_id, "abcd1234"})
+
+      # The game log records where the table came from and where it went.
+      attrs = pid |> :sys.get_state() |> GameEvents.finalize(:normal)
+      assert attrs.queue == "private"
+      assert attrs.lobby == "abcd1234"
+      assert {:ok, document} = GameEvents.decode(attrs.events)
+      assert document["rematch_lobby"] == String.slice(rematch_id, 0, 8)
 
       :sys.replace_state(pid, fn state ->
         %{

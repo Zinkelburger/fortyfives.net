@@ -6,12 +6,14 @@ defmodule Website45sV3.Analytics.SiteEvent do
   not run JavaScript never appear.
 
   Names: `"page_view"`, `"queue_join"`, `"queue_leave"`, `"bot_added"`,
-  `"private_created"`, `"game_view"`, `"abandon"`.
+  `"private_created"`, `"game_view"`, `"abandon"`, and `"refused"`: the
+  lobby turned down a create, join or bot (`data` has `action` and
+  `reason`). Events from a private lobby carry its tag in `data.lobby`.
   """
   use Ecto.Schema
   import Ecto.Changeset
 
-  @names ~w(page_view queue_join queue_leave bot_added private_created game_view abandon)
+  @names ~w(page_view queue_join queue_leave bot_added private_created game_view abandon refused)
 
   schema "site_events" do
     field :visitor_id, :string

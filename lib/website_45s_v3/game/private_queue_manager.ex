@@ -82,6 +82,13 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     GenServer.call(__MODULE__, {:queue_exists, id})
   end
 
+  @doc """
+  The short tag a lobby is recorded under in logs, site events and game
+  logs: the first 8 characters of its id. Enough to tell lobbies apart, not
+  enough to join one.
+  """
+  def lobby_tag(id) when is_binary(id), do: String.slice(id, 0, 8)
+
   # Server callbacks
   @impl true
   def init(state) do
@@ -106,6 +113,11 @@ defmodule Website45sV3.Game.PrivateQueueManager do
         {:reply, {:error, :too_many_lobbies}, state}
 
       true ->
+        Logger.info(
+          "Private lobby #{lobby_tag(id)}: reopened for another game by " <>
+            QueueHolders.short_id(owner_id)
+        )
+
         {:reply, :ok, put_in(state.queues[id], new_queue(owner_id))}
     end
   end
@@ -166,6 +178,10 @@ defmodule Website45sV3.Game.PrivateQueueManager do
         {:reply, {:error, :rate_limited}, state}
 
       true ->
+        Logger.info(
+          "Private lobby #{lobby_tag(id)}: created by #{QueueHolders.short_id(owner_id)}"
+        )
+
         queues = Map.put(state.queues, id, new_queue(owner_id))
         last_created = Map.put(state.last_created, owner_id, now)
         {:reply, :ok, %{state | queues: queues, last_created: last_created}}
@@ -200,7 +216,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
         updated_players = players ++ [{assigned_name, user_id}]
 
         Logger.info(
-          "Private lobby: #{QueueHolders.short_id(user_id)} joined " <>
+          "Private lobby #{lobby_tag(id)}: #{QueueHolders.short_id(user_id)} joined " <>
             "(#{length(updated_players)} seated)"
         )
 
@@ -214,7 +230,11 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   # Stores the updated seating, starting (and removing) the lobby once it is
   # full. If the game could not start everyone stays seated for a retry.
   defp seat_players(id, queue, players, state) when length(players) >= 4 do
-    case Matchmaking.start_game(players, rematch_id: Ecto.UUID.generate(), queue: "private") do
+    case Matchmaking.start_game(players,
+           rematch_id: Ecto.UUID.generate(),
+           queue: "private",
+           lobby: lobby_tag(id)
+         ) do
       :ok -> %{state | queues: Map.delete(state.queues, id)}
       {:error, _reason} -> put_in(state.queues[id], mark_empty(queue, players))
     end
@@ -253,8 +273,8 @@ defmodule Website45sV3.Game.PrivateQueueManager do
           (is_integer(empty_since) and now - empty_since > @empty_queue_ttl_ms)
       end)
 
-    for {_id, queue} <- expired do
-      Logger.info("Expiring private lobby")
+    for {id, queue} <- expired do
+      Logger.info("Expiring private lobby #{lobby_tag(id)} (#{length(queue.players)} seated)")
 
       for {_name, user_id} <- queue.players do
         Phoenix.PubSub.broadcast(Website45sV3.PubSub, "user:#{user_id}", :queue_closed)
@@ -289,7 +309,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
           {:not_queued, state}
         else
           Logger.info(
-            "Private lobby: #{QueueHolders.short_id(user_id)} #{how} " <>
+            "Private lobby #{lobby_tag(id)}: #{QueueHolders.short_id(user_id)} #{how} " <>
               "(#{length(updated_players)} seated)"
           )
 

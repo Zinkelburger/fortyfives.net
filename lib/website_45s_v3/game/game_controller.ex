@@ -204,6 +204,10 @@ defmodule Website45sV3.Game.GameController do
             # The lobby a private table's players are offered for another
             # game (see Matchmaking.start_game/2); nil for public games.
             rematch_id: nil,
+            # "public" until a private lobby's start message says otherwise;
+            # `lobby` is that lobby's tag (PrivateQueueManager.lobby_tag/1).
+            queue: "public",
+            lobby: nil,
             game_name: game_name,
             # Humans whose page has connected to this table at least once.
             seen_players: MapSet.new()
@@ -603,8 +607,11 @@ defmodule Website45sV3.Game.GameController do
         seats -> ", seat(s) #{Enum.join(seats, ", ")} never connected"
       end
 
+    lobby = if state.lobby, do: " #{state.lobby}", else: ""
+
     Logger.info(
-      "Game #{state.game_name} ended: #{GameEvents.ended(state, termination_reason)} after " <>
+      "Game #{state.game_name} (#{GameEvents.queue(state)}#{lobby}) ended: " <>
+        "#{GameEvents.ended(state, termination_reason)} after " <>
         "#{length(state.team_1_history)} hand(s), #{div(GameEvents.elapsed_ms(state), 1000)}s, " <>
         "#{humans} human(s)#{no_shows}"
     )
@@ -892,8 +899,8 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp handle_message({:private_table, rematch_id}, state) when is_binary(rematch_id) do
-    {:noreply, %{state | rematch_id: rematch_id}}
+  defp handle_message({:private_table, rematch_id, lobby}, state) when is_binary(rematch_id) do
+    {:noreply, %{state | rematch_id: rematch_id, queue: "private", lobby: lobby}}
   end
 
   defp handle_message({:resume_control, player_id}, state) do

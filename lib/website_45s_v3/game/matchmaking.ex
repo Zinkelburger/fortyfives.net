@@ -45,7 +45,8 @@ defmodule Website45sV3.Game.Matchmaking do
   (in which case no players were redirected).
 
   A private table passes `rematch_id:`, the lobby its players can gather in
-  again once the game is over. `queue:` names the queue in the log line.
+  again once the game is over, and `lobby:`, the tag of the lobby it started
+  from. `queue:` names the queue in the log line.
   """
   def start_game(players, opts \\ []) do
     game_name = create_unique_game_name()
@@ -54,15 +55,16 @@ defmodule Website45sV3.Game.Matchmaking do
       {:ok, _pid} ->
         {bots, humans} = Enum.split_with(players, fn {_name, id} -> bot_id?(id) end)
         human_ids = Enum.map_join(humans, ", ", fn {_name, id} -> QueueHolders.short_id(id) end)
+        lobby = if opts[:lobby], do: " #{opts[:lobby]}", else: ""
 
         Logger.info(
-          "Game #{game_name} starting from the #{opts[:queue] || "public"} queue: " <>
+          "Game #{game_name} starting from the #{opts[:queue] || "public"} queue#{lobby}: " <>
             "#{length(humans)} human(s) [#{human_ids}], #{length(bots)} bot(s)"
         )
 
         # Sent before anyone is redirected, so every seat's first view has it.
         if rematch_id = opts[:rematch_id] do
-          GameController.dispatch(game_name, {:private_table, rematch_id})
+          GameController.dispatch(game_name, {:private_table, rematch_id, opts[:lobby]})
         end
 
         for {_name, user_id} <- players do

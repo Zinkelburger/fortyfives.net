@@ -1,4 +1,9 @@
-@import "tailwindcss" source(none);
+/* Utilities stay out of a layer on purpose. In a layer, every element rule
+   below (h1, label, a) would beat them, whatever its specificity. */
+@layer theme, base;
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/preflight" layer(base);
+@import "tailwindcss/utilities" source(none);
 
 @source "../js";
 @source "../../lib/website_45s_v3_web.ex";

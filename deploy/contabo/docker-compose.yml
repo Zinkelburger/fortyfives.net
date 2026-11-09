@@ -19,10 +19,9 @@ services:
       retries: 3
       start_period: 60s
     logging: &id001
-      driver: json-file
+      driver: journald
       options:
-        max-size: 10m
-        max-file: '3'
+        tag: '{{.Name}}'
   db:
     image: docker.io/library/postgres:15.19-trixie@sha256:baa22e6286bf832cb147b8bb5aa9d8bc999846d69c21d11bf63f58fbeed1fa48
     restart: unless-stopped
@@ -46,6 +45,7 @@ services:
       & nginx -g "daemon off;"'
     depends_on:
     - web
+    logging: *id001
   certbot:
     image: docker.io/certbot/certbot:v5.9.0@sha256:bc93cb710b413e6b456d622f9b0133b3e109c0a78c2ed9976af43d209b0a1805
     restart: unless-stopped
@@ -54,6 +54,7 @@ services:
     - ./certbot/www:/var/www/certbot
     entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w
       /var/www/certbot; sleep 12h & wait $${!}; done;'
+    logging: *id001
   db_backup:
     image: docker.io/thwar/fortyfives.net@sha256:4b5db62d7b27cc5fa501304449b59107762c439c714262829ff8450316d87e07
     restart: unless-stopped

@@ -17,6 +17,42 @@ defmodule Website45sV3Web.UserAuthTest do
     %{user: user_fixture(), conn: conn}
   end
 
+  describe "store_lobby_return_to/2" do
+    defp return_to_after(conn, params) do
+      %{conn | params: params}
+      |> UserAuth.store_lobby_return_to([])
+      |> get_session(:user_return_to)
+    end
+
+    test "remembers a lobby", %{conn: conn} do
+      assert return_to_after(conn, %{"return_to" => "/play"}) == "/play"
+
+      assert return_to_after(conn, %{"return_to" => "/play/private/abc-1"}) ==
+               "/play/private/abc-1"
+    end
+
+    test "refuses anything that is not a lobby", %{conn: conn} do
+      for path <- [
+            "https://evil.example",
+            "//evil.example",
+            "/users/settings",
+            "/play/private/a/b"
+          ] do
+        refute return_to_after(conn, %{"return_to" => path})
+      end
+    end
+
+    test "a visit without a lobby forgets an earlier lobby", %{conn: conn} do
+      conn = put_session(conn, :user_return_to, "/play/private/abc")
+      refute return_to_after(conn, %{})
+    end
+
+    test "keeps the page that required a login", %{conn: conn} do
+      conn = put_session(conn, :user_return_to, "/users/settings")
+      assert return_to_after(conn, %{}) == "/users/settings"
+    end
+  end
+
   describe "log_in_user/3" do
     test "stores the user token in the session", %{conn: conn, user: user} do
       conn = UserAuth.log_in_user(conn, user)

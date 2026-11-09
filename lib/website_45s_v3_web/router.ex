@@ -86,7 +86,7 @@ defmodule Website45sV3Web.Router do
   ## Authentication routes
 
   scope "/", Website45sV3Web do
-    pipe_through [:browser, :redirect_if_user_is_authenticated]
+    pipe_through [:browser, :redirect_if_user_is_authenticated, :store_lobby_return_to]
 
     live_session :redirect_if_user_is_authenticated,
       on_mount: [

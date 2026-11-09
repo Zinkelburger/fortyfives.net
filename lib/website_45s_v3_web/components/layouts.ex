@@ -17,6 +17,10 @@ defmodule Website45sV3Web.Layouts do
 
   embed_templates "layouts/*"
 
+  @doc "A sign-in or register link that returns to the player's lobby afterwards, if they are in one."
+  def auth_link(path, nil), do: path
+  def auth_link(path, lobby_path), do: path <> "?" <> URI.encode_query(return_to: lobby_path)
+
   @doc "The page's meta description, falling back to the site-wide one."
   def meta_description(assigns), do: assigns[:meta_description] || @default_description
 

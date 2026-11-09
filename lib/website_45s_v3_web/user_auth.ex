@@ -341,4 +341,40 @@ defmodule Website45sV3Web.UserAuth do
   defp maybe_store_return_to(conn), do: conn
 
   defp signed_in_path(_conn), do: ~p"/"
+
+  @doc """
+  Returns `path` if it is a lobby page a player can be sent back to, else nil.
+  It comes from a query string, so anything else (another site, a path we did
+  not issue) is refused.
+  """
+  def lobby_path(path) when path in ["/", "/play", "/learn"], do: path
+
+  def lobby_path("/play/private/" <> id = path) do
+    if id =~ ~r/\A[A-Za-z0-9_-]{1,64}\z/, do: path
+  end
+
+  def lobby_path(_path), do: nil
+
+  @doc """
+  Remembers the lobby named by `?return_to=` so signing in or registering goes
+  back to it. A visit without one forgets any earlier lobby, so a player who
+  walked away is not sent back there later. Other return paths (a page that
+  required a login) are left alone.
+  """
+  def store_lobby_return_to(%{method: "GET"} = conn, _opts) do
+    stored = get_session(conn, :user_return_to)
+
+    case lobby_path(conn.params["return_to"]) do
+      nil when is_binary(stored) ->
+        if lobby_path(stored), do: delete_session(conn, :user_return_to), else: conn
+
+      nil ->
+        conn
+
+      path ->
+        put_session(conn, :user_return_to, path)
+    end
+  end
+
+  def store_lobby_return_to(conn, _opts), do: conn
 end

@@ -34,10 +34,14 @@
           </li>
         <% else %>
           <li class="navbar-list-element">
-            <.link href={~p"/users/register"} class="navbar-link">Register</.link>
+            <.link href={auth_link(~p"/users/register", assigns[:lobby_path])} class="navbar-link">
+              Register
+            </.link>
           </li>
           <li class="navbar-list-element">
-            <.link href={~p"/users/log_in"} class="navbar-link">Log in</.link>
+            <.link href={auth_link(~p"/users/log_in", assigns[:lobby_path])} class="navbar-link">
+              Log in
+            </.link>
           </li>
         <% end %>
       </ul>

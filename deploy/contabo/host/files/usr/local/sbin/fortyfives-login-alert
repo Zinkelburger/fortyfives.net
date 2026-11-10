@@ -1,0 +1,27 @@
+#!/bin/sh
+# Run by sshd through pam_exec when a session opens (see /etc/pam.d/sshd).
+# Sends one alert the first time anyone logs in from an address this host
+# has not seen before; the usual addresses stay quiet. The alert is sent
+# while the session is still opening, before whoever logged in can stop it.
+#
+# Never blocks or fails a login: the PAM line is `optional`, the alert goes
+# out in the background, and this always exits 0.
+[ "${PAM_TYPE:-}" = open_session ] || exit 0
+[ -n "${PAM_RHOST:-}" ] || exit 0
+
+state=/var/lib/fortyfives
+known=$state/ssh-known-sources
+mkdir -p "$state" 2>/dev/null
+grep -qxF "$PAM_RHOST" "$known" 2>/dev/null && exit 0
+echo "$PAM_RHOST" >> "$known"
+
+{
+  printf 'SSH login as %s from %s, an address not seen on this host before.\n\n' \
+    "${PAM_USER:-?}" "$PAM_RHOST"
+  printf 'If this was you (new network, travel, phone hotspot), nothing to do.\n'
+  printf 'If not: the key is compromised. See "If the host is broken into"\n'
+  printf 'in deploy/contabo/README.md.\n'
+} | setsid /usr/local/sbin/fortyfives-alert \
+  "fortyfives.net: SSH login from a new address ($PAM_RHOST)" \
+  >/dev/null 2>&1 &
+exit 0

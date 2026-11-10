@@ -132,8 +132,11 @@ ssh twic-vps 'journalctl -t fortyfives-web-1 --utc --since -2d --no-pager | grep
 
 Tags: `fortyfives-web-1`, `fortyfives-nginx-1`, `fortyfives-certbot-1`,
 `fortyfives-db_backup-1`. App lines carry only a time of day; use journald's
-timestamp for the date. Retention is journald's default (up to 4 GB for the
-whole host; the site writes about 3 MB a day).
+timestamp for the date. The journal is capped at 4 GB for the whole host
+(the site writes about 3 MB a day) and is copied to the laptop daily, see
+[Logs off the host](#logs-off-the-host). The app does not log `/healthz`
+requests (the container healthcheck asks every 30 seconds); nginx still logs
+the ones that come from outside.
 
 What to grep for in the web logs:
 
@@ -145,7 +148,87 @@ What to grep for in the web logs:
 | `Queue: <id> joined / left / dropped: its page closed without leaving` | Queue movements. `<id>` is the first 8 characters of `site_events.player_id`. |
 | `Private lobby <lobby>: created / reopened / <id> joined / left / dropped`, `Expiring private lobby <lobby> (N seated)`, `… link opened but the lobby is gone` | Private lobby movements. `<lobby>` is the first 8 characters of the lobby id, the same tag as `game_logs.lobby` and `site_events.data.lobby`. |
 | `Google sign-in ok` / `refused` / `failed`, `Password sign-in ok` / `refused: <message>` | Every sign-in attempt. |
+| `Account created` / `Account created with Google` / `Google account linked` / `Email confirmed` / `Email changed` / `Password changed` / `Password reset`, each `: user <id>` | Changes to an account, by user id only. |
+| `Admin page <path>: user <id>` | Every `/admin` page view. |
 | `Daily health: …` | The summary above, once a day. |
+
+## Auditing and alerts
+
+Everything here is installed by `deploy/contabo/host/apply.sh` from
+`deploy/contabo/host/files/` (laid out like the host's filesystem). It is
+safe to run again and changes nothing on an up-to-date host; `check-drift.sh`
+compares the files and checks that the pieces are running.
+
+| What | Where on the host | Notes |
+|---|---|---|
+| Audit rules | `/etc/audit/rules.d/50-fortyfives.rules` | Every command run in a login session, and changes to accounts, SSH keys and config, PAM, units, cron, `/usr/local`, `/home/fortyfives`, the rest of `/etc`, plus logs touched from a login session and kernel modules. Ten 50 MB files in `/var/log/audit`. |
+| Audit records in journald | `/etc/audit/plugins.d/syslog.conf` (`active = yes`) | Tag `audisp-syslog`, so the audit trail leaves the host with the journal. |
+| Journal size | `/etc/systemd/journald.conf.d/50-fortyfives.conf` | 4 GB, persistent. Holds sshd, the firewall, auditd and the containers. |
+| SSH | `/etc/ssh/sshd_config.d/00-hardening.conf` | Keys only. `ufw` allows 22, 80 and 443; `fail2ban` watches sshd; security updates install themselves (`unattended-upgrades`). |
+| Alerts | `/usr/local/sbin/fortyfives-alert` | Writes to journald (tag `fortyfives-alert`) and emails `ALERT_TO` from `/etc/fortyfives/alert.env` through SES with the site's send-only credentials. `apply.sh` fills `ALERT_TO` with the admin accounts' addresses (`ADMIN_USER_IDS`) the first time; edit the file to change it. |
+| Login alert | `/usr/local/sbin/fortyfives-login-alert`, last line of `/etc/pam.d/sshd` | One alert the first time anyone logs in from an address not in `/var/lib/fortyfives/ssh-known-sources`. It is sent while the session opens. |
+| Daily check | `fortyfives-host-check.timer` (08:30 UTC) | Containers up and healthy, a database backup under 26 hours old, 14 days left on the certificate, disk under 85%, auditd/fail2ban/ufw on, audit rules loaded, no failed units, no password logins, only root has uid 0, `authorized_keys` unchanged, only 22/80/443 listening, no packaged file modified, no reboot pending for over a week. Alerts when the list of problems changes, weekly while it stays, and once when it clears. |
+| Uptime | `.github/workflows/uptime.yml` | Every 30 minutes from GitHub, straight to the server: `/healthz`, `/healthz/auth`, certificate expiry. GitHub emails a failed run to whoever last edited the schedule. |
+
+```sh
+ssh twic-vps fortyfives-host-check --print                  # the daily check, now
+ssh twic-vps 'echo test | fortyfives-alert "test alert"'    # send an alert
+ssh twic-vps 'ausearch --input-logs -k exec -ts today -i'   # commands run in login sessions
+ssh twic-vps 'ausearch --input-logs -k ssh-keys -i'         # changes to /root/.ssh
+ssh twic-vps 'aureport --input-logs -x --summary -ts this-week'
+```
+
+Audit keys: `exec`, `identity`, `ssh-keys`, `sshd`, `pam`, `persistence`,
+`site-config`, `etc`, `log-tamper`, `modules`. `ausearch` needs
+`--input-logs` when it is not run from a terminal.
+
+After deliberately changing root's `authorized_keys`, run `apply.sh` again
+so the daily check takes the new file as the one to compare against.
+
+### Logs off the host
+
+Someone with root on the host can delete every log on it.
+`scripts/pull-prod-logs.sh` copies the journal to the machine it runs on:
+everything since the last run, as
+`~/Backups/fortyfives.net/logs/journal-<UTC time>.jsonl.gz` (one JSON
+object per line, every journald field kept, 400 days kept). Log:
+`~/Backups/fortyfives.net/pull-logs.log`. On Andrew's laptop anacron runs it
+daily (next to the weekly database pull, see
+[Off-host backups](#off-host-backups)):
+
+- `~/.config/anacron/anacrontab`: `1  15  fortyfives-logs  /home/anbernal/Projects/fortyfives.net/scripts/pull-prod-logs.sh`
+
+So at most the last day of logs (longer while the laptop is off) exists only
+on the host.
+
+```sh
+cd ~/Backups/fortyfives.net/logs
+zgrep -h 'Accepted' journal-*.jsonl.gz | jq -r '[.__REALTIME_TIMESTAMP, .MESSAGE] | @tsv'
+zgrep -h '"audisp-syslog"' journal-*.jsonl.gz | jq -r .MESSAGE | grep EXECVE
+zgrep -h '"fortyfives-web-1"' journal-*.jsonl.gz | jq -r .MESSAGE | grep '\[error\]'
+```
+
+## If the host is broken into
+
+The host was compromised once before it was reinstalled on 2026-07-19;
+nothing from that install survives, so how it happened is not known. What
+exists now is meant to make the next time answerable.
+
+1. Do not clean up first. Pull the logs while they exist:
+   `scripts/pull-prod-logs.sh`, then copy `/var/log/audit/` and
+   `/var/log/auth.log*` as well.
+2. In the Contabo panel, take a snapshot of the disk, then shut the host
+   down or cut its network if it is doing harm.
+3. Find the way in from the copies on the laptop (the host's own copies may
+   have been edited): accepted SSH logins and their addresses, `exec`
+   records around that time, `ssh-keys`, `identity`, `persistence` and
+   `site-config` changes, and nginx/app lines just before the first one.
+4. Assume every secret on the host is known. Rotate the SSH key, everything
+   in `.env` (`SECRET_KEY_BASE` signs everyone out; AWS, Google OAuth,
+   Turnstile and Cloudflare tokens in their consoles), the Docker Hub token,
+   and the twic and bld services' secrets.
+5. Reinstall rather than repair: [Rebuilding the host](#rebuilding-the-host)
+   with the database from the laptop's restic repository, then `apply.sh`.
 
 ## Updating nginx, certbot and postgres
 
@@ -183,6 +266,10 @@ compose file does. To pick up security fixes:
    Renewals then use the webroot.
 6. `docker compose up -d`, point Cloudflare's DNS at the new IP, and run the
    checks in step 5 of the release steps above.
+7. `deploy/contabo/host/apply.sh <ssh-host>` for auditing, alerts, the
+   firewall and SSH hardening (see [Auditing and alerts](#auditing-and-alerts)),
+   then `deploy/contabo/check-drift.sh`. Update `ORIGIN` in
+   `.github/workflows/uptime.yml` when the IP changes.
 
 ## Off-host backups
 
@@ -210,5 +297,7 @@ up after the laptop was off:
 
 - crontab: `@hourly /usr/bin/anacron -s -t $HOME/.config/anacron/anacrontab -S $HOME/.local/state/anacron`
 - `~/.config/anacron/anacrontab`: `7  10  fortyfives-backups  /home/anbernal/Projects/fortyfives.net/scripts/pull-prod-backups.sh`
+- `~/.config/anacron/anacrontab` also has the daily log pull, see
+  [Logs off the host](#logs-off-the-host).
 
-It needs passphrase-less SSH to `twic-vps` (no agent under cron).
+Both need passphrase-less SSH to `twic-vps` (no agent under cron).

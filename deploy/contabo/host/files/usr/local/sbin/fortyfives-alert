@@ -1,0 +1,54 @@
+#!/bin/sh
+# Tells the site's owner that something on this host needs a look.
+#
+#   fortyfives-alert "<subject>" < body
+#
+# Always writes the alert to journald (tag `fortyfives-alert`). When ALERT_TO
+# is set in /etc/fortyfives/alert.env it also emails it through Amazon SES,
+# signed with the site's send-only credentials from the site's .env.
+# Exits 0 when the email was accepted (or no address is configured).
+set -u
+conf=${FORTYFIVES_ALERT_CONF:-/etc/fortyfives/alert.env}
+ALERT_TO=
+ALERT_FROM=noreply@fortyfives.net
+ALERT_REGION=us-east-1
+SITE_ENV=/home/fortyfives/.env
+# shellcheck disable=SC1090
+[ -r "$conf" ] && . "$conf"
+
+subject=${1:-"fortyfives.net host alert"}
+body=$(cat)
+
+{ echo "$subject"; echo "$body"; } | logger -t fortyfives-alert
+
+[ -n "$ALERT_TO" ] || exit 0
+
+env_value() { sed -n "s/^$1=//p" "$SITE_ENV" | tail -n 1; }
+key=$(env_value AWS_ACCESS_KEY_ID)
+secret=$(env_value AWS_SECRET_ACCESS_KEY)
+if [ -z "$key" ] || [ -z "$secret" ]; then
+  echo "no AWS credentials in $SITE_ENV; alert not emailed" | logger -t fortyfives-alert
+  exit 1
+fi
+
+raw=$(
+  {
+    printf 'From: fortyfives.net host <%s>\n' "$ALERT_FROM"
+    printf 'To: %s\n' "$ALERT_TO"
+    printf 'Subject: %s\n' "$subject"
+    printf 'MIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\n\n'
+    printf '%s\n\n-- \n%s, %s\n' "$body" "$(hostname)" "$(date -u '+%F %T UTC')"
+  } | base64 -w0
+)
+
+# Credentials go in on stdin, so they never show up in `ps`.
+if out=$(printf 'user = "%s:%s"\n' "$key" "$secret" | curl -sS -m 30 -K - \
+  --aws-sigv4 "aws:amz:$ALERT_REGION:ses" \
+  --data-urlencode "Action=SendRawEmail" \
+  --data-urlencode "RawMessage.Data=$raw" \
+  -o /dev/null -w '%{http_code}' \
+  "https://email.$ALERT_REGION.amazonaws.com/" 2>&1) && [ "$out" = 200 ]; then
+  exit 0
+fi
+echo "email not sent (SES answered: $out)" | logger -t fortyfives-alert
+exit 1

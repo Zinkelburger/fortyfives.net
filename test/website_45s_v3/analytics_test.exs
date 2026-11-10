@@ -337,7 +337,7 @@ defmodule Website45sV3.AnalyticsTest do
           player_ids: ["a", "b", "c", "d"],
           player_map: %{"a" => "Ann", "b" => "Bot1", "c" => "Cy", "d" => "Bot3"},
           seat_bots: MapSet.new(["b", "d"]),
-          phase: "Final Scoring",
+          phase: :final_scoring,
           team_scores: %{team1: 125, team2: 40},
           winning_team: :team1,
           team_1_history: ["a", "b", "c"]
@@ -365,7 +365,7 @@ defmodule Website45sV3.AnalyticsTest do
           player_ids: ["a", "b", "c", "d"],
           player_map: %{},
           seat_bots: MapSet.new(),
-          phase: "Playing",
+          phase: :playing,
           team_scores: %{team1: 0, team2: 0},
           team_1_history: []
         })
@@ -383,7 +383,7 @@ defmodule Website45sV3.AnalyticsTest do
           player_ids: ["a", "b", "c", "d"],
           player_map: %{},
           seat_bots: MapSet.new(),
-          phase: "Final Scoring",
+          phase: :final_scoring,
           team_scores: %{team1: 125, team2: 120},
           winning_team: :team2,
           team_1_history: ["x"]

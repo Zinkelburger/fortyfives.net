@@ -20,7 +20,7 @@ defmodule Website45sV3Web.AdminControllerTest do
         player_ids: ["a", "b", "c", "d"],
         player_map: %{"a" => "Ann", "b" => "Bot1", "c" => "Bot2", "d" => "Bot3"},
         seat_bots: MapSet.new(["b", "c", "d"]),
-        phase: "Final Scoring",
+        phase: :final_scoring,
         team_scores: %{team1: 120, team2: 30},
         winning_team: :team1,
         team_1_history: ["x"]

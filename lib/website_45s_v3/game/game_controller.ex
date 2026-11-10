@@ -2,7 +2,9 @@ defmodule Website45sV3.Game.GameController do
   @moduledoc """
   GenServer shell around a running 45s game: timers, bot control, PubSub
   broadcasts and persistence. The rules themselves live in
-  `Website45sV3.Game.Rules`.
+  `Website45sV3.Game.Rules`, the shape of the game's state in
+  `Website45sV3.Game.State` and the phases a hand goes through in
+  `Website45sV3.Game.Phase`.
 
   Every player (human or bot) receives a per-seat view of the game built by
   `player_view/2`: their own hand and legal moves, the number of cards the
@@ -23,7 +25,9 @@ defmodule Website45sV3.Game.GameController do
   alias Website45sV3.Game.GameEvents
   alias Website45sV3.Game.GameLog
   alias Website45sV3.Game.GameSupervisor
+  alias Website45sV3.Game.Phase
   alias Website45sV3.Game.Rules
+  alias Website45sV3.Game.State
   alias Website45sV3.Repo
   alias Website45sV3Web.Presence
 
@@ -84,6 +88,7 @@ defmodule Website45sV3.Game.GameController do
   The full internal state. For the lobby and tests; players get
   `get_player_view/2`.
   """
+  @spec get_game_state(pid()) :: State.t()
   def get_game_state(pid), do: GenServer.call(pid, :get_game_state)
 
   @doc """
@@ -96,6 +101,7 @@ defmodule Website45sV3.Game.GameController do
   Builds the per-seat view broadcast to players: only their own hand and
   legal moves, card counts for everyone, and the shared table state.
   """
+  @spec player_view(State.t(), State.player_id()) :: map()
   def player_view(state, player_id) do
     %{
       game_name: state.game_name,
@@ -130,7 +136,7 @@ defmodule Website45sV3.Game.GameController do
 
   # Set while a finished trick is still on the table.
   defp trick_winner_id(%{
-         phase: "Playing",
+         phase: :playing,
          current_player_id: nil,
          trick_winning_cards: [%{player_id: winner} | _]
        }),
@@ -142,7 +148,7 @@ defmodule Website45sV3.Game.GameController do
   # time in milliseconds. A view can be built just before the timers are
   # reconciled (see handle_info/2); the clock about to be armed then runs
   # the full timeout from now.
-  defp idle_deadline(%{phase: "Discard"} = state, player_id) do
+  defp idle_deadline(%{phase: :discard} = state, player_id) do
     cond do
       player_id in state.received_discards_from or bot_controlled?(state, player_id) ->
         nil
@@ -156,7 +162,7 @@ defmodule Website45sV3.Game.GameController do
   end
 
   defp idle_deadline(%{current_player_id: player_id, phase: phase} = state, player_id)
-       when phase in ["Bidding", "Playing"] do
+       when phase in [:bidding, :playing] do
     cond do
       bot_controlled?(state, player_id) ->
         nil
@@ -213,6 +219,7 @@ defmodule Website45sV3.Game.GameController do
             seen_players: MapSet.new()
           })
           |> Map.merge(GameEvents.init())
+          |> State.new()
           |> log_deal()
 
         Phoenix.PubSub.subscribe(Website45sV3.PubSub, game_name)
@@ -231,8 +238,9 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  # `player_ids` keeps the queue join order: players seated 1st and 3rd play
-  # against players seated 2nd and 4th.
+  # The fields of `State` that every new hand starts over. `player_ids` keeps
+  # the queue join order: players seated 1st and 3rd play against players
+  # seated 2nd and 4th.
   defp setup_game(player_ids, player_map, previous_dealer_id) do
     deck = Deck.new() |> Deck.shuffle()
     {hands, deck} = deal_cards(player_ids, deck, 5)
@@ -243,7 +251,7 @@ defmodule Website45sV3.Game.GameController do
     seat_bot_ids = Enum.filter(player_ids, &String.starts_with?(&1, "bot_"))
 
     %{
-      phase: "Bidding",
+      phase: :bidding,
       current_player_id: starting_player_id,
       dealing_player_id: new_dealer_id,
       player_ids: player_ids,
@@ -380,7 +388,7 @@ defmodule Website45sV3.Game.GameController do
 
       state
       |> Map.update!(:auto_play_players, &MapSet.put(&1, player_id))
-      |> log("idle", %{p: GameEvents.seat(state, player_id), phase: state.phase})
+      |> log("idle", %{p: GameEvents.seat(state, player_id), phase: Phase.label(state.phase)})
       |> reconcile_all_bot_controlled_timer()
     end
   end
@@ -411,7 +419,7 @@ defmodule Website45sV3.Game.GameController do
   # plus, for the turn timer, the `player_id` and `phase` it was armed for.
   # Idle timers also carry the `deadline` shown to the player as a countdown.
 
-  defp ensure_timers(%{phase: "Discard"} = state) do
+  defp ensure_timers(%{phase: :discard} = state) do
     state |> cancel_turn_timer() |> ensure_discard_timers()
   end
 
@@ -486,7 +494,7 @@ defmodule Website45sV3.Game.GameController do
         ref =
           Process.send_after(
             self(),
-            {:bot_execute, player_id, "Discard"},
+            {:bot_execute, player_id, :discard},
             timing(:bot_move_delay)
           )
 
@@ -733,7 +741,7 @@ defmodule Website45sV3.Game.GameController do
 
   defp handle_message({:idle_timeout, _player_id, _phase}, state), do: {:noreply, state}
 
-  defp handle_message({:discard_idle_timeout, player_id}, %{phase: "Discard"} = state) do
+  defp handle_message({:discard_idle_timeout, player_id}, %{phase: :discard} = state) do
     new_state =
       state
       |> clear_fired_discard_timer(player_id, :idle)
@@ -749,7 +757,7 @@ defmodule Website45sV3.Game.GameController do
 
   defp handle_message({:discard_idle_timeout, _player_id}, state), do: {:noreply, state}
 
-  defp handle_message({:bot_execute, player_id, "Bidding"}, %{phase: "Bidding"} = state) do
+  defp handle_message({:bot_execute, player_id, :bidding}, %{phase: :bidding} = state) do
     state = clear_fired_turn_timer(state, player_id, :bot)
 
     if bot_controlled?(state, player_id) and state.current_player_id == player_id do
@@ -760,7 +768,7 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp handle_message({:bot_execute, player_id, "Discard"}, %{phase: "Discard"} = state) do
+  defp handle_message({:bot_execute, player_id, :discard}, %{phase: :discard} = state) do
     state = clear_fired_discard_timer(state, player_id, :bot)
 
     if bot_controlled?(state, player_id) and player_id not in state.received_discards_from do
@@ -771,7 +779,7 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp handle_message({:bot_execute, player_id, "Playing"}, %{phase: "Playing"} = state) do
+  defp handle_message({:bot_execute, player_id, :playing}, %{phase: :playing} = state) do
     state = clear_fired_turn_timer(state, player_id, :bot)
 
     if bot_controlled?(state, player_id) and state.current_player_id == player_id do
@@ -890,7 +898,7 @@ defmodule Website45sV3.Game.GameController do
         state
         |> Map.update!(:abandoned_players, &MapSet.put(&1, player_id))
         |> Map.update!(:auto_play_players, &MapSet.put(&1, player_id))
-        |> log("abandon", %{p: GameEvents.seat(state, player_id), phase: state.phase})
+        |> log("abandon", %{p: GameEvents.seat(state, player_id), phase: Phase.label(state.phase)})
         |> reconcile_all_bot_controlled_timer()
 
       {:noreply, new_state}
@@ -913,7 +921,7 @@ defmodule Website45sV3.Game.GameController do
     end
   end
 
-  defp handle_message({:transition_to_end_bid, winning_player_id}, %{phase: "Playing"} = state) do
+  defp handle_message({:transition_to_end_bid, winning_player_id}, %{phase: :playing} = state) do
     new_state = %{
       state
       | current_player_id: winning_player_id,
@@ -931,7 +939,7 @@ defmodule Website45sV3.Game.GameController do
   defp handle_message(:transition_to_scoring, state) do
     new_state = %{
       state
-      | phase: "Scoring",
+      | phase: :scoring,
         current_player_id: nil,
         suit_led: nil,
         trump: nil,
@@ -950,7 +958,7 @@ defmodule Website45sV3.Game.GameController do
   defp handle_message(:transition_to_final_scoring, state) do
     new_state = %{
       state
-      | phase: "Final Scoring",
+      | phase: :final_scoring,
         current_player_id: nil,
         legal_moves: %{}
     }
@@ -977,7 +985,7 @@ defmodule Website45sV3.Game.GameController do
   defp maybe_play_card(
          player_id,
          %Card{} = card,
-         %{phase: "Playing", current_player_id: player_id} = state,
+         %{phase: :playing, current_player_id: player_id} = state,
          from_bot
        ) do
     current_hand = Map.get(state.hands, player_id, [])
@@ -1076,7 +1084,7 @@ defmodule Website45sV3.Game.GameController do
          player_id,
          bid,
          suit,
-         %{phase: "Bidding", current_player_id: player_id} = state,
+         %{phase: :bidding, current_player_id: player_id} = state,
          from_bot
        ) do
     {highest_bid, _player, _suit} = state.winning_bid
@@ -1155,7 +1163,7 @@ defmodule Website45sV3.Game.GameController do
 
     %{
       state
-      | phase: "Discard",
+      | phase: :discard,
         trump: suit,
         deck: deck,
         hands: Map.update!(state.hands, winner, &(&1 ++ kitty)),
@@ -1167,7 +1175,7 @@ defmodule Website45sV3.Game.GameController do
 
   ## Discarding
 
-  defp maybe_confirm_discard(player, selected_cards, %{phase: "Discard"} = state, from_bot) do
+  defp maybe_confirm_discard(player, selected_cards, %{phase: :discard} = state, from_bot) do
     hand = Map.get(state.hands, player, [])
 
     case Rules.validate_discard(selected_cards, hand) do
@@ -1216,7 +1224,7 @@ defmodule Website45sV3.Game.GameController do
 
       state = %{
         state
-        | phase: "Playing",
+        | phase: :playing,
           received_discards_from: [],
           hands: hands,
           deck: deck,

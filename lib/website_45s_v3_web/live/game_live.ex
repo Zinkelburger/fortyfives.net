@@ -13,6 +13,7 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.ActiveGames
   alias Website45sV3.Game.Card
   alias Website45sV3.Game.GameController
+  alias Website45sV3.Game.Phase
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.Rules
   alias Website45sV3Web.Presence
@@ -101,7 +102,7 @@ defmodule Website45sV3Web.GameLive do
       game_state: game_state,
       current_player_id: game_state.current_player_id,
       confirm_discard_clicked:
-        game_state.phase == "Discard" and user_id in game_state.received_discards_from,
+        game_state.phase == :discard and user_id in game_state.received_discards_from,
       auto_playing: game_state.auto_playing,
       dealer: game_state.dealing_player_id == user_id,
       turn_ms_left: turn_ms_left(game_state)
@@ -283,14 +284,14 @@ defmodule Website45sV3Web.GameLive do
 
     SiteTracking.track(socket, "abandon", %{
       game_name: socket.assigns.game_id,
-      data: %{from: from, phase: socket.assigns.game_state[:phase]}
+      data: %{from: from, phase: Phase.label(socket.assigns.game_state.phase)}
     })
 
     redirect(socket, to: path)
   end
 
   defp after_game_path(socket) do
-    (socket.assigns.game_state.phase == "Final Scoring" && rematch_path(socket)) || ~p"/play"
+    (socket.assigns.game_state.phase == :final_scoring && rematch_path(socket)) || ~p"/play"
   end
 
   # The lobby is opened on demand by whichever player gets there first.
@@ -399,7 +400,7 @@ defmodule Website45sV3Web.GameLive do
       class="game"
       phx-hook="SessionRecorder"
       data-record={to_string(@record_replay)}
-      data-phase={@game_state.phase}
+      data-phase={Phase.label(@game_state.phase)}
       data-current-turn={to_string(@user_id == @game_state.current_player_id)}
       data-bagged={to_string(@game_state.bagged)}
       data-current-bid={Integer.to_string(elem(@game_state.winning_bid, 0))}
@@ -466,20 +467,20 @@ defmodule Website45sV3Web.GameLive do
       </div>
 
       <div class="game-play-area">
-        <section class="phase-area" aria-label={@game_state.phase}>
+        <section class="phase-area" aria-label={Phase.label(@game_state.phase)}>
           <%= case @game_state.phase do %>
-            <% "Bidding" -> %>
+            <% :bidding -> %>
               {render_seat_table(assigns)}
               {render_bidding_buttons(assigns)}
-            <% "Discard" -> %>
+            <% :discard -> %>
               {render_seat_table(assigns)}
-            <% "Playing" -> %>
+            <% :playing -> %>
               {render_played_cards(assigns)}
             <% _ -> %>
               {render_scoring(assigns)}
           <% end %>
         </section>
-        <%= if @game_state.phase in ["Bidding", "Discard", "Playing"] do %>
+        <%= if @game_state.phase in [:bidding, :discard, :playing] do %>
           {render_player_hand(assigns)}
         <% end %>
       </div>
@@ -553,7 +554,7 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <%= case @game_state.phase do %>
-      <% "Bidding" -> %>
+      <% :bidding -> %>
         <p class="game-facts" aria-live="polite">
           <span :if={@bidder} class="facts-main">
             High bid:<span class="facts-name">{@bidder}</span>{@bid} <.suit suit={@suit} />
@@ -561,15 +562,15 @@ defmodule Website45sV3Web.GameLive do
           <span :if={!@bidder}>No bids yet</span>
           <span>Dealer: {who(assigns, @game_state.dealing_player_id)}</span>
         </p>
-      <% phase when phase in ["Discard", "Playing"] -> %>
+      <% phase when phase in [:discard, :playing] -> %>
         <p class="game-facts" aria-live="polite">
           <span class="facts-main">
             <span class="trump">Trump <.suit suit={@game_state.trump} /></span>
             ·<span class="facts-name">{@bidder}</span>bid {@bid}
           </span>
-          <span :if={phase == "Playing"}>Tricks: You {@tricks.you} · Them {@tricks.them}</span>
+          <span :if={phase == :playing}>Tricks: You {@tricks.you} · Them {@tricks.them}</span>
         </p>
-      <% "Scoring" -> %>
+      <% :scoring -> %>
         <p class="game-facts" aria-live="polite">
           <span>Hand {@hand_number}</span>
           <span :if={@bidder} class="facts-main">
@@ -607,32 +608,32 @@ defmodule Website45sV3Web.GameLive do
     %{you: count.(teams.you), them: count.(teams.them)}
   end
 
-  defp phase_title("Discard"), do: "Discarding"
-  defp phase_title("Scoring"), do: "Hand results"
-  defp phase_title("Final Scoring"), do: "Game over"
-  defp phase_title(phase), do: phase
+  defp phase_title(:discard), do: "Discarding"
+  defp phase_title(:scoring), do: "Hand results"
+  defp phase_title(:final_scoring), do: "Game over"
+  defp phase_title(phase), do: Phase.label(phase)
 
   defp turn_message(%{auto_playing: true}), do: "Bot playing · Tap anywhere to resume"
 
-  defp turn_message(%{game_state: %{phase: "Discard"}, confirm_discard_clicked: true}),
+  defp turn_message(%{game_state: %{phase: :discard}, confirm_discard_clicked: true}),
     do: "Cards kept · Waiting for others"
 
-  defp turn_message(%{game_state: %{phase: "Discard"}}), do: "Tap the cards you want to keep"
+  defp turn_message(%{game_state: %{phase: :discard}}), do: "Tap the cards you want to keep"
 
-  defp turn_message(%{game_state: %{phase: "Bidding", bagged: true}} = assigns)
+  defp turn_message(%{game_state: %{phase: :bidding, bagged: true}} = assigns)
        when assigns.user_id == assigns.game_state.current_player_id,
        do: "Your bid is 15 · Choose trump"
 
-  defp turn_message(%{game_state: %{phase: "Bidding"}} = assigns)
+  defp turn_message(%{game_state: %{phase: :bidding}} = assigns)
        when assigns.user_id == assigns.game_state.current_player_id,
        do: "Your turn · Choose a bid and trump"
 
-  defp turn_message(%{game_state: %{phase: "Scoring"}} = assigns) do
+  defp turn_message(%{game_state: %{phase: :scoring}} = assigns) do
     teams = team_summary(assigns)
     "You #{last_change(teams.you.history)} · Them #{last_change(teams.them.history)}"
   end
 
-  defp turn_message(%{game_state: %{phase: "Final Scoring"}} = assigns) do
+  defp turn_message(%{game_state: %{phase: :final_scoring}} = assigns) do
     teams = team_summary(assigns)
     {_, bidder, _} = assigns.game_state.winning_bid
 
@@ -715,7 +716,7 @@ defmodule Website45sV3Web.GameLive do
     """
   end
 
-  defp seat_status(%{phase: "Bidding", bids: bids}, seat) do
+  defp seat_status(%{phase: :bidding, bids: bids}, seat) do
     case Map.get(bids, seat.id) do
       {0, _} -> :pass
       {bid, suit} -> {:bid, bid, suit}
@@ -723,7 +724,7 @@ defmodule Website45sV3Web.GameLive do
     end
   end
 
-  defp seat_status(%{phase: "Discard"} = state, seat) do
+  defp seat_status(%{phase: :discard} = state, seat) do
     if seat.id in state.received_discards_from, do: :ready, else: :waiting
   end
 
@@ -823,10 +824,10 @@ defmodule Website45sV3Web.GameLive do
         card: card,
         value: card_dom_value(card),
         name: Card.to_string(card),
-        playable: not locked and (state.phase != "Playing" or legal),
+        playable: not locked and (state.phase != :playing or legal),
         # Only cards you may not play on your own turn are dimmed; a hand
         # that is waiting stays readable.
-        illegal: state.phase == "Playing" and my_turn and not legal
+        illegal: state.phase == :playing and my_turn and not legal
       }
     end)
   end
@@ -837,7 +838,7 @@ defmodule Website45sV3Web.GameLive do
     state = assigns.game_state
 
     assigns.auto_playing or assigns.confirm_discard_clicked or
-      state.phase == "Bidding" or (state.phase == "Playing" and not my_turn)
+      state.phase == :bidding or (state.phase == :playing and not my_turn)
   end
 
   # A bagged dealer's bid is 15; only the suit is theirs to choose.
@@ -867,7 +868,7 @@ defmodule Website45sV3Web.GameLive do
       class="hand-panel"
       phx-hook="CardSelection"
       aria-label="Your hand"
-      data-phase={@game_state.phase}
+      data-phase={Phase.label(@game_state.phase)}
       data-locked={to_string(@hand_locked)}
       data-auto-playing={to_string(@auto_playing)}
       data-confirmed={to_string(@confirm_discard_clicked)}
@@ -916,7 +917,7 @@ defmodule Website45sV3Web.GameLive do
           phx-click="resume_control"
           phx-disable-with="Resuming…"
         >Resume playing</button>
-      <% @game_state.phase == "Bidding" -> %>
+      <% @game_state.phase == :bidding -> %>
         <p class="selection-summary" aria-live="polite">{bid_summary(assigns)}</p>
         <div class="confirm-bid">
           <button
@@ -939,7 +940,7 @@ defmodule Website45sV3Web.GameLive do
       <% true -> %>
         <p id="selection-summary" class="selection-summary" aria-live="polite"></p>
         <button
-          :if={@game_state.phase == "Discard"}
+          :if={@game_state.phase == :discard}
           type="button"
           id="confirm-discard-button"
           class="blue-button hand-action"
@@ -947,7 +948,7 @@ defmodule Website45sV3Web.GameLive do
           disabled
         >Choose cards to keep</button>
         <button
-          :if={@game_state.phase == "Playing"}
+          :if={@game_state.phase == :playing}
           type="button"
           id="play-card-button"
           class="blue-button hand-action"
@@ -1082,10 +1083,10 @@ defmodule Website45sV3Web.GameLive do
         </table>
       </div>
       <p :if={@seconds} class="game-hint">
-        {if @game_state.phase == "Final Scoring", do: "Leaving in", else: "Next hand in"}
+        {if @game_state.phase == :final_scoring, do: "Leaving in", else: "Next hand in"}
         <span id="scoring-countdown" phx-hook="ScoringCountdown" data-seconds={@seconds}>{@seconds}</span>s
       </p>
-      <div :if={@game_state.phase == "Final Scoring" and not @in_dialog} class="final-actions">
+      <div :if={@game_state.phase == :final_scoring and not @in_dialog} class="final-actions">
         <button
           :if={@rematch}
           id="play-again-button"
@@ -1141,9 +1142,9 @@ defmodule Website45sV3Web.GameLive do
 
   # The countdown mirrors the game process' own timers, so it reads the
   # same :game_timings config instead of duplicating the numbers.
-  defp countdown_seconds("Scoring"), do: div(GameController.timing(:scoring_display), 1000)
+  defp countdown_seconds(:scoring), do: div(GameController.timing(:scoring_display), 1000)
 
-  defp countdown_seconds("Final Scoring"),
+  defp countdown_seconds(:final_scoring),
     do: div(GameController.timing(:final_scoring_timeout), 1000)
 
   defp countdown_seconds(_phase), do: nil

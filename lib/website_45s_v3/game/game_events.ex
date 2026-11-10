@@ -125,7 +125,7 @@ defmodule Website45sV3.Game.GameEvents do
   or "crash".
   """
   def ended(_state, {:error, _}), do: "crash"
-  def ended(%{phase: "Final Scoring"}, _reason), do: "finished"
+  def ended(%{phase: :final_scoring}, _reason), do: "finished"
   def ended(_state, _reason), do: "abandoned"
 
   @doc """
@@ -144,7 +144,7 @@ defmodule Website45sV3.Game.GameEvents do
   # The game decides the winner (`Rules.score_round/4`: when both teams
   # cross the line in one hand the bidders win, whatever the scores say),
   # so the log reports what it decided rather than re-deriving it.
-  defp winner(%{phase: "Final Scoring"} = state) do
+  defp winner(%{phase: :final_scoring} = state) do
     case Map.get(state, :winning_team) do
       team when team in [:team1, :team2] -> Atom.to_string(team)
       _ -> nil

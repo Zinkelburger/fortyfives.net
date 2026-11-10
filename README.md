@@ -7,6 +7,8 @@ Prerequisites:
 
 - Elixir 1.20 and Erlang/OTP 29 — the exact versions are pinned in
   `.tool-versions` (`asdf install` or `mise install` picks them up).
+  Erlang is built from source and needs the curses headers
+  (`ncurses-devel` on Fedora, `libncurses-dev` on Debian/Ubuntu).
 - SQLite is embedded through `ecto_sqlite3`; no database server is needed.
   Development uses `priv/dev.db`; override with `DATABASE_PATH`. Tests use
   `priv/test${MIX_TEST_PARTITION}.db`.

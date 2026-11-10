@@ -1,0 +1,47 @@
+# fortyfives.net host audit rules (/etc/audit/rules.d/50-fortyfives.rules).
+# Loaded by `augenrules --load`; search with `ausearch -k <key> -i`.
+#
+# The aim is to answer "who did what" after a break-in: which commands ran in
+# login sessions and which files that decide who can get in, or what runs,
+# were changed. auditd also forwards every record to journald (tag
+# `audisp-syslog`), which scripts/pull-prod-logs.sh copies off the host.
+
+# Commands run in a login session. auid is set at login and survives su and
+# sudo; services, timers and containers never get one, so the site's own
+# processes (healthchecks every 30 seconds) are not recorded.
+-a always,exit -F arch=b64 -S execve,execveat -F auid!=unset -k exec
+-a always,exit -F arch=b32 -S execve,execveat -F auid!=unset -k exec
+
+# Who can log in, and as what.
+-w /etc/passwd -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/sudoers -p wa -k identity
+-w /etc/sudoers.d -p wa -k identity
+-w /root/.ssh -p wa -k ssh-keys
+-w /etc/ssh -p wa -k sshd
+-w /etc/pam.d -p wa -k pam
+
+# What runs by itself: units, cron, anything dropped in /usr/local.
+-w /etc/systemd/system -p wa -k persistence
+-w /etc/crontab -p wa -k persistence
+-w /etc/cron.d -p wa -k persistence
+-w /etc/cron.daily -p wa -k persistence
+-w /etc/cron.hourly -p wa -k persistence
+-w /etc/cron.weekly -p wa -k persistence
+-w /etc/cron.monthly -p wa -k persistence
+-w /var/spool/cron -p wa -k persistence
+-w /usr/local/bin -p wa -k persistence
+-w /usr/local/sbin -p wa -k persistence
+
+# The site: compose file, .env, nginx config, backup script.
+-w /home/fortyfives -p wa -k site-config
+
+# The rest of /etc (ld.so.preload, docker, audit, ufw, letsencrypt, ...).
+-w /etc -p wa -k etc
+
+# Logs touched from a login session (the daemons that write them have no
+# auid), and kernel modules loaded or removed.
+-a always,exit -F arch=b64 -F dir=/var/log -F perm=wa -F auid!=unset -k log-tamper
+-a always,exit -F arch=b64 -S init_module,finit_module,delete_module -k modules

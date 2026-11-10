@@ -1,0 +1,10 @@
+[Unit]
+Description=fortyfives.net daily host check
+
+[Timer]
+# After the daily database backup and unattended upgrades have run.
+OnCalendar=*-*-* 08:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

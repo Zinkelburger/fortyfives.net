@@ -1,0 +1,107 @@
+#!/bin/sh
+# Daily look at the things that fail quietly on this host. Run by
+# fortyfives-host-check.timer; run it by hand to see the result now:
+#
+#   fortyfives-host-check          # prints problems, alerts when they changed
+#   fortyfives-host-check --print  # prints only, never alerts
+#
+# It alerts (fortyfives-alert) when the list of problems differs from the
+# last run, repeats an unchanged list once a week, and says so when the list
+# becomes empty again.
+set -u
+state=/var/lib/fortyfives
+last=$state/host-check.last
+baseline=$state/authorized_keys.sha256
+site=/home/fortyfives
+backups=/var/lib/docker/volumes/fortyfives_sqlite_backups/_data
+cert=/etc/letsencrypt/live/fortyfives.net/cert.pem
+mkdir -p "$state"
+
+problems=$(mktemp)
+trap 'rm -f "$problems"' EXIT
+problem() { echo "- $*" >> "$problems"; }
+
+# Containers.
+for c in fortyfives-web-1 fortyfives-nginx-1 fortyfives-certbot-1 fortyfives-db_backup-1; do
+  running=$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)
+  [ "$running" = true ] || problem "container $c is not running"
+done
+for c in fortyfives-web-1 fortyfives-db_backup-1; do
+  health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null)
+  [ "$health" = healthy ] || problem "container $c is ${health:-missing}, not healthy"
+done
+
+# The newest daily database backup.
+newest=$(ls -1t "$backups"/fortyfives-2*.db 2>/dev/null | head -n 1)
+if [ -z "$newest" ]; then
+  problem "no database backup in $backups"
+elif [ -n "$(find "$newest" -mmin +1560)" ]; then
+  problem "newest database backup is over 26 hours old: $(basename "$newest")"
+fi
+
+# TLS certificate (certbot renews at 30 days left).
+if ! openssl x509 -noout -checkend $((14 * 86400)) -in "$cert" >/dev/null 2>&1; then
+  problem "TLS certificate expires within 14 days: $(openssl x509 -noout -enddate -in "$cert" 2>&1)"
+fi
+
+# Disk.
+used=$(df --output=pcent / | tail -n 1 | tr -dc 0-9)
+[ "${used:-0}" -lt 85 ] || problem "disk / is ${used}% full"
+
+# Services that guard or record.
+for unit in auditd fail2ban ssh docker; do
+  systemctl is-active --quiet "$unit" || problem "$unit is not running"
+done
+ufw status 2>/dev/null | grep -q '^Status: active' || problem "ufw firewall is not active"
+[ "$(auditctl -l 2>/dev/null | grep -c -- '-k exec\|key=exec')" -ge 1 ] ||
+  problem "audit rules are not loaded (augenrules --load)"
+failed=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | tr '\n' ' ')
+[ -z "$failed" ] || problem "failed systemd units: $failed"
+
+# Who can get in.
+sshd -T 2>/dev/null | grep -qx 'passwordauthentication no' ||
+  problem "sshd accepts password logins"
+uid0=$(awk -F: '$3 == 0 {print $1}' /etc/passwd | tr '\n' ' ')
+[ "$uid0" = "root " ] || problem "accounts with uid 0: $uid0"
+if [ -r "$baseline" ]; then
+  sha256sum /root/.ssh/authorized_keys 2>/dev/null | diff -q - "$baseline" >/dev/null ||
+    problem "/root/.ssh/authorized_keys changed (after a deliberate change, rerun deploy/contabo/host/apply.sh)"
+fi
+ports=$(ss -Htln 2>/dev/null | awk '{print $4}' | grep -Ev '^(127\.|\[::1\])' |
+  sed 's/.*://' | sort -un | tr '\n' ' ')
+[ "$ports" = "22 80 443 " ] || problem "listening on public ports: $ports(expected 22 80 443)"
+
+# Packaged files changed on disk (config files excepted).
+changed=$(dpkg --verify 2>/dev/null | grep -Ev ' c /' | awk '{print $NF}' | head -n 10 | tr '\n' ' ')
+[ -z "$changed" ] || problem "packaged files modified: $changed"
+
+# Updates waiting for a reboot longer than a week.
+if [ -e /var/run/reboot-required ] && [ -n "$(find /var/run/reboot-required -mtime +7)" ]; then
+  problem "a reboot for security updates has been pending for over a week"
+fi
+
+if [ -s "$problems" ]; then
+  echo "Problems on $(hostname):"
+  cat "$problems"
+else
+  echo "No problems."
+fi
+[ "${1:-}" = --print ] && exit 0
+
+# Alert on a change, or weekly while a problem stays.
+if [ -s "$problems" ]; then
+  if ! cmp -s "$problems" "$last" || [ -n "$(find "$last" -mtime +6 2>/dev/null)" ]; then
+    {
+      echo "The daily check on the fortyfives.net host found:"
+      echo
+      cat "$problems"
+      echo
+      echo "Run it again by hand: ssh twic-vps fortyfives-host-check --print"
+    } | /usr/local/sbin/fortyfives-alert \
+      "fortyfives.net host check: $(wc -l < "$problems") problem(s)" && cp "$problems" "$last"
+  fi
+elif [ -s "$last" ]; then
+  echo "Everything the daily host check looks at is fine again." |
+    /usr/local/sbin/fortyfives-alert "fortyfives.net host check: all clear" && : > "$last"
+fi
+exit 0

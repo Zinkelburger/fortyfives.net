@@ -5,8 +5,19 @@ defmodule Website45sV3.Accounts do
 
   import Ecto.Query, warn: false
 
+  require Logger
+
   alias Website45sV3.Accounts.{User, UserNotifier, UserToken}
   alias Website45sV3.Repo
+
+  # Account changes are logged by user id, never by email or username, so
+  # the logs say what happened to an account without holding personal data.
+  defp log_change({:ok, %User{id: id}} = result, what) do
+    Logger.info("#{what}: user #{id}")
+    result
+  end
+
+  defp log_change(result, _what), do: result
 
   ## Database getters
 
@@ -88,6 +99,7 @@ defmodule Website45sV3.Accounts do
     %User{}
     |> User.registration_changeset(attrs)
     |> Repo.insert()
+    |> log_change("Account created")
   end
 
   @doc """
@@ -190,6 +202,7 @@ defmodule Website45sV3.Accounts do
     with {:ok, query} <- UserToken.verify_change_email_token_query(token, context),
          %UserToken{sent_to: email} <- Repo.one(query),
          {:ok, _} <- Repo.transaction(user_email_multi(user, email, context)) do
+      Logger.info("Email changed: user #{user.id}")
       :ok
     else
       _ -> :error
@@ -266,7 +279,7 @@ defmodule Website45sV3.Accounts do
     |> case do
       {:ok, %{user: user, sessions: sessions}} ->
         disconnect_sessions(sessions, Keyword.get(opts, :keep_session))
-        {:ok, user}
+        log_change({:ok, user}, "Password changed")
 
       {:error, :user, changeset, _} ->
         {:error, changeset}
@@ -375,7 +388,7 @@ defmodule Website45sV3.Accounts do
     with {:ok, query} <- UserToken.verify_email_token_query(token, "confirm"),
          %User{} = user <- Repo.one(query),
          {:ok, %{user: user}} <- Repo.transaction(confirm_user_multi(user)) do
-      {:ok, user}
+      log_change({:ok, user}, "Email confirmed")
     else
       _ -> :error
     end
@@ -447,7 +460,7 @@ defmodule Website45sV3.Accounts do
     |> case do
       {:ok, %{user: user, sessions: sessions}} ->
         disconnect_sessions(sessions, nil)
-        {:ok, user}
+        log_change({:ok, user}, "Password reset")
 
       {:error, :user, changeset, _} ->
         {:error, changeset}
@@ -523,6 +536,7 @@ defmodule Website45sV3.Accounts do
         user
         |> User.google_link_changeset(uid)
         |> Repo.update()
+        |> log_change("Google account linked")
 
       %User{} ->
         {:error, :google_account_mismatch}
@@ -552,7 +566,7 @@ defmodule Website45sV3.Accounts do
         insert_google_user(uid, email, random_username(), attempts_left - 1)
 
       result ->
-        result
+        log_change(result, "Account created with Google")
     end
   end
 

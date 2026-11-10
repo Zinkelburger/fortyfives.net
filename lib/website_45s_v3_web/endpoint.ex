@@ -40,7 +40,7 @@ defmodule Website45sV3Web.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
-  plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
+  plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: {__MODULE__, :log_level, []}
 
   plug Plug.Parsers,
     parsers: [:urlencoded, :json],
@@ -52,4 +52,12 @@ defmodule Website45sV3Web.Endpoint do
   plug Plug.Head
   plug Plug.Session, @session_options
   plug Website45sV3Web.Router
+
+  @doc """
+  The level a request is logged at (`Plug.Telemetry`'s `:log` option);
+  `false` logs nothing. The container healthcheck asks for `/healthz` every
+  30 seconds, which would otherwise be most of the log.
+  """
+  def log_level(%Plug.Conn{path_info: ["healthz"]}), do: false
+  def log_level(_conn), do: :info
 end

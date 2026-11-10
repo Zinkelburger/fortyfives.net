@@ -16,6 +16,8 @@ defmodule Website45sV3Web.UserAuth do
   import Plug.Conn
   import Phoenix.Controller
 
+  require Logger
+
   alias Website45sV3.Accounts
 
   # Make the remember me cookie valid for 60 days.
@@ -318,6 +320,7 @@ defmodule Website45sV3Web.UserAuth do
   """
   def require_admin(conn, _opts) do
     if admin?(conn.assigns[:current_user]) do
+      Logger.info("Admin page #{conn.request_path}: user #{conn.assigns.current_user.id}")
       # The root layout loads the replay player bundle for admin pages only.
       assign(conn, :admin_assets, true)
     else

@@ -14,6 +14,12 @@ defmodule Website45sV3Web.HealthControllerTest do
     assert get_resp_header(conn, "content-security-policy") == []
   end
 
+  test "the healthcheck is left out of the request log; everything else is logged" do
+    assert Website45sV3Web.Endpoint.log_level(%Plug.Conn{path_info: ["healthz"]}) == false
+    assert Website45sV3Web.Endpoint.log_level(%Plug.Conn{path_info: ["healthz", "auth"]}) == :info
+    assert Website45sV3Web.Endpoint.log_level(%Plug.Conn{path_info: []}) == :info
+  end
+
   describe "GET /healthz/auth" do
     setup do
       Website45sV3.Turnstile.reset_last_outcome()

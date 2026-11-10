@@ -117,7 +117,7 @@ defmodule Website45sV3.Game.GameControllerTest do
     drive_bidding!(pid)
 
     state = GameController.get_game_state(pid)
-    assert state.phase == "Discard"
+    assert state.phase == :discard
     [player | _] = state.player_ids
 
     send(pid, {:confirm_discard, player, ["garbage"]})
@@ -128,7 +128,7 @@ defmodule Website45sV3.Game.GameControllerTest do
     # a synchronous call proves the process handled the messages and survived
     state = GameController.get_game_state(pid)
     assert Process.alive?(pid)
-    assert state.phase == "Discard"
+    assert state.phase == :discard
     assert state.received_discards_from == []
   end
 
@@ -138,7 +138,7 @@ defmodule Website45sV3.Game.GameControllerTest do
     drive_discards!(pid)
 
     state = GameController.get_game_state(pid)
-    assert state.phase == "Playing"
+    assert state.phase == :playing
     current = state.current_player_id
 
     not_in_hand =
@@ -158,7 +158,7 @@ defmodule Website45sV3.Game.GameControllerTest do
 
     final_state = drive_until_final_scoring!(pid)
 
-    assert final_state.phase == "Final Scoring"
+    assert final_state.phase == :final_scoring
 
     assert final_state.team_scores.team1 >= 120 or
              final_state.team_scores.team2 >= 120
@@ -207,7 +207,7 @@ defmodule Website45sV3.Game.GameControllerTest do
       bid!(pid, dealer, "20", :clubs)
 
       state = GameController.get_game_state(pid)
-      assert state.phase == "Discard"
+      assert state.phase == :discard
       assert state.winning_bid == {20, dealer, :clubs}
       assert state.trump == :clubs
       # the dealer received the kitty
@@ -240,16 +240,16 @@ defmodule Website45sV3.Game.GameControllerTest do
       state = GameController.get_game_state(pid)
       assert state.bids_placed == 3
       assert state.bagged
-      assert state.phase == "Bidding"
+      assert state.phase == :bidding
 
       # A bagged dealer cannot pass.
       send(pid, {:player_bid, state.dealing_player_id, "0", :pass})
       state = GameController.get_game_state(pid)
-      assert state.phase == "Bidding"
+      assert state.phase == :bidding
 
       bid!(pid, state.dealing_player_id, "15", :spades)
       state = GameController.get_game_state(pid)
-      assert state.phase == "Discard"
+      assert state.phase == :discard
       assert state.bids_placed == 4
     end
   end
@@ -263,7 +263,7 @@ defmodule Website45sV3.Game.GameControllerTest do
 
       assert view.hand == state.hands["human_2"]
       assert view.hand_counts == %{"human_1" => 5, "human_2" => 5, "human_3" => 5, "human_4" => 5}
-      assert view.phase == "Bidding"
+      assert view.phase == :bidding
       assert view.dealing_player_id == state.dealing_player_id
       refute view.auto_playing
 
@@ -304,7 +304,7 @@ defmodule Website45sV3.Game.GameControllerTest do
       current = state.current_player_id
       other = Enum.find(state.player_ids, &(&1 != current))
 
-      assert %{player_id: ^current, phase: "Bidding", kind: :idle, ref: ref} = state.turn_timer
+      assert %{player_id: ^current, phase: :bidding, kind: :idle, ref: ref} = state.turn_timer
       assert is_integer(Process.read_timer(ref))
 
       join_presence(pid, [other, current])
@@ -321,7 +321,7 @@ defmodule Website45sV3.Game.GameControllerTest do
       current = state.current_player_id
       Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{current}")
 
-      send(pid, {:idle_timeout, current, "Bidding"})
+      send(pid, {:idle_timeout, current, :bidding})
       assert_receive :auto_playing
 
       state = GameController.get_game_state(pid)
@@ -343,7 +343,7 @@ defmodule Website45sV3.Game.GameControllerTest do
       drive_bidding!(pid)
 
       state = GameController.get_game_state(pid)
-      assert state.phase == "Discard"
+      assert state.phase == :discard
       assert state.turn_timer == nil
       assert Map.keys(state.discard_timers) |> Enum.sort() == Enum.sort(state.player_ids)
       refs = Map.new(state.discard_timers, fn {player, timer} -> {player, timer.ref} end)
@@ -371,7 +371,7 @@ defmodule Website45sV3.Game.GameControllerTest do
       pid = start_test_game(@humans)
       :erlang.trace(pid, true, [:receive])
 
-      state = drive!(pid, fn state -> state.phase == "Scoring" end)
+      state = drive!(pid, fn state -> state.phase == :scoring end)
 
       assert state.current_player_id == nil
       assert state.turn_timer == nil
@@ -388,7 +388,7 @@ defmodule Website45sV3.Game.GameControllerTest do
       assert leads == 4
 
       # ...and the next hand starts on the clock again.
-      state = drive!(pid, fn state -> state.phase == "Bidding" end)
+      state = drive!(pid, fn state -> state.phase == :bidding end)
       assert state.turn_timer.player_id == state.current_player_id
     end
   end
@@ -411,7 +411,7 @@ defmodule Website45sV3.Game.GameControllerTest do
         to_play: {"human_4", 1, :hearts}
       )
 
-      state = drive!(pid, fn state -> state.phase == "Scoring" end)
+      state = drive!(pid, fn state -> state.phase == :scoring end)
       assert state.team_scores == %{team1: -15, team2: 20}
     end
 
@@ -433,7 +433,7 @@ defmodule Website45sV3.Game.GameControllerTest do
         to_play: {"human_4", 13, :hearts}
       )
 
-      state = drive!(pid, fn state -> state.phase == "Scoring" end)
+      state = drive!(pid, fn state -> state.phase == :scoring end)
       assert state.team_scores == %{team1: 15, team2: 10}
     end
   end
@@ -624,7 +624,7 @@ defmodule Website45sV3.Game.GameControllerTest do
     :sys.replace_state(pid, fn state ->
       %{
         state
-        | phase: "Playing",
+        | phase: :playing,
           current_player_id: to_play_player,
           hands: Map.new(state.player_ids, &{&1, []}) |> Map.put(to_play_player, [to_play_card]),
           played_cards: opts[:table] |> Enum.map(card) |> Enum.reverse(),
@@ -657,15 +657,15 @@ defmodule Website45sV3.Game.GameControllerTest do
 
   # Bids 15 hearts with the first player to act, then passes the rest.
   defp drive_bidding!(pid) do
-    drive!(pid, fn state -> state.phase != "Bidding" end)
+    drive!(pid, fn state -> state.phase != :bidding end)
   end
 
   defp drive_discards!(pid) do
-    drive!(pid, fn state -> state.phase not in ["Bidding", "Discard"] end)
+    drive!(pid, fn state -> state.phase not in [:bidding, :discard] end)
   end
 
   defp drive_until_final_scoring!(pid) do
-    drive!(pid, fn state -> state.phase == "Final Scoring" end)
+    drive!(pid, fn state -> state.phase == :final_scoring end)
   end
 
   # Steps the game forward (bid, discard, play) until `done?.(state)`.
@@ -698,7 +698,7 @@ defmodule Website45sV3.Game.GameControllerTest do
   # The scripted move for the current state: the first bidder bids 15
   # hearts and everyone else passes, players keep their first five cards,
   # and the first legal card is played.
-  defp next_move(%{phase: "Bidding", current_player_id: player} = state) when player != nil do
+  defp next_move(%{phase: :bidding, current_player_id: player} = state) when player != nil do
     {highest, _, _} = state.winning_bid
 
     cond do
@@ -708,7 +708,7 @@ defmodule Website45sV3.Game.GameControllerTest do
     end
   end
 
-  defp next_move(%{phase: "Discard"} = state) do
+  defp next_move(%{phase: :discard} = state) do
     case state.player_ids -- state.received_discards_from do
       [] ->
         nil
@@ -719,7 +719,7 @@ defmodule Website45sV3.Game.GameControllerTest do
     end
   end
 
-  defp next_move(%{phase: "Playing", current_player_id: player} = state) when player != nil do
+  defp next_move(%{phase: :playing, current_player_id: player} = state) when player != nil do
     hand = state.hands[player]
     legal = Map.get(state.legal_moves, player, hand)
     {:play_card, player, List.first(legal) || List.first(hand)}

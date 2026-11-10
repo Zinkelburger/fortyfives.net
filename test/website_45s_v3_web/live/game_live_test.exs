@@ -58,14 +58,14 @@ defmodule Website45sV3Web.GameLiveTest do
       state = GameController.get_game_state(pid)
 
       case state do
-        %{phase: "Discard"} ->
+        %{phase: :discard} ->
           true
 
-        %{phase: "Bidding", current_player_id: player, winning_bid: {0, _, _}} ->
+        %{phase: :bidding, current_player_id: player, winning_bid: {0, _, _}} ->
           send(pid, {:player_bid, player, "15", :hearts})
           false
 
-        %{phase: "Bidding", current_player_id: player} ->
+        %{phase: :bidding, current_player_id: player} ->
           send(pid, {:player_bid, player, "0", :pass})
           false
       end
@@ -97,10 +97,10 @@ defmodule Website45sV3Web.GameLiveTest do
       state = GameController.get_game_state(pid)
 
       case {state.phase, state.player_ids -- state.received_discards_from} do
-        {"Playing", _} ->
+        {:playing, _} ->
           true
 
-        {"Discard", [player | _]} ->
+        {:discard, [player | _]} ->
           keep = state.hands[player] |> Enum.take(5) |> Enum.map(&Card.encode/1)
           send(pid, {:confirm_discard, player, keep})
           false
@@ -380,7 +380,7 @@ defmodule Website45sV3Web.GameLiveTest do
       view |> element(~s(button[phx-value-bid-suit="clubs"])) |> render_click()
       view |> element("#confirm-bid-button") |> render_click()
 
-      wait_until(fn -> GameController.get_game_state(pid).phase == "Discard" end)
+      wait_until(fn -> GameController.get_game_state(pid).phase == :discard end)
       state = GameController.get_game_state(pid)
       assert state.winning_bid == {20, user, :clubs}
       assert state.trump == :clubs
@@ -463,7 +463,7 @@ defmodule Website45sV3Web.GameLiveTest do
       :sys.replace_state(pid, fn state ->
         %{
           state
-          | phase: "Final Scoring",
+          | phase: :final_scoring,
             team_scores: %{team1: 130, team2: 120},
             winning_bid: {15, Enum.at(state.player_ids, 1), :hearts},
             team_1_history: List.duplicate("10 (+5)", 30),
@@ -601,7 +601,7 @@ defmodule Website45sV3Web.GameLiveTest do
       :sys.replace_state(pid, fn state ->
         %{
           state
-          | phase: "Final Scoring",
+          | phase: :final_scoring,
             team_scores: %{team1: 125, team2: 40},
             team_1_history: ["125 +25"],
             team_2_history: ["40 -20"]

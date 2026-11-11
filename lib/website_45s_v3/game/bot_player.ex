@@ -33,16 +33,17 @@ defmodule Website45sV3.Game.BotPlayer do
   Returns a list of card strings representing the cards a bot keeps during the
   discard phase.
 
-  The bot keeps any trump cards or kings (value == 13). If none are present, it
-  keeps exactly the first card from its hand. In all cases no more than five
-  cards are returned. Each card is encoded as "value_suit".
+  The bot keeps any trump cards (including the ace of hearts, which is always
+  trump) or kings (value == 13). If none are present, it keeps exactly the
+  first card from its hand. In all cases no more than five cards are returned.
+  Each card is encoded as "value_suit".
   """
   def pick_discard(state, player_id) do
     hand = Map.get(state.hands, player_id, [])
     trump = state.trump
 
     hand
-    |> Enum.filter(fn %Card{suit: suit, value: value} -> suit == trump or value == 13 end)
+    |> Enum.filter(fn %Card{value: value} = card -> Card.trump?(card, trump) or value == 13 end)
     |> case do
       [] -> Enum.take(hand, 1)
       kept -> kept

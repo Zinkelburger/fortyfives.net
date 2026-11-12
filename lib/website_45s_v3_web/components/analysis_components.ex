@@ -241,10 +241,9 @@ defmodule Website45sV3Web.AnalysisComponents do
     do: result_line(state.result, state.variant)
 
   defp turn_message(%{state: %{phase: :discard} = state} = a) do
-    cond do
-      a.hand_seat not in Engine.to_act(state) -> "Waiting for keeps"
-      true -> "#{you(state.variant, a.hand_seat)}keep"
-    end
+    if a.hand_seat in Engine.to_act(state),
+      do: "#{you(state.variant, a.hand_seat)}keep",
+      else: "Waiting for keeps"
   end
 
   defp turn_message(%{state: state} = a) do
@@ -266,8 +265,7 @@ defmodule Website45sV3Web.AnalysisComponents do
     case Engine.to_act(state) do
       [^hand_seat] when state.phase == :bidding ->
         if Engine.bagged?(state),
-          do:
-            "#{if hand_seat == 0, do: "", else: seat_name(v, hand_seat) <> " "}Bagged · choose trump",
+          do: "#{bagged_prefix(v, hand_seat)}Bagged · choose trump",
           else: "#{you(v, hand_seat)}bid"
 
       [^hand_seat] ->
@@ -280,6 +278,9 @@ defmodule Website45sV3Web.AnalysisComponents do
         ""
     end
   end
+
+  defp bagged_prefix(_v, 0), do: ""
+  defp bagged_prefix(v, seat), do: seat_name(v, seat) <> " "
 
   defp you(_v, 0), do: "Your "
   defp you(v, seat), do: "#{seat_name(v, seat)}'s "

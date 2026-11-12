@@ -84,9 +84,6 @@ defmodule Website45sV3Web.AnalysisComponents do
     end
   end
 
-  defp plural(1, one, _many), do: one
-  defp plural(_n, _one, many), do: many
-
   def glyph(:inaccuracy), do: "?!"
   def glyph(:mistake), do: "?"
   def glyph(:blunder), do: "??"
@@ -134,7 +131,6 @@ defmodule Website45sV3Web.AnalysisComponents do
         </div>
       </div>
       <.rail :if={@hints} {assigns} />
-      <.play_mode_bar :if={not @hints} state={@state} />
     </div>
     <.dialogs {assigns} />
     """
@@ -163,34 +159,43 @@ defmodule Website45sV3Web.AnalysisComponents do
       <a href="/" class="game-brand" aria-label="Forty Fives home">
         <img src={~p"/images/logo-mark.png"} alt="Forty Fives" width="44" height="40" />
       </a>
-      <div class="game-score" aria-label={@score.label}>
-        <span>{@score.left} <strong>{@score.left_score}</strong></span>
-        <span class="score-divider" aria-hidden="true">/</span>
-        <span>{@score.right} <strong>{@score.right_score}</strong></span>
-      </div>
-      <button
-        id="open-menu"
-        type="button"
-        class="score-button"
-        phx-click="dialog"
-        phx-value-open="menu"
-      >Menu</button>
       <button
         id="open-scores"
         type="button"
-        class="score-button"
+        class="game-score board-score"
         phx-click="dialog"
         phx-value-open="scores"
-      >Scores</button>
+        aria-label={"Scores: " <> @score.label}
+      >
+        <span>{@score.left} <strong>{@score.left_score}</strong></span>
+        <span class="score-divider" aria-hidden="true">/</span>
+        <span>{@score.right} <strong>{@score.right_score}</strong></span>
+      </button>
       <button
-        id="open-rules"
+        id="open-menu"
         type="button"
-        class="score-button"
+        class="score-button board-menu-button"
         phx-click="dialog"
-        phx-value-open="rules"
-        aria-label="Quick rules"
-      >?</button>
+        phx-value-open="menu"
+        aria-label="Menu"
+      ><.icon d="M4 7h16M4 12h16M4 17h16" /></button>
     </header>
+    """
+  end
+
+  attr :d, :string, required: true
+  attr :fill, :boolean, default: false
+
+  defp icon(assigns) do
+    ~H"""
+    <svg
+      class={["board-icon", @fill && "board-icon-fill"]}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d={@d} />
+    </svg>
     """
   end
 
@@ -215,20 +220,17 @@ defmodule Website45sV3Web.AnalysisComponents do
     }
   end
 
-  ## Status: phase, whose turn, the facts of the hand, and the hint line
+  ## Status: one line for whose turn, one for the facts of the hand
 
   def status(assigns) do
     ~H"""
-    <div id="game-status" class="game-status">
-      <div class="phase-heading">
-        <h1 class="phase-title" aria-live="polite">{phase_title(@state.phase)}</h1>
+    <div id="game-status" class="game-status board-status">
+      <h1 class="sr-only" aria-live="polite">{phase_title(@state.phase)}</h1>
+      <div class="board-turn-line">
+        <p class="board-turn" aria-live="polite">{turn_message(assigns)}</p>
         <span :if={not @live} class="board-history-tag">Move {@cursor} of {length(@actions)}</span>
       </div>
-      <div class="turn-line">
-        <p class="turn-text" aria-live="polite">{turn_message(assigns)}</p>
-      </div>
       <.facts state={@state} />
-      <.hint_line :if={@hints} {assigns} />
     </div>
     """
   end
@@ -240,15 +242,14 @@ defmodule Website45sV3Web.AnalysisComponents do
 
   defp turn_message(%{state: %{phase: :discard} = state} = a) do
     cond do
-      a.hand_seat not in Engine.to_act(state) -> "Cards kept · Waiting for others"
-      a.hand_seat == 0 -> "Tap the cards you want to keep"
-      true -> "#{seat_name(state.variant, a.hand_seat)} · Tap the cards you want to keep"
+      a.hand_seat not in Engine.to_act(state) -> "Waiting for keeps"
+      true -> "#{you(state.variant, a.hand_seat)}keep"
     end
   end
 
   defp turn_message(%{state: state} = a) do
     if trick_just_won?(a),
-      do: "#{seat_name(state.variant, elem(state.last_trick, 1))} won the trick",
+      do: "#{seat_name(state.variant, elem(state.last_trick, 1))} took the trick",
       else: whose_turn(state, a.hand_seat)
   end
 
@@ -265,11 +266,12 @@ defmodule Website45sV3Web.AnalysisComponents do
     case Engine.to_act(state) do
       [^hand_seat] when state.phase == :bidding ->
         if Engine.bagged?(state),
-          do: "#{you(v, hand_seat)}bid is 15 · Choose trump",
-          else: "#{you(v, hand_seat)}turn · Choose a bid and trump"
+          do:
+            "#{if hand_seat == 0, do: "", else: seat_name(v, hand_seat) <> " "}Bagged · choose trump",
+          else: "#{you(v, hand_seat)}bid"
 
       [^hand_seat] ->
-        "#{you(v, hand_seat)}turn · Choose a card"
+        "#{you(v, hand_seat)}turn"
 
       [seat] ->
         "#{seat_name(v, seat)}'s turn"
@@ -309,11 +311,11 @@ defmodule Website45sV3Web.AnalysisComponents do
       <% :bidding -> %>
         <p class="game-facts" aria-live="polite">
           <span :if={@state.high_seat} class="facts-main">
-            High bid:<span class="facts-name">{seat_name(@v, @state.high_seat)}</span>{@state.high}
+            High<span class="facts-name">{seat_name(@v, @state.high_seat)}</span>{@state.high}
             <.suit suit={@state.high_suit} />
           </span>
-          <span :if={!@state.high_seat}>No bids yet</span>
-          <span>Dealer: {seat_name(@v, @state.dealer)}</span>
+          <span :if={!@state.high_seat}>No bids</span>
+          <span>Dealer {seat_name(@v, @state.dealer)}</span>
         </p>
       <% phase when phase in [:discard, :playing] -> %>
         <p class="game-facts" aria-live="polite">
@@ -336,10 +338,10 @@ defmodule Website45sV3Web.AnalysisComponents do
   end
 
   defp tricks_line(%{variant: %{teams: true}, tricks: [a, b, c, d]}),
-    do: "Tricks: You #{a + c} · Them #{b + d}"
+    do: "Tricks You #{a + c} · Them #{b + d}"
 
   defp tricks_line(%{variant: v, tricks: tricks}) do
-    "Tricks: " <>
+    "Tricks " <>
       Enum.map_join(Enum.with_index(tricks), " · ", fn {t, p} -> "#{short_name(v, p)} #{t}" end)
   end
 
@@ -347,44 +349,19 @@ defmodule Website45sV3Web.AnalysisComponents do
   defp short_name(%{teams: true} = v, p), do: seat_name(v, p)
   defp short_name(_v, p), do: "B#{p}"
 
-  # One line under the facts, so the hint is in the first screen on a phone.
-  defp hint_line(assigns) do
-    assigns = assign(assigns, :last, last_judgment(assigns))
-
-    ~H"""
-    <div class="hint-line" aria-live="polite">
-      <%= cond do %>
-        <% @show_options and @options == :loading -> %>
-          <span class="hint-muted">Thinking…</span>
-        <% @show_options and is_list(@options) and @options != [] -> %>
-          <% [best | _] = @options %>
-          <span>Best <strong><.act action={best.action} trump={@state.trump} /></strong>
-          <span class="pts pts-best">{points(best.points)}</span></span>
-          <span :if={@last} class={["hint-last", "judge-#{@last.class}"]}>
-            Your last: {class_name(@last.class)} {loss_text(@last)}
-          </span>
-        <% @last -> %>
-          <span class={["hint-last", "judge-#{@last.class}"]}>
-            Your
-            <.act action={@last.chosen.action} trump={@state.trump} />: {class_name(@last.class)} {loss_text(
-              @last
-            )}
-            <span :if={@last.class not in [:best, :good]}>· best
-            <.act action={@last.best.action} trump={@state.trump} /></span>
-          </span>
-        <% @show_options and @options == [] -> %>
-          <span class="hint-muted">No hints for {Variant.label(@state.variant)} yet</span>
-        <% true -> %>
-          <span class="hint-muted"></span>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp loss_text(%{class: :best}), do: ""
-
   defp loss_text(%{loss: loss}),
-    do: "(−#{:erlang.float_to_binary(Float.round(loss, 1), decimals: 1)})"
+    do: "−#{:erlang.float_to_binary(Float.round(loss, 1), decimals: 1)}"
+
+  # The best choice, for marking it on the bid buttons.
+  defp best_bid(%{
+         show_options: true,
+         options: [%{action: {:bid, _, bid}} | _],
+         focus: seat,
+         hand_seat: seat
+       }),
+       do: bid
+
+  defp best_bid(_), do: nil
 
   # Your most recent judged decision before this position.
   defp last_judgment(%{judgments: judgments, cursor: cursor}) do
@@ -572,7 +549,8 @@ defmodule Website45sV3Web.AnalysisComponents do
         values: values,
         bagged: bagged,
         selected_bid: selected_bid,
-        buttons: @suit_buttons
+        buttons: @suit_buttons,
+        best: best_bid(assigns) || {nil, nil}
       )
 
     ~H"""
@@ -582,7 +560,11 @@ defmodule Website45sV3Web.AnalysisComponents do
           <button
             :for={bid <- [15, 20, 25, 30]}
             type="button"
-            class={["blue-button", @selected_bid == Integer.to_string(bid) && "active"]}
+            class={[
+              "blue-button",
+              @selected_bid == Integer.to_string(bid) && "active",
+              elem(@best, 0) == bid && "bid-best"
+            ]}
             phx-click="set_bid_number"
             phx-value-bid-number={bid}
             aria-pressed={to_string(@selected_bid == Integer.to_string(bid))}
@@ -591,9 +573,14 @@ defmodule Website45sV3Web.AnalysisComponents do
         </div>
         <div class="bid-suits" role="group" aria-label="Trump suit">
           <button
-            :for={{suit, symbol, color} <- @buttons}
+            :for={{{suit, symbol, color}, i} <- Enum.with_index(@buttons)}
             type="button"
-            class={["suit-button", color == "red" && "red-suit", @selected_suit == suit && "active"]}
+            class={[
+              "suit-button",
+              color == "red" && "red-suit",
+              @selected_suit == suit && "active",
+              (elem(@best, 0) not in [nil, 0] and elem(@best, 1) == i) && "bid-best"
+            ]}
             phx-click="set_bid_suit"
             phx-value-bid-suit={suit}
             aria-label={String.capitalize(suit)}
@@ -625,6 +612,7 @@ defmodule Website45sV3Web.AnalysisComponents do
         badges: badges,
         confirmed: confirmed,
         can_bid: acting and s.phase == :bidding,
+        best_pass: match?({0, _}, best_bid(assigns)),
         version: "#{assigns.cursor}|#{length(assigns.actions)}|#{seat}|#{s.phase}"
       )
 
@@ -742,7 +730,11 @@ defmodule Website45sV3Web.AnalysisComponents do
         <button
           type="button"
           id="pass-bid-button"
-          class={["blue-button pass-button", @selected_suit == "pass" && "active"]}
+          class={[
+            "blue-button pass-button",
+            @selected_suit == "pass" && "active",
+            @best_pass && "bid-best"
+          ]}
           phx-click="set_bid_pass"
           aria-pressed={to_string(@selected_suit == "pass")}
           disabled={not @can_bid or Engine.bagged?(@state)}
@@ -861,15 +853,9 @@ defmodule Website45sV3Web.AnalysisComponents do
   defp minus(n) when n < 0, do: "−#{abs(n)}"
   defp minus(n), do: "#{n}"
 
-  ## Play mode: no hints until the game is over
-
-  defp play_mode_bar(assigns) do
-    ~H"""
-    <p class="board-play-note">Play mode · hints after the game</p>
-    """
-  end
-
-  ## The rail
+  ## The panel: the best choices, the review once the game is over, the
+  ## moves, and the controls to step through them. Everything else is in
+  ## the menu.
 
   def rail(assigns) do
     mine =
@@ -881,144 +867,112 @@ defmodule Website45sV3Web.AnalysisComponents do
 
     ~H"""
     <aside class="board-rail" aria-label="Analysis">
-      <.nav_bar {assigns} />
-      <.summary :if={@mine != []} mine={@mine} />
-      <.options_card {assigns} />
-      <.graph mine={@mine} actions={@actions} cursor={@cursor} />
+      <.choices {assigns} />
+      <.review :if={@finished and @mine != []} mine={@mine} actions={@actions} cursor={@cursor} />
       <.move_list {assigns} />
       <.hands_card :if={@reveal} state={@state} />
-      <.board_settings {assigns} />
+      <.nav_bar {assigns} />
     </aside>
-    """
-  end
-
-  attr :d, :string, required: true
-
-  defp nav_icon(assigns) do
-    ~H"""
-    <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d={@d} />
-    </svg>
     """
   end
 
   defp nav_bar(assigns) do
     ~H"""
-    <div class="rail-nav" role="group" aria-label="Move through the game">
+    <div class="rail-nav-wrap">
       <button
+        :if={@mainline}
         type="button"
-        class="score-button"
-        phx-click="nav"
-        phx-value-to="start"
-        aria-label="First move"
-        disabled={@cursor == 0}
-      ><.nav_icon d="M6 5v14M18 6l-8 6 8 6z" /></button>
-      <button
-        type="button"
-        class="score-button"
-        phx-click="nav"
-        phx-value-to="back"
-        aria-label="Previous move"
-        disabled={@cursor == 0}
-      ><.nav_icon d="M16 6l-8 6 8 6z" /></button>
-      <button
-        type="button"
-        class="score-button"
-        phx-click="nav"
-        phx-value-to="forward"
-        aria-label="Next move"
-        disabled={@live}
-      ><.nav_icon d="M8 6l8 6-8 6z" /></button>
-      <button
-        type="button"
-        class="score-button"
-        phx-click="nav"
-        phx-value-to="end"
-        aria-label="Last move"
-        disabled={@live}
-      ><.nav_icon d="M18 5v14M6 6l8 6-8 6z" /></button>
-      <button
-        :if={@settings.mode == :analysis and @live}
-        type="button"
-        class="score-button rail-wide"
-        phx-click="takeback"
-        disabled={@actions == []}
-      >Take back</button>
-      <button :if={@mainline} type="button" class="score-button rail-wide" phx-click="back_to_game">Back to game</button>
+        class="rail-mainline"
+        phx-click="back_to_game"
+      >Back to game</button>
+      <div class="rail-nav" role="group" aria-label="Move through the game">
+        <button
+          :if={@settings.mode == :analysis}
+          type="button"
+          class="rail-nav-button"
+          phx-click="takeback"
+          aria-label="Take back"
+          title="Take back"
+          disabled={@actions == [] or not @live}
+        ><.icon d="M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-2" /></button>
+        <button
+          type="button"
+          class="rail-nav-button"
+          phx-click="nav"
+          phx-value-to="start"
+          aria-label="First move"
+          disabled={@cursor == 0}
+        ><.icon fill d="M6 5v14M18 6l-8 6 8 6z" /></button>
+        <button
+          type="button"
+          class="rail-nav-button"
+          phx-click="nav"
+          phx-value-to="back"
+          aria-label="Previous move"
+          disabled={@cursor == 0}
+        ><.icon fill d="M16 6l-8 6 8 6z" /></button>
+        <button
+          type="button"
+          class="rail-nav-button"
+          phx-click="nav"
+          phx-value-to="forward"
+          aria-label="Next move"
+          disabled={@live}
+        ><.icon fill d="M8 6l8 6-8 6z" /></button>
+        <button
+          type="button"
+          class="rail-nav-button"
+          phx-click="nav"
+          phx-value-to="end"
+          aria-label="Last move"
+          disabled={@live}
+        ><.icon fill d="M18 5v14M6 6l8 6-8 6z" /></button>
+      </div>
     </div>
     """
   end
 
-  attr :mine, :list, required: true
-
-  defp summary(assigns) do
-    judged = Enum.map(assigns.mine, &elem(&1, 1))
-    counts = Enum.frequencies_by(judged, & &1.class)
-
-    assigns =
-      assign(assigns, accuracy: Advisor.accuracy(judged), counts: counts, n: length(judged))
-
-    ~H"""
-    <section class="rail-card rail-summary" aria-label="Your play">
-      <div class="summary-accuracy">
-        <strong>{@accuracy}%</strong><span>accuracy · {@n} decisions</span>
-      </div>
-      <ul class="summary-counts">
-        <li class="judge-inaccuracy">
-          <strong>{Map.get(@counts, :inaccuracy, 0)}</strong> {plural(
-            Map.get(@counts, :inaccuracy, 0),
-            "inaccuracy",
-            "inaccuracies"
-          )}
-        </li>
-        <li class="judge-mistake">
-          <strong>{Map.get(@counts, :mistake, 0)}</strong> {plural(
-            Map.get(@counts, :mistake, 0),
-            "mistake",
-            "mistakes"
-          )}
-        </li>
-        <li class="judge-blunder">
-          <strong>{Map.get(@counts, :blunder, 0)}</strong> {plural(
-            Map.get(@counts, :blunder, 0),
-            "blunder",
-            "blunders"
-          )}
-        </li>
-      </ul>
-    </section>
-    """
-  end
-
-  defp options_card(assigns) do
+  # The top choices for the decision at hand, best first, and a note on
+  # your last decision when it lost points.
+  defp choices(assigns) do
     played = Enum.at(assigns.actions, assigns.cursor)
     played = if played == :next_hand, do: nil, else: played
-    assigns = assign(assigns, played: played)
+    last = last_judgment(assigns)
+    last = if last && last.class in [:inaccuracy, :mistake, :blunder], do: last
+
+    options =
+      if is_list(assigns.options) and assigns.show_options do
+        top = Enum.take(assigns.options, 3)
+
+        # When looking back, the move that was played stays in view.
+        case played && Enum.find(Enum.drop(assigns.options, 3), &same_action?(&1.action, played)) do
+          nil -> top
+          opt -> top ++ [opt]
+        end
+      end
+
+    over = assigns.state.phase in [:hand_over, :game_over]
+    assigns = assign(assigns, played: played, last: last, top: options, over: over)
 
     ~H"""
-    <section class="rail-card" aria-label="Choices">
-      <h2 class="rail-title">
-        <%= cond do %>
-          <% @focus == nil -> %>
-            Choices
-          <% @focus == 0 -> %>
-            Your choices
-          <% true -> %>
-            {seat_name(@state.variant, @focus)}'s choices
-        <% end %>
-        <span class="rail-unit">points this hand</span>
-      </h2>
+    <section
+      :if={not @over or @last != nil}
+      class="rail-sec rail-choices"
+      aria-label="Choices"
+      aria-live="polite"
+    >
       <%= cond do %>
+        <% @over -> %>
         <% not @show_options -> %>
-          <p class="rail-empty">{options_empty_text(assigns)}</p>
+          <p class="rail-empty">{choices_empty_text(%{focus: @focus, state: @state})}</p>
         <% @options == :loading -> %>
           <p class="rail-empty">Thinking…</p>
         <% @options == [] -> %>
-          <p class="rail-empty">No hints for {Variant.label(@state.variant)} yet.</p>
+          <p class="rail-empty">No hints for {Variant.label(@state.variant)}</p>
         <% true -> %>
-          <% best = hd(@options).points %>
           <ol class="option-list">
-            <li :for={{opt, i} <- Enum.with_index(Enum.take(@options, 12))}>
+            <li :for={opt <- @top}>
+              <% i = Enum.find_index(@options, &(&1 == opt)) %>
               <button
                 type="button"
                 class={[
@@ -1028,31 +982,56 @@ defmodule Website45sV3Web.AnalysisComponents do
                 ]}
                 phx-click="play_option"
                 phx-value-i={i}
+                aria-label={if i == 0, do: "Best", else: nil}
               >
                 <span class="option-label"><.act action={opt.action} trump={@state.trump} /></span>
                 <span :if={@played && same_action?(opt.action, @played)} class="option-tag">played</span>
                 <span class="pts">{points(opt.points)}</span>
-                <span class="option-delta">{if i == 0, do: "best", else: points(opt.points - best)}</span>
               </button>
             </li>
           </ol>
-          <p :if={length(@options) > 12} class="rail-more">and {length(@options) - 12} more</p>
       <% end %>
+      <p :if={@last} class={["rail-comment", "judge-#{@last.class}"]}>
+        <span class="rail-comment-move">
+          <.act action={@last.chosen.action} trump={@state.trump} /><span class="move-glyph">{glyph(
+            @last.class
+          )}</span>
+        </span>
+        <span class="pts">{loss_text(@last)}</span>
+        <span class="rail-comment-best">best <.act action={@last.best.action} trump={@state.trump} /></span>
+      </p>
     </section>
     """
   end
 
-  defp options_empty_text(a) do
-    cond do
-      a.state.phase in [:hand_over, :game_over] ->
-        "Hand over."
+  defp choices_empty_text(%{focus: nil}), do: ""
+  defp choices_empty_text(a), do: "#{seat_name(a.state.variant, a.focus)} to move"
 
-      a.focus == nil ->
-        "Waiting for the bots."
+  attr :mine, :list, required: true
+  attr :actions, :list, required: true
+  attr :cursor, :integer, required: true
 
-      true ->
-        "#{seat_name(a.state.variant, a.focus)} is thinking. Turn on Show all hands to see bots' choices."
-    end
+  # After the game: your accuracy, the count of each kind of slip, and the graph.
+  defp review(assigns) do
+    judged = Enum.map(assigns.mine, &elem(&1, 1))
+    counts = Enum.frequencies_by(judged, & &1.class)
+    assigns = assign(assigns, accuracy: Advisor.accuracy(judged), counts: counts)
+
+    ~H"""
+    <section class="rail-sec rail-review" aria-label="Your play">
+      <p class="review-line">
+        <strong class="review-accuracy">{@accuracy}%</strong>
+        <span class="review-unit">accuracy</span>
+        <span
+          :for={class <- [:inaccuracy, :mistake, :blunder]}
+          class={["review-count", "judge-#{class}"]}
+          title={class_name(class)}
+          aria-label={"#{Map.get(@counts, class, 0)} #{class_name(class)}"}
+        ><span class="move-glyph">{glyph(class)}</span>{Map.get(@counts, class, 0)}</span>
+      </p>
+      <.graph mine={@mine} actions={@actions} cursor={@cursor} />
+    </section>
+    """
   end
 
   defp same_action?({:keep, s, a}, {:keep, s, b}), do: Enum.sort(a) == Enum.sort(b)
@@ -1110,54 +1089,57 @@ defmodule Website45sV3Web.AnalysisComponents do
       )
 
     ~H"""
-    <section :if={@pts != []} class="rail-card" aria-label="Your decisions, graphed">
-      <h2 class="rail-title">
-        Game <span class="rail-unit">expected points after each of your decisions</span>
-      </h2>
-      <svg
-        class="eval-graph"
-        viewBox={"0 0 #{@w} #{@h}"}
-        role="img"
-        aria-label="Expected points after each of your decisions"
-      >
-        <line x1="0" x2={@w} y1={@mid} y2={@mid} class="graph-zero" />
-        <text x="2" y="9" class="graph-label">+30</text>
-        <text x="2" y={@h - 2} class="graph-label">−30</text>
-        <g :for={sep <- @seps}>
-          <line x1={fmt(sep.x)} x2={fmt(sep.x)} y1="0" y2={@h} class="graph-sep" />
-          <text x={fmt(sep.x + 3)} y="11" class="graph-label">H{sep.hand}</text>
-        </g>
-        <polygon points={@area} class="graph-area" />
-        <polyline points={@line} class="graph-line" />
-        <line
-          :if={@current}
-          x1={fmt(@current.x)}
-          x2={fmt(@current.x)}
-          y1="0"
-          y2={@h}
-          class="graph-cursor"
+    <svg
+      :if={@pts != []}
+      class="eval-graph"
+      viewBox={"0 0 #{@w} #{@h}"}
+      role="img"
+      aria-label="Expected points after each of your decisions"
+    >
+      <line x1="0" x2={@w} y1={@mid} y2={@mid} class="graph-zero" />
+      <text x="2" y="9" class="graph-label">+30</text>
+      <text x="2" y={@h - 2} class="graph-label">−30</text>
+      <g :for={sep <- @seps}>
+        <line x1={fmt(sep.x)} x2={fmt(sep.x)} y1="0" y2={@h} class="graph-sep" />
+        <text
+          :if={length(@seps) <= 8 or rem(sep.hand, div(length(@seps) + 7, 8)) == 0}
+          x={fmt(sep.x + 3)}
+          y="11"
+          class="graph-label"
+        >
+          H{sep.hand}
+        </text>
+      </g>
+      <polygon points={@area} class="graph-area" />
+      <polyline points={@line} class="graph-line" />
+      <line
+        :if={@current}
+        x1={fmt(@current.x)}
+        x2={fmt(@current.x)}
+        y1="0"
+        y2={@h}
+        class="graph-cursor"
+      />
+      <g :for={p <- @pts}>
+        <circle
+          :if={p.j.class in [:inaccuracy, :mistake, :blunder]}
+          cx={fmt(p.x)}
+          cy={fmt(p.y)}
+          r="4"
+          class={"graph-dot judge-#{p.j.class}"}
         />
-        <g :for={p <- @pts}>
-          <circle
-            :if={p.j.class in [:inaccuracy, :mistake, :blunder]}
-            cx={fmt(p.x)}
-            cy={fmt(p.y)}
-            r="4"
-            class={"graph-dot judge-#{p.j.class}"}
-          />
-          <circle
-            cx={fmt(p.x)}
-            cy={fmt(p.y)}
-            r="9"
-            class="graph-hit"
-            phx-click="nav"
-            phx-value-to={p.i}
-          >
-            <title>Hand {p.hand}: {class_name(p.j.class)} {points(p.j.chosen.points)}</title>
-          </circle>
-        </g>
-      </svg>
-    </section>
+        <circle
+          cx={fmt(p.x)}
+          cy={fmt(p.y)}
+          r="9"
+          class="graph-hit"
+          phx-click="nav"
+          phx-value-to={p.i}
+        >
+          <title>Hand {p.hand}: {class_name(p.j.class)} {points(p.j.chosen.points)}</title>
+        </circle>
+      </g>
+    </svg>
     """
   end
 
@@ -1171,50 +1153,59 @@ defmodule Website45sV3Web.AnalysisComponents do
     nums
   end
 
-  ## The move list, grouped by hand: bids, keeps, then the tricks
+  ## The move list: one column per seat, one row for the bids, one for the
+  ## keeps and one per trick, a block per hand
 
   defp move_list(assigns) do
+    v = assigns.setup.variant
     hands = group_moves(assigns.setup, assigns.actions)
-    assigns = assign(assigns, hands: hands, v: assigns.setup.variant)
+    assigns = assign(assigns, hands: hands, v: v, seats: Enum.to_list(0..(v.n - 1)))
 
     ~H"""
-    <section class="rail-card" aria-label="Moves">
-      <h2 class="rail-title">Moves</h2>
-      <p :if={@hands == []} class="rail-empty">No moves yet.</p>
+    <section class="rail-sec rail-moves" aria-label="Moves">
       <div class="move-list" id="move-list" phx-hook="ScrollCurrent">
-        <div :for={hand <- @hands} class="move-hand">
-          <h3 class="move-hand-title">
-            Hand {hand.no} <span>· {seat_name(@v, hand.dealer)} dealt</span>
-          </h3>
-          <div :for={{label, moves} <- hand.rows} class="move-row">
-            <span class="move-row-label">{label}</span>
-            <span class="move-chips">
-              <button
-                :for={m <- moves}
-                type="button"
-                class={[
-                  "move-chip",
-                  m.i == @cursor - 1 && "move-current",
-                  m.winner && "move-winner",
-                  @judgments[m.i] && "judge-#{@judgments[m.i].class}"
-                ]}
-                phx-click="nav"
-                phx-value-to={m.i}
-                title={"#{seat_name(@v, m.seat)}: #{m.label}"}
-              >
-                <span class="move-who">{short_name(@v, m.seat)}</span>
-                <span class="move-what"><%= if m.hidden do %>
-                  {m.label}
-                <% else %>
-                  <.act action={m.action} trump={m.trump} />
-                <% end %></span>
-                <span :if={@judgments[m.i] && glyph(@judgments[m.i].class)} class="move-glyph">{glyph(
-                  @judgments[m.i].class
-                )}</span>
-              </button>
-            </span>
-          </div>
-        </div>
+        <table class={["move-grid", "move-grid-#{@v.n}"]}>
+          <thead>
+            <tr>
+              <th scope="col"><span class="sr-only">Hand</span></th>
+              <th :for={p <- @seats} scope="col">{short_name(@v, p)}</th>
+            </tr>
+          </thead>
+          <tbody :for={hand <- @hands}>
+            <tr :if={length(@hands) > 1 or hand.no > 1} class="move-hand">
+              <th colspan={@v.n + 1} scope="rowgroup">Hand {hand.no}</th>
+            </tr>
+            <tr :for={{label, cells} <- hand.rows}>
+              <th scope="row" class="move-row-label">{label}</th>
+              <td :for={p <- @seats}>
+                <button
+                  :if={m = cells[p]}
+                  type="button"
+                  class={[
+                    "move-cell",
+                    m.i == @cursor && "move-current",
+                    m.winner && "move-winner",
+                    @judgments[m.i] && "judge-#{@judgments[m.i].class}"
+                  ]}
+                  phx-click="nav"
+                  phx-value-to={m.i}
+                  aria-label={"#{seat_name(@v, m.seat)}: #{m.label}"}
+                >
+                  <%= if m.hidden do %>
+                    <span class="move-count">{m.label}</span>
+                  <% else %>
+                    <.act action={m.action} trump={m.trump} />
+                  <% end %>
+                  <span
+                    :if={@judgments[m.i] && glyph(@judgments[m.i].class)}
+                    class="move-glyph"
+                  >{glyph(@judgments[m.i].class)}</span>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p :if={@hands == []} class="rail-empty">No moves yet</p>
       </div>
     </section>
     """
@@ -1238,7 +1229,7 @@ defmodule Website45sV3Web.AnalysisComponents do
   end
 
   defp add_action(cur, {:bid, seat, bid}, i, _state, _next),
-    do: add_move(cur, "Bids", move(i, seat, {:bid, seat, bid}, bid_label(bid), nil))
+    do: add_move(cur, "Bid", move(i, seat, {:bid, seat, bid}, bid_label(bid), nil))
 
   defp add_action(cur, {:keep, seat, kept} = action, i, state, _next) do
     m = move(i, seat, action, action_label(action, state), state.trump)
@@ -1247,7 +1238,7 @@ defmodule Website45sV3Web.AnalysisComponents do
   end
 
   defp add_action(cur, {:play, seat, card}, i, state, next) do
-    row = "T#{div(length(state.hist), state.variant.n) + 1}"
+    row = "#{div(length(state.hist), state.variant.n) + 1}"
     cur = add_move(cur, row, move(i, seat, {:play, seat, card}, card_text(card), state.trump))
 
     case next do
@@ -1267,13 +1258,17 @@ defmodule Website45sV3Web.AnalysisComponents do
       hidden: false
     }
 
-  defp new_hand(state), do: %{no: state.hand_no, dealer: state.dealer, rows: []}
+  defp new_hand(state), do: %{no: state.hand_no, rows: []}
 
+  # A row holds one move per seat; a seat moving again starts a new row.
   defp add_move(%{rows: rows} = hand, label, move) do
     rows =
       case List.last(rows) do
-        {^label, moves} -> List.replace_at(rows, -1, {label, moves ++ [move]})
-        _ -> rows ++ [{label, [move]}]
+        {^label, cells} when not is_map_key(cells, move.seat) ->
+          List.replace_at(rows, -1, {label, Map.put(cells, move.seat, move)})
+
+        _ ->
+          rows ++ [{label, %{move.seat => move}}]
       end
 
     %{hand | rows: rows}
@@ -1282,8 +1277,11 @@ defmodule Website45sV3Web.AnalysisComponents do
   defp mark_winner(hand, label, winner) do
     rows =
       Enum.map(hand.rows, fn
-        {^label, moves} -> {label, Enum.map(moves, &%{&1 | winner: &1.seat == winner})}
-        row -> row
+        {^label, cells} ->
+          {label, Map.new(cells, fn {p, m} -> {p, %{m | winner: p == winner}} end)}
+
+        row ->
+          row
       end)
 
     %{hand | rows: rows}
@@ -1301,8 +1299,7 @@ defmodule Website45sV3Web.AnalysisComponents do
     assigns = assign(assigns, seats: seats, kitty: kitty)
 
     ~H"""
-    <section class="rail-card" aria-label="All hands">
-      <h2 class="rail-title">All hands</h2>
+    <section class="rail-sec" aria-label="All hands">
       <dl class="hands-list">
         <div :for={{p, cards} <- @seats}>
           <dt>{seat_name(@state.variant, p)}</dt>
@@ -1313,41 +1310,6 @@ defmodule Website45sV3Web.AnalysisComponents do
           <dd><.ctext :for={c <- @kitty} id={c} /></dd>
         </div>
       </dl>
-    </section>
-    """
-  end
-
-  defp board_settings(assigns) do
-    ~H"""
-    <section class="rail-card rail-settings" aria-label="Board">
-      <h2 class="rail-title">Board</h2>
-      <label class="rail-toggle">
-        <input
-          type="checkbox"
-          checked={@reveal}
-          phx-click="toggle"
-          phx-value-what="reveal"
-          disabled={@settings.mode != :analysis}
-        />
-        <span>Show all hands</span>
-      </label>
-      <label class="rail-toggle">
-        <input
-          type="checkbox"
-          checked={@control_all}
-          phx-click="toggle"
-          phx-value-what="control_all"
-          disabled={@settings.mode != :analysis}
-        />
-        <span>Move for every seat</span>
-      </label>
-      <.strength who="opponents" label="Opponents" value={@settings.opponents} />
-      <.strength :if={@setup.variant.teams} who="partner" label="Partner" value={@settings.partner} />
-      <div class="rail-actions">
-        <button type="button" class="score-button" phx-click="edit_deal">Edit deal</button>
-        <button type="button" class="score-button" phx-click="new_game">New game</button>
-        <button type="button" class="score-button" id="copy-link" phx-hook="CopyPageLink">Copy link</button>
-      </div>
     </section>
     """
   end
@@ -1367,7 +1329,7 @@ defmodule Website45sV3Web.AnalysisComponents do
         phx-click="set_strength"
         phx-value-who={@who}
         phx-value-strength="site"
-      >Site bot</button>
+      >Site</button>
       <button
         type="button"
         class={["seg", @value == :strong && "seg-on"]}
@@ -1375,7 +1337,7 @@ defmodule Website45sV3Web.AnalysisComponents do
         phx-click="set_strength"
         phx-value-who={@who}
         phx-value-strength="strong"
-      >Strong bot</button>
+      >Strong</button>
     </div>
     """
   end
@@ -1427,16 +1389,41 @@ defmodule Website45sV3Web.AnalysisComponents do
       <p class="menu-variant">
         {Variant.label(@setup.variant)} · {if @settings.mode == :play, do: "Play", else: "Analysis"}
       </p>
-      <button type="button" class="blue-button" phx-click="new_game">New game</button>
-      <button type="button" class="blue-button pass-button" phx-click="rematch">Restart with a new deal</button>
-      <button type="button" class="blue-button pass-button" phx-click="edit_deal">Edit this deal</button>
+      <div class="menu-actions">
+        <button type="button" class="blue-button" phx-click="new_game">New game</button>
+        <button type="button" class="blue-button pass-button" phx-click="rematch">New deal</button>
+        <button type="button" class="blue-button pass-button" phx-click="edit_deal">Edit deal</button>
+        <button type="button" class="blue-button pass-button" id="copy-link" phx-hook="CopyPageLink">Copy link</button>
+      </div>
+      <div :if={@settings.mode == :analysis} class="menu-group">
+        <label class="rail-toggle">
+          <input type="checkbox" checked={@reveal} phx-click="toggle" phx-value-what="reveal" />
+          <span>Show all hands</span>
+        </label>
+        <label class="rail-toggle">
+          <input
+            type="checkbox"
+            checked={@control_all}
+            phx-click="toggle"
+            phx-value-what="control_all"
+          />
+          <span>Move for every seat</span>
+        </label>
+      </div>
       <button
         :if={@settings.mode == :play and @state.phase != :game_over}
         type="button"
         class="blue-button pass-button"
         phx-click="show_hints"
       >Turn on hints</button>
-      <a href="/" class="menu-link">Forty Fives home</a>
+      <div class="menu-group">
+        <.strength who="opponents" label="Opponents" value={@settings.opponents} />
+        <.strength :if={@setup.variant.teams} who="partner" label="Partner" value={@settings.partner} />
+      </div>
+      <div class="menu-links">
+        <button type="button" class="menu-link" phx-click="dialog" phx-value-open="rules">Quick rules</button>
+        <a href="/" class="menu-link">Forty Fives home</a>
+      </div>
     </div>
     """
   end
@@ -1625,6 +1612,29 @@ defmodule Website45sV3Web.AnalysisComponents do
 
   ## Starting a game
 
+  defp variant_name(%Variant{teams: true}), do: "Partners"
+  defp variant_name(%Variant{n: n}), do: "Cutthroat #{n}"
+
+  attr :legend, :string, required: true
+  attr :name, :string, required: true
+  attr :value, :string, required: true
+  attr :choices, :list, required: true
+
+  # A row of radio choices that look like a segmented control.
+  defp seg_group(assigns) do
+    ~H"""
+    <fieldset class="setup-group">
+      <legend>{@legend}</legend>
+      <div class="setup-segs">
+        <label :for={{value, label} <- @choices} class={["seg-label", @value == value && "setup-on"]}>
+          <input type="radio" name={@name} value={value} checked={@value == value} />
+          <span>{label}</span>
+        </label>
+      </div>
+    </fieldset>
+    """
+  end
+
   attr :form, :map, required: true
   attr :dialog, :atom, default: nil
   attr :editor, :map, default: nil
@@ -1643,87 +1653,36 @@ defmodule Website45sV3Web.AnalysisComponents do
           <a href="/play" class="score-button setup-link">Play online</a>
         </header>
         <form id="setup-form" class="setup-form" phx-change="setup_change" phx-submit="start">
-          <fieldset class="setup-group">
-            <legend>Game</legend>
-            <div class="setup-variants">
-              <label
-                :for={v <- @variants}
-                class={["setup-variant", @form["variant"] == v.id && "setup-on"]}
-              >
-                <input
-                  type="radio"
-                  name="game[variant]"
-                  value={v.id}
-                  checked={@form["variant"] == v.id}
-                />
-                <span class="setup-variant-name">{if v.teams, do: "Partners", else: "Cutthroat #{v.n}"}</span>
-                <span class="setup-variant-note">{Variant.summary(v)}</span>
-                <span :if={not Advisor.available?(v)} class="setup-variant-note setup-soon">Hints after training</span>
-              </label>
-            </div>
-          </fieldset>
-          <fieldset class="setup-group">
-            <legend>Mode</legend>
-            <div class="setup-modes">
-              <label class={["setup-mode", @form["mode"] == "analysis" && "setup-on"]}>
-                <input
-                  type="radio"
-                  name="game[mode]"
-                  value="analysis"
-                  checked={@form["mode"] == "analysis"}
-                />
-                <span class="setup-variant-name">Analysis</span>
-                <span class="setup-variant-note">See the value of every choice. Take back moves, show all hands, try other cards.</span>
-              </label>
-              <label class={["setup-mode", @form["mode"] == "play" && "setup-on"]}>
-                <input type="radio" name="game[mode]" value="play" checked={@form["mode"] == "play"} />
-                <span class="setup-variant-name">Play</span>
-                <span class="setup-variant-note">No hints or take-backs. Review every decision when the game ends.</span>
-              </label>
-            </div>
-          </fieldset>
-          <fieldset class="setup-group setup-row">
-            <legend>Bots</legend>
-            <label class={["seg-label", @form["opponents"] == "site" && "setup-on"]}>
-              <input
-                type="radio"
-                name="game[opponents]"
-                value="site"
-                checked={@form["opponents"] == "site"}
-              />
-              <span>Site bot</span>
-            </label>
-            <label class={["seg-label", @form["opponents"] == "strong" && "setup-on"]}>
-              <input
-                type="radio"
-                name="game[opponents]"
-                value="strong"
-                checked={@form["opponents"] == "strong"}
-              />
-              <span>Strong bot</span>
-            </label>
-          </fieldset>
-          <fieldset class="setup-group setup-row">
-            <legend>First dealer</legend>
-            <label
-              :for={{value, label} <- [{"random", "Random"}, {"me", "You"}, {"left", "Left of you"}]}
-              class={["seg-label", @form["dealer"] == value && "setup-on"]}
-            >
-              <input
-                type="radio"
-                name="game[dealer]"
-                value={value}
-                checked={@form["dealer"] == value}
-              />
-              <span>{label}</span>
-            </label>
-          </fieldset>
+          <.seg_group
+            legend="Game"
+            name="game[variant]"
+            value={@form["variant"]}
+            choices={for v <- @variants, do: {v.id, variant_name(v)}}
+          />
+          <.seg_group
+            legend="Mode"
+            name="game[mode]"
+            value={@form["mode"]}
+            choices={[{"analysis", "Analysis"}, {"play", "Play"}]}
+          />
+          <.seg_group
+            legend="Bots"
+            name="game[opponents]"
+            value={@form["opponents"]}
+            choices={[{"site", "Site bot"}, {"strong", "Strong bot"}]}
+          />
+          <.seg_group
+            legend="First dealer"
+            name="game[dealer]"
+            value={@form["dealer"]}
+            choices={[{"random", "Random"}, {"me", "You"}, {"left", "Left of you"}]}
+          />
           <div class="setup-actions">
             <button type="submit" id="start-button" class="blue-button">Deal</button>
             <button
               type="button"
               id="setup-deal-button"
-              class="blue-button pass-button"
+              class="setup-deal-link"
               phx-click={JS.push("setup_deal", value: %{"game" => @form})}
             >Set up a deal</button>
           </div>

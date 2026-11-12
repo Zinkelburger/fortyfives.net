@@ -29,7 +29,7 @@ defmodule Website45sV3Web.AnalysisLiveTest do
     assert html =~ "Partners"
     for n <- 2..6, do: assert(html =~ "Cutthroat #{n}")
     assert html =~ "Analysis"
-    assert html =~ "No hints or take-backs"
+    assert html =~ "Play"
     refute html =~ ~s(<nav aria-label="Main")
     assert has_element?(view, "#start-button")
   end
@@ -39,9 +39,8 @@ defmodule Website45sV3Web.AnalysisLiveTest do
     path = start(view, %{variant: "ct3", mode: "play", opponents: "site", dealer: "me"})
     assert path =~ "/analysis?g="
     assert render(view) =~ "Bidding"
-    # Play mode: no hints or rail.
+    # Play mode: no hints or panel.
     refute has_element?(view, ".board-rail")
-    assert render(view) =~ "hints after the game"
   end
 
   test "a partners game can be played to the end against site bots", %{conn: conn} do
@@ -132,22 +131,22 @@ defmodule Website45sV3Web.AnalysisLiveTest do
         render_click(view, "next_hand", %{})
         play_out(view, limit - 1)
 
-      html =~ "Your bid is 15" ->
+      html =~ "Bagged · choose trump" ->
         render_click(view, "set_bid_suit", %{"bid-suit" => "hearts"})
         render_click(view, "confirm_bid", %{})
         play_out(view, limit - 1)
 
-      html =~ "Your turn · Choose a bid" ->
+      html =~ "Your bid" ->
         render_click(view, "set_bid_pass", %{})
         render_click(view, "confirm_bid", %{})
         play_out(view, limit - 1)
 
-      html =~ "Tap the cards you want to keep" ->
+      html =~ "Your keep" ->
         [card | _] = cards(view, :any)
         render_click(view, "confirm_discard", %{"cards" => [card]})
         play_out(view, limit - 1)
 
-      html =~ "Your turn · Choose a card" ->
+      html =~ "Your turn" ->
         [card | _] = cards(view, :enabled)
         render_click(view, "play-card", %{"cards" => [card]})
         play_out(view, limit - 1)

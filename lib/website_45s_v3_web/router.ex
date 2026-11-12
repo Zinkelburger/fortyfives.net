@@ -141,6 +141,7 @@ defmodule Website45sV3Web.Router do
       ],
       root_layout: {Website45sV3Web.Layouts, :game_root} do
       live "/game/:id", GameLive, :new
+      live "/analysis", AnalysisLive, :index
     end
   end
 

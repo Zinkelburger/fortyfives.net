@@ -1,4 +1,5 @@
-<%= unless assigns[:current_uri] && String.starts_with?(@current_uri, "/game/") do %>
+<%= unless assigns[:current_uri] &&
+             (String.starts_with?(@current_uri, "/game/") or String.starts_with?(@current_uri, "/analysis")) do %>
   <div class="site-header">
     <.link navigate={~p"/"} class="site-logo-link">
       <img

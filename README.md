@@ -175,6 +175,31 @@ logs are dropped after a year, keeping the summary row. The
 game's timeline merged with the clicks from its replays (the text meant for
 reading or for handing to a model), and plays replays back with rrweb-player.
 
+## Analysis board
+
+`/analysis` plays any variant against bots: the partnership game, or
+cutthroat for 2–6 players. In Analysis mode every choice shows the trained
+network's expected points; Play mode hides them until the game ends. Players
+can step back through a game, try other cards, show every hand, move for
+every seat, deal any cards (the deal editor), and review each decision on a
+graph with lichess-style marks. The whole game lives in the URL (`?g=`), so
+links reload and share; nothing is stored. Live tables keep the site bot.
+
+- `lib/website_45s_v3/analysis/` — a pure, replayable engine for every
+  variant (`Engine`), the URL format (`Codec`), the site bot's rules
+  (`Heuristic`) and the networks (`Net`, `TeamPolicy`, `CtPolicy`,
+  `Advisor`).
+- `<variant>.bin` weights — trained in the private Frank-45s-Opus repo and
+  not in git here. Copy them into `priv/analysis/` (or point
+  `ANALYSIS_WEIGHTS_DIR` at a folder that has them):
+  `approaches/dmc/best_policy.bin` → `team4.bin`,
+  `approaches/cutthroat/best_<n>p.bin` → `ct<n>.bin`. A variant without a
+  file plays with the site bot and no hints, and the tests that need it are
+  skipped.
+- `test/fixtures/analysis/` — hands and decisions recorded from the research
+  engine, which the tests replay exactly. Regenerate them with
+  `tools/elixir_vectors.sh` in that repo after new weights are copied in.
+
 Please see [structure.md](structure.md) to see the website's structure
 
 # Resources Used

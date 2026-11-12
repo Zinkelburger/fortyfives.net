@@ -57,3 +57,6 @@ priv/static/images/cards-uncompressed
 *.db
 *.db-*
 *.dump
+
+# Analysis board weights come from the private Frank-45s-Opus repo.
+/priv/analysis/*.bin

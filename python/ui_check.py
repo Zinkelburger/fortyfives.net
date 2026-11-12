@@ -33,6 +33,7 @@ PAGES = {
     "log-in": "/users/log_in",
     "register": "/users/register",
     "reset-password": "/users/reset_password",
+    "analysis": "/analysis",
 }
 
 # Layout invariants (CSS pixels).

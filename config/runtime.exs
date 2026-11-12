@@ -33,6 +33,13 @@ if admins = System.get_env("ADMIN_USER_IDS") do
          |> Enum.map(&String.to_integer/1)
 end
 
+# The analysis board's trained weights (<variant>.bin, from the private
+# Frank-45s-Opus repo). Unset means priv/analysis; a variant without a file
+# plays with the site bot and shows no hints.
+if dir = System.get_env("ANALYSIS_WEIGHTS_DIR") do
+  config :website_45s_v3, :analysis_weights_dir, dir
+end
+
 if System.get_env("REPLAY_RECORDING") in ["false", "0", "off"] do
   config :website_45s_v3, Website45sV3.Analytics, record_replays: false
 end

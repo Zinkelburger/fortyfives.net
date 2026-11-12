@@ -1,11 +1,12 @@
 services:
   web:
-    image: docker.io/thwar/fortyfives.net@sha256:b95626e4442451fea1671beff7a537a8f5bd6412cb863d3ab0ac071cf6290740
+    image: docker.io/thwar/fortyfives.net@sha256:0bc70415c1f6e417ff70bcf41e7e3939c33570b4717f891dda0c0431a8deaa23
     restart: unless-stopped
     env_file:
     - .env
     environment:
       DATABASE_PATH: /data/fortyfives.db
+      ANALYSIS_WEIGHTS_DIR: /data/analysis
     volumes:
     - app_data:/data
     healthcheck:
@@ -56,7 +57,7 @@ services:
       /var/www/certbot; sleep 12h & wait $${!}; done;'
     logging: *id001
   db_backup:
-    image: docker.io/thwar/fortyfives.net@sha256:b95626e4442451fea1671beff7a537a8f5bd6412cb863d3ab0ac071cf6290740
+    image: docker.io/thwar/fortyfives.net@sha256:0bc70415c1f6e417ff70bcf41e7e3939c33570b4717f891dda0c0431a8deaa23
     restart: unless-stopped
     user: root
     environment:

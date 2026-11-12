@@ -208,6 +208,47 @@ Hooks.ShareGame = {
 
 Hooks.SessionRecorder = createSessionRecorder(record)
 
+// Analysis board: arrow keys step through the game, Home/End jump to its ends.
+Hooks.AnalysisKeys = {
+  mounted() {
+    this.onKey = event => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      const target = event.target
+      if (target.closest('input, select, textarea, dialog')) return
+      event.preventDefault()
+      this.pushEvent('key', {key: event.key})
+    }
+    window.addEventListener('keydown', this.onKey)
+  },
+  destroyed() { window.removeEventListener('keydown', this.onKey) },
+}
+
+// Keeps the current move in view inside the scrolling move list.
+Hooks.ScrollCurrent = {
+  mounted() { this.scroll() },
+  updated() { this.scroll() },
+  scroll() {
+    const current = this.el.querySelector('.move-current')
+    if (!current) { this.el.scrollTop = this.el.scrollHeight; return }
+    const top = current.offsetTop
+    if (top < this.el.scrollTop || top + current.offsetHeight > this.el.scrollTop + this.el.clientHeight)
+      this.el.scrollTop = top - this.el.clientHeight / 2
+  },
+}
+
+// Copies the page's own address, which holds the whole analysis game.
+Hooks.CopyPageLink = {
+  mounted() {
+    this.label = this.el.textContent
+    this.copy = () => copyText(window.location.href)
+      .then(() => { this.el.textContent = 'Copied'; this.timer = setTimeout(() => { this.el.textContent = this.label }, 1500) })
+      .catch(() => window.prompt('Copy this link', window.location.href))
+    this.el.addEventListener('click', this.copy)
+  },
+  destroyed() { this.el.removeEventListener('click', this.copy); clearTimeout(this.timer) },
+}
+
 // Viewport and referrer feed the site analytics (Website45sV3Web.SiteTracking).
 let liveSocket = new LiveSocket("/live", Socket, {
   params: {

@@ -34,6 +34,9 @@ config :website_45s_v3, :game_timings,
   trick_transition: 10,
   scoring_display: 10
 
+# The analysis board's bots move at once.
+config :website_45s_v3, :analysis_delays, %{move: 0, trick: 0, keep: 0}
+
 # Disable Turnstile entirely in tests (no widget, no verification)
 config :website_45s_v3, :turnstile_site_key, nil
 

@@ -726,6 +726,9 @@ defmodule Website45sV3Web.QueueLive do
         >
           Play a Friend
         </.link>
+        <.link href={~p"/analysis"} class="tab">
+          Practice
+        </.link>
       </nav>
 
       <div :if={@tab == "public"} id="queue-root" class="queue-page">

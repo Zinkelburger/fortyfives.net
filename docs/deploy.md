@@ -41,6 +41,21 @@ also has its release and rebuild steps.
    PostgreSQL deployment, follow [the cutover plan](sqlite-migration.md).
    Never point the new image at the old PostgreSQL database.
 
+   The analysis board's weights are not in the image (they come from the
+   private Frank-45s-Opus repo). Put them in the volume at `/data/analysis`
+   (`ANALYSIS_WEIGHTS_DIR`), readable by `app`:
+
+   ```sh
+   docker compose -f docker-compose-nginx.yml exec web mkdir -p /data/analysis
+   for f in team4 ct2 ct3 ct4 ct5 ct6; do
+     docker compose -f docker-compose-nginx.yml cp "$f.bin" web:/data/analysis/
+   done
+   docker compose -f docker-compose-nginx.yml restart web
+   ```
+
+   with `team4.bin` = `approaches/dmc/best_policy.bin` and `ct<n>.bin` =
+   `approaches/cutthroat/best_<n>p.bin` from that repo.
+
 3. **First TLS certificate.** nginx will not start without
    `/etc/letsencrypt/live/fortyfives.net/`. Obtain it with the certbot
    sidecar (DNS-01, so nothing needs to be listening on port 80 yet):

@@ -3,6 +3,7 @@ defmodule Website45sV3Web.AnalysisLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Website45sV3.Analysis.Advisor
   alias Website45sV3.Analysis.Cards
   alias Website45sV3.Analysis.Codec
   alias Website45sV3.Analysis.Codec.Settings
@@ -59,6 +60,26 @@ defmodule Website45sV3Web.AnalysisLiveTest do
     for p <- 1..5, do: assert(html =~ "Bot #{p}")
     play_out(view, 25)
     assert render(view) =~ ~r/Hand results|Game over|Playing|Discard/
+  end
+
+  test "bid buttons carry a points pill, the best in gold", %{conn: conn} do
+    {:ok, view, _} = live(conn, game_url("team4"))
+    render_async(view)
+
+    # The pill line is there with or without weights, so buttons keep one size.
+    assert has_element?(view, ".bid-numbers .bid-hinted .pill")
+    assert has_element?(view, ".bid-suits .bid-hinted .pill")
+    assert has_element?(view, "#pass-bid-button .pill")
+    refute render(view) =~ "bid-best"
+
+    if Advisor.available?(Variant.get!("team4")) do
+      assert has_element?(view, ".bidding-panel .pill-best, #pass-bid-button .pill-best")
+      assert has_element?(view, ~s(.bid-suits button[title*="points this hand, you minus them"]))
+
+      render_click(view, "set_bid_number", %{"bid-number" => "30"})
+      render_click(view, "set_bid_suit", %{"bid-suit" => "spades"})
+      assert has_element?(view, ".selection-summary .pill")
+    end
   end
 
   test "a game link reopens the same position and steps back", %{conn: conn} do

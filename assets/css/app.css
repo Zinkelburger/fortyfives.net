@@ -1117,12 +1117,18 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .board-rail .suit-red { color: var(--red-suit); }
 .hand-owner { text-align: center; font-size: .8125rem; color: var(--accent); }
 
-/* Hints on the table itself: a value on each card you may play (best in
-   gold), and a gold dot on the best bid's buttons. */
-.card-value { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); padding: 1px 7px; border-radius: 999px; background: #071f31e8; color: #d2e8f9; font-size: .75rem; font-weight: 700; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
-.card-value-best { background: var(--won); color: #071f31; }
-.bid-best { position: relative; }
-.bid-best::after { content: ""; position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--won); box-shadow: 0 0 0 2px #071f31; }
+/* Hints on the table itself: a points pill on each card you may play and
+   on each bid button, gold where the choice reaches the best value. */
+.card-value, .pill { padding: 1px 7px; border-radius: 999px; background: #071f31e8; color: #d2e8f9; font-size: .75rem; font-weight: 700; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.card-value { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); pointer-events: none; }
+.card-value-best, .pill-best { background: var(--won); color: #071f31; }
+.pill { display: inline-block; vertical-align: 1px; margin-left: 6px; }
+.pill-empty { visibility: hidden; }
+/* With hints on, bid buttons always hold a pill line, so they keep one size
+   whether or not it is your bid. */
+.game .bid-hinted { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 56px; padding: 2px 4px; }
+.bid-suits .bid-hinted { font-size: 28px; }
+.bid-hinted .pill { margin-left: 0; }
 
 /* Seats around the table for two to six players. Position 0 is you. */
 .board-seats.seats-2 .pos-1, .board-seats.seats-4 .pos-2 { grid-area: 1 / 1 / 2 / -1; }

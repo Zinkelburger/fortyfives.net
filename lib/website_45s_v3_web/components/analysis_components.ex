@@ -353,16 +353,75 @@ defmodule Website45sV3Web.AnalysisComponents do
   defp loss_text(%{loss: loss}),
     do: "−#{:erlang.float_to_binary(Float.round(loss, 1), decimals: 1)}"
 
-  # The best choice, for marking it on the bid buttons.
-  defp best_bid(%{
-         show_options: true,
-         options: [%{action: {:bid, _, bid}} | _],
-         focus: seat,
-         hand_seat: seat
-       }),
-       do: bid
+  # Points for each bid button, given what is already picked: a number shows
+  # its value with the chosen trump (or its best trump), a suit its value
+  # with the chosen number (or its best number). nil when there are no hints.
+  defp bid_values(
+         %{
+           show_options: true,
+           options: [%{action: {:bid, _, _}} | _] = options,
+           focus: seat,
+           hand_seat: seat
+         },
+         selected_bid,
+         selected_suit
+       ) do
+    bids =
+      for %{action: {:bid, _, {v, i}}, points: p} <- options, v > 0, into: %{}, do: {{v, i}, p}
 
-  defp best_bid(_), do: nil
+    num = if selected_bid not in [nil, "0"], do: String.to_integer(selected_bid)
+    suit = Enum.find_index(@suit_buttons, &(elem(&1, 0) == selected_suit))
+
+    pick = fn pairs ->
+      pairs |> Enum.map(&bids[&1]) |> Enum.reject(&is_nil/1) |> Enum.max(fn -> nil end)
+    end
+
+    %{
+      best: hd(options).points,
+      pass:
+        Enum.find_value(options, fn %{action: {:bid, _, {v, _}}, points: p} -> v == 0 && p end),
+      numbers:
+        Map.new([15, 20, 25, 30], fn v ->
+          {v, pick.(if suit, do: [{v, suit}], else: for(i <- 0..3, do: {v, i}))}
+        end),
+      suits:
+        Map.new(0..3, fn i ->
+          {i, pick.(if num, do: [{num, i}], else: for(v <- [15, 20, 25, 30], do: {v, i}))}
+        end)
+    }
+  end
+
+  defp bid_values(_assigns, _bid, _suit), do: nil
+
+  # The points pill on a bid button: gold when the choice reaches the best
+  # value. Always rendered while hints are on, so the buttons keep one size.
+  attr :vals, :map, default: nil
+  attr :p, :any, default: nil
+
+  defp pill(assigns) do
+    ~H"""
+    <span
+      class={[
+        "pill",
+        @p == nil && "pill-empty",
+        (@p != nil and @p == @vals.best) && "pill-best"
+      ]}
+      aria-hidden="true"
+    >{if @p, do: points(@p), else: "0.0"}</span>
+    """
+  end
+
+  defp pill_label(_vals, nil), do: ""
+  defp pill_label(vals, p), do: ", #{points(p)}#{if p == vals.best, do: ", best", else: ""}"
+
+  defp pill_title(_vals, nil, _v), do: nil
+
+  defp pill_title(vals, p, v),
+    do: "#{points(p)}#{if p == vals.best, do: " · best", else: ""} · #{points_meaning(v)}"
+
+  @doc false
+  def points_meaning(%{teams: true}), do: "points this hand, you minus them"
+  def points_meaning(_), do: "points this hand, you minus the others' average"
 
   # Your most recent judged decision before this position.
   defp last_judgment(%{judgments: judgments, cursor: cursor}) do
@@ -551,7 +610,7 @@ defmodule Website45sV3Web.AnalysisComponents do
         bagged: bagged,
         selected_bid: selected_bid,
         buttons: @suit_buttons,
-        best: best_bid(assigns) || {nil, nil}
+        vals: bid_values(assigns, selected_bid, assigns.selected_suit)
       )
 
     ~H"""
@@ -563,14 +622,18 @@ defmodule Website45sV3Web.AnalysisComponents do
             type="button"
             class={[
               "blue-button",
-              @selected_bid == Integer.to_string(bid) && "active",
-              elem(@best, 0) == bid && "bid-best"
+              @hints && "bid-hinted",
+              @selected_bid == Integer.to_string(bid) && "active"
             ]}
             phx-click="set_bid_number"
             phx-value-bid-number={bid}
             aria-pressed={to_string(@selected_bid == Integer.to_string(bid))}
+            aria-label={"#{bid}#{pill_label(@vals, @vals && @vals.numbers[bid])}"}
+            title={pill_title(@vals, @vals && @vals.numbers[bid], @state.variant)}
             disabled={not @can or bid not in @values}
-          >{bid}</button>
+          >
+            {bid}<.pill :if={@hints} vals={@vals} p={@vals && @vals.numbers[bid]} />
+          </button>
         </div>
         <div class="bid-suits" role="group" aria-label="Trump suit">
           <button
@@ -578,16 +641,19 @@ defmodule Website45sV3Web.AnalysisComponents do
             type="button"
             class={[
               "suit-button",
+              @hints && "bid-hinted",
               color == "red" && "red-suit",
-              @selected_suit == suit && "active",
-              (elem(@best, 0) not in [nil, 0] and elem(@best, 1) == i) && "bid-best"
+              @selected_suit == suit && "active"
             ]}
             phx-click="set_bid_suit"
             phx-value-bid-suit={suit}
-            aria-label={String.capitalize(suit)}
+            aria-label={"#{String.capitalize(suit)}#{pill_label(@vals, @vals && @vals.suits[i])}"}
+            title={pill_title(@vals, @vals && @vals.suits[i], @state.variant)}
             aria-pressed={to_string(@selected_suit == suit)}
             disabled={not @can}
-          >{symbol}</button>
+          >
+            {symbol}<.pill :if={@hints} vals={@vals} p={@vals && @vals.suits[i]} />
+          </button>
         </div>
       </div>
     </div>
@@ -613,7 +679,7 @@ defmodule Website45sV3Web.AnalysisComponents do
         badges: badges,
         confirmed: confirmed,
         can_bid: acting and s.phase == :bidding,
-        best_pass: match?({0, _}, best_bid(assigns)),
+        bid_vals: bid_values(assigns, nil, nil),
         version: "#{assigns.cursor}|#{length(assigns.actions)}|#{seat}|#{s.phase}"
       )
 
@@ -644,6 +710,7 @@ defmodule Website45sV3Web.AnalysisComponents do
           ]}
           data-card={card.value}
           aria-label={card.name <> badge_label(@badges[card.id])}
+          title={badge_title(@badges[card.id], @state.variant)}
           aria-pressed="false"
           aria-disabled={to_string(not card.playable)}
           disabled={not card.playable}
@@ -668,6 +735,13 @@ defmodule Website45sV3Web.AnalysisComponents do
     </section>
     """
   end
+
+  defp badge_title(%{text: "Keep"}, _v), do: "Best keep"
+
+  defp badge_title(%{text: t, best: b}, v),
+    do: "#{t}#{if b, do: " · best", else: ""} · #{points_meaning(v)}"
+
+  defp badge_title(nil, _v), do: nil
 
   defp badge_label(nil), do: ""
   defp badge_label(%{text: text, best: best}), do: ", #{text}#{if best, do: ", best", else: ""}"
@@ -725,7 +799,11 @@ defmodule Website45sV3Web.AnalysisComponents do
     ~H"""
     <%= if @state.phase == :bidding do %>
       <p class="selection-summary" aria-live="polite">
-        {@bid_error || bid_summary(@selected_bid, @selected_suit)}
+        {@bid_error || bid_summary(@selected_bid, @selected_suit)}<.pill
+          :if={!@bid_error and picked_points(@bid_vals, @options, @selected_bid, @selected_suit)}
+          vals={@bid_vals}
+          p={picked_points(@bid_vals, @options, @selected_bid, @selected_suit)}
+        />
       </p>
       <div class="confirm-bid">
         <button
@@ -733,13 +811,17 @@ defmodule Website45sV3Web.AnalysisComponents do
           id="pass-bid-button"
           class={[
             "blue-button pass-button",
-            @selected_suit == "pass" && "active",
-            @best_pass && "bid-best"
+            @hints && "bid-hinted",
+            @selected_suit == "pass" && "active"
           ]}
           phx-click="set_bid_pass"
           aria-pressed={to_string(@selected_suit == "pass")}
+          aria-label={"Pass#{pill_label(@bid_vals, @bid_vals && @bid_vals.pass)}"}
+          title={pill_title(@bid_vals, @bid_vals && @bid_vals.pass, @state.variant)}
           disabled={not @can_bid or Engine.bagged?(@state)}
-        >Pass</button>
+        >
+          Pass<.pill :if={@hints} vals={@bid_vals} p={@bid_vals && @bid_vals.pass} />
+        </button>
         <button
           type="button"
           id="confirm-bid-button"
@@ -777,6 +859,18 @@ defmodule Website45sV3Web.AnalysisComponents do
   defp bid_ready?(_bid, nil, _), do: false
   defp bid_ready?("0", suit, _), do: suit == "pass"
   defp bid_ready?(_bid, suit, _), do: suit != "pass"
+
+  # The value of the bid picked so far, once both number and trump are in.
+  defp picked_points(nil, _options, _bid, _suit), do: nil
+  defp picked_points(vals, _options, "0", "pass"), do: vals.pass
+  defp picked_points(_vals, _options, nil, _suit), do: nil
+  defp picked_points(_vals, _options, _bid, nil), do: nil
+
+  defp picked_points(_vals, options, bid, suit) do
+    v = String.to_integer(bid)
+    i = Enum.find_index(@suit_buttons, &(elem(&1, 0) == suit))
+    Enum.find_value(options, fn %{action: {:bid, _, b}, points: p} -> b == {v, i} && p end)
+  end
 
   defp bid_summary("0", "pass"), do: "Pass"
   defp bid_summary(nil, nil), do: ""

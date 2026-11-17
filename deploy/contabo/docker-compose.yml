@@ -25,16 +25,16 @@ x-web: &web
 services:
   web-blue:
     <<: *web
-    image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
-    scale: 1
+    image: docker.io/thwar/fortyfives.net@sha256:8b75d18a6bdf17ffaf93cb12ce61505168292f07b6e689fc2272456f9a417089
+    scale: 0
     environment:
       DATABASE_PATH: /data/fortyfives.db
       ANALYSIS_WEIGHTS_DIR: /data/analysis
       FF_SLOT: blue
   web-green:
     <<: *web
-    image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
-    scale: 0
+    image: docker.io/thwar/fortyfives.net@sha256:8b75d18a6bdf17ffaf93cb12ce61505168292f07b6e689fc2272456f9a417089
+    scale: 1
     environment:
       DATABASE_PATH: /data/fortyfives.db
       ANALYSIS_WEIGHTS_DIR: /data/analysis
@@ -72,7 +72,7 @@ services:
       /var/www/certbot; sleep 12h & wait $${!}; done;'
     logging: *logging
   db_backup:
-    image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
+    image: docker.io/thwar/fortyfives.net@sha256:8b75d18a6bdf17ffaf93cb12ce61505168292f07b6e689fc2272456f9a417089
     restart: unless-stopped
     user: root
     environment:

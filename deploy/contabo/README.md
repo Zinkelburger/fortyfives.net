@@ -83,6 +83,52 @@ renewal and reload nginx straight away:
 
 ## Deploying a release
 
+`deploy/contabo/release.sh` does all of the steps below:
+
+```sh
+deploy/contabo/release.sh status            # what prod runs, games now, unreleased commits
+deploy/contabo/release.sh tag               # waits for CI on origin/main, tags the next vX, waits for the image
+deploy/contabo/release.sh deploy vX         # waits for idle tables, backs up, switches, checks, writes docs/releases/vX.md
+# rewrite the "Changes" list in docs/releases/vX.md
+deploy/contabo/release.sh finish vX         # commits the notes and compose file [skip ci], pushes
+deploy/contabo/release.sh rollback vX       # back to the image before vX
+```
+
+`deploy --dry-run` checks the tag, the image and the compose files without
+changing anything. If the repo's `docker-compose.yml` has an edit the host
+lacks (a new environment variable), `deploy` stops; `--push-compose` uploads
+the repo's file with the new digest. Only `web` and `db_backup` are
+restarted; `deploy` names any other service the file changed for. Files
+outside the compose file (like the analysis weights) are still copied by
+hand. A failed tbot e2e run is usually the flaky one:
+`gh run rerun <run> --failed`, then `tag` again.
+
+- **Idle** means no game in progress and nobody in the public queue.
+  Private lobbies that are still filling and analysis boards are not
+  counted.
+- **A non-zero exit means "not done"**, and the last lines say what to run
+  next. Every step can be run again after it was cut short: `tag vX` waits
+  again for vX's image, and `deploy vX` finishes a half-done switch, or
+  repeats the checks and writes the record if the switch already happened.
+- **After the switch** `deploy` fails if `/healthz/auth`, `/`, `/play` or
+  `/analysis` is not fine, or if the `web` container is not healthy on the
+  new image. Prod stays on vX; fix and run `deploy vX` again, or
+  `rollback vX --now`. If `docker compose up` itself fails, the previous
+  compose file is put back.
+- **`finish`** commits only the notes and the compose file, and refuses
+  while local `main` and `origin/main` differ: anything pushed along with a
+  `[skip ci]` commit reaches `main` without CI.
+- **`tag`** skips `[skip ci]` commits at the top of `main` (a tag on one
+  builds no image) and tags the newest commit below them.
+- **`rollback`** puts the whole previous compose file back when the deploy
+  changed more than the digest, and keeps the replaced one in
+  `backups/release-vX/docker-compose.at-rollback.yml`.
+- The site answers 502 for 10 to 30 seconds at the switch. If the uptime
+  check (minutes 13 and 43 of each hour) lands in that window, GitHub sends
+  one failure email.
+
+By hand:
+
 1. Tag `vX` on a commit that is not `[skip ci]`; the "Build and Push" workflow
    prints the image digest (`docker.io/thwar/fortyfives.net:vX@sha256:...`).
 2. Wait for no running games:

@@ -1,6 +1,6 @@
 services:
   web:
-    image: docker.io/thwar/fortyfives.net@sha256:0bc70415c1f6e417ff70bcf41e7e3939c33570b4717f891dda0c0431a8deaa23
+    image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
     restart: unless-stopped
     env_file:
     - .env
@@ -57,7 +57,7 @@ services:
       /var/www/certbot; sleep 12h & wait $${!}; done;'
     logging: *id001
   db_backup:
-    image: docker.io/thwar/fortyfives.net@sha256:0bc70415c1f6e417ff70bcf41e7e3939c33570b4717f891dda0c0431a8deaa23
+    image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
     restart: unless-stopped
     user: root
     environment:

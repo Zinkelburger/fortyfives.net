@@ -51,6 +51,7 @@ defmodule Website45sV3Web.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  plug :put_slot_header
   plug Website45sV3Web.Router
 
   @doc """
@@ -60,4 +61,13 @@ defmodule Website45sV3Web.Endpoint do
   """
   def log_level(%Plug.Conn{path_info: ["healthz"]}), do: false
   def log_level(_conn), do: :info
+
+  # Which blue/green copy answered (see Website45sV3.Slot); the deploy
+  # script and its test read it to see where nginx sent a request.
+  defp put_slot_header(conn, _opts) do
+    case Website45sV3.Slot.name() do
+      nil -> conn
+      slot -> Plug.Conn.put_resp_header(conn, "x-ff-slot", slot)
+    end
+  end
 end

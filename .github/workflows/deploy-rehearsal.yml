@@ -1,0 +1,76 @@
+name: Deploy rehearsal
+
+# Runs deploy/contabo/test/run.sh: builds the production image, starts it
+# as blue behind the production nginx config, seats browsers in a game, the
+# queue and a private lobby, and moves the site to green and back with
+# slots.sh. Fails if anyone ends up in the wrong place or / answers anything
+# but 200. See "Testing a change to the deploy" in deploy/contabo/README.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - deploy/contabo/**
+      - lib/website_45s_v3/slot.ex
+      - lib/website_45s_v3_web/slot_routing.ex
+      - lib/website_45s_v3_web/live/queue_live.ex
+      - lib/website_45s_v3_web/live/game_live.ex
+      - lib/website_45s_v3_web/router.ex
+      - lib/website_45s_v3_web/endpoint.ex
+      - lib/website_45s_v3/game/private_queue_manager.ex
+      - lib/website_45s_v3/game/queue_starter.ex
+      - assets/js/app.js
+      - config/**
+      - Dockerfile.prod
+      - prod_entrypoint.sh
+      - mix.lock
+      - .github/workflows/deploy-rehearsal.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - deploy/contabo/**
+      - lib/website_45s_v3/slot.ex
+      - lib/website_45s_v3_web/slot_routing.ex
+      - lib/website_45s_v3_web/live/queue_live.ex
+      - lib/website_45s_v3_web/live/game_live.ex
+      - .github/workflows/deploy-rehearsal.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rehearse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the production image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.prod
+          push: false
+          load: true
+          tags: localhost/ff-deploy-test:a
+          cache-from: type=gha,scope=deploy-rehearsal
+          cache-to: type=gha,mode=max,scope=deploy-rehearsal
+
+      - name: Install Playwright and Chromium
+        run: |
+          venv=$HOME/.cache/ff-deploy-test/venv
+          python3 -m venv "$venv"
+          "$venv/bin/pip" install -q -r deploy/contabo/test/requirements.txt
+          "$venv/bin/python" -m playwright install --with-deps chromium
+
+      - name: Rehearse two switches
+        run: deploy/contabo/test/run.sh --image localhost/ff-deploy-test:a

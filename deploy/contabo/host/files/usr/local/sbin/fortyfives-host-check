@@ -21,12 +21,19 @@ problems=$(mktemp)
 trap 'rm -f "$problems"' EXIT
 problem() { echo "- $*" >> "$problems"; }
 
-# Containers.
-for c in fortyfives-web-1 fortyfives-nginx-1 fortyfives-certbot-1 fortyfives-db_backup-1; do
+# Containers. The app runs as web-blue or web-green (blue/green deploys,
+# deploy/contabo/slots.sh); live.conf names the live one.
+slots=$site/nginx/slot/live.conf
+live=$(sed -n 's/^# live=\([a-z]*\) draining=.*/\1/p' "$slots" 2>/dev/null)
+draining=$(sed -n 's/^# live=[a-z]* draining=\([a-z]*\)$/\1/p' "$slots" 2>/dev/null)
+[ -n "$live" ] || problem "$slots does not name a live slot"
+[ -z "$draining" ] || problem "web-$draining is still draining after a deploy (deploy/contabo/release.sh status)"
+web=fortyfives-web-${live:-blue}-1
+for c in $web fortyfives-nginx-1 fortyfives-certbot-1 fortyfives-db_backup-1; do
   running=$(docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null)
   [ "$running" = true ] || problem "container $c is not running"
 done
-for c in fortyfives-web-1 fortyfives-db_backup-1; do
+for c in $web fortyfives-db_backup-1; do
   health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$c" 2>/dev/null)
   [ "$health" = healthy ] || problem "container $c is ${health:-missing}, not healthy"
 done

@@ -21,16 +21,17 @@ After changing anything on the host, copy the file back here and commit it.
 
 | Host path | In this repo | Notes |
 |---|---|---|
-| `docker-compose.yml` | `deploy/contabo/docker-compose.yml` | The only compose file in use. The image digest is written in by hand (both `web` and `db_backup`). |
+| `docker-compose.yml` | `deploy/contabo/docker-compose.yml` | The only compose file in use. `slots.sh` writes the image digests and scales of `web-blue`, `web-green` and `db_backup`. |
+| `nginx/slot/live.conf` | `deploy/contabo/nginx/slot/live.conf` | Which slot is live, written by `slots.sh`. A directory mount, so it can be replaced. |
 | `nginx/conf.d/site.conf` | `deploy/contabo/nginx/conf.d/site.conf` | Single-file bind mount: edit in place (`cat new > site.conf`), not `sed -i` or `mv`, then `nginx -t` and `nginx -s reload`. |
 | `scripts/backup-sqlite.sh` | `scripts/backup-sqlite.sh` | Daily SQLite online backup, 14 days kept. |
 | `.env` | `deploy/contabo/env.keys` (key names only) | Secrets stay on the host. |
 | `/etc/letsencrypt/renewal/fortyfives.net.conf` | `deploy/contabo/letsencrypt/renewal/fortyfives.net.conf` | Written by certbot; the drift check compares only `[renewalparams]` and below. Keys and certificates stay on the host. |
-| `backups/release-vX/` | — | Per-release record: `docker-compose.before.yml`, `env.before`, `previous-image`, `new-image`, `started`, `activated` (UTC). |
+| `backups/release-vX/` | — | Per-release record: `docker-compose.before.yml`, `live.conf.before`, `env.before`, `previous-image`, `previous-slot`, `new-image`, and the times `started`, `activated`, `retired`, `rolled-back` (UTC). |
 | `docker-compose.sqlite.yml` | — | Leftover from the SQLite cutover; not used. |
 
 - Docker volumes (all `external`): `fortyfives_app_data` (the SQLite
-  database, `/data/fortyfives.db` in `web`), `fortyfives_sqlite_backups`
+  database, `/data/fortyfives.db` in the app containers), `fortyfives_sqlite_backups`
   (`/backups` in `db_backup`), `fortyfives_db_data` (old PostgreSQL data,
   only for the `postgres-rollback` profile).
 - TLS: Let's Encrypt, renewed by the `certbot` container (see
@@ -83,68 +84,114 @@ renewal and reload nginx straight away:
 
 ## Deploying a release
 
-`deploy/contabo/release.sh` does all of the steps below:
+Production runs blue/green: two copies of the app, `web-blue` and
+`web-green`, behind one nginx. One is live; the other is stopped (scale 0)
+until a deploy starts the new image in it. Nobody waits for idle tables and
+the site does not answer 502 at a switch.
+
+`deploy/contabo/release.sh` does all of it:
 
 ```sh
-deploy/contabo/release.sh status            # what prod runs, games now, unreleased commits
+deploy/contabo/release.sh status            # live slot, games on each, unreleased commits
 deploy/contabo/release.sh tag               # waits for CI on origin/main, tags the next vX, waits for the image
-deploy/contabo/release.sh deploy vX         # waits for idle tables, backs up, switches, checks, writes docs/releases/vX.md
+deploy/contabo/release.sh deploy vX         # backs up, starts vX in the idle slot, checks, switches,
+                                            # waits for the old slot's games, stops it, writes docs/releases/vX.md
 # rewrite the "Changes" list in docs/releases/vX.md
-deploy/contabo/release.sh finish vX         # commits the notes and compose file [skip ci], pushes
-deploy/contabo/release.sh rollback vX       # back to the image before vX
+deploy/contabo/release.sh finish vX         # commits the notes, compose file and slot map [skip ci], pushes
+deploy/contabo/release.sh rollback vX       # back to the image before vX, the same way
+deploy/contabo/release.sh restart           # the live image again in the other slot (after an .env change)
 ```
 
-`deploy --dry-run` checks the tag, the image and the compose files without
-changing anything. If the repo's `docker-compose.yml` has an edit the host
-lacks (a new environment variable), `deploy` stops; `--push-compose` uploads
-the repo's file with the new digest. Only `web` and `db_backup` are
-restarted; `deploy` names any other service the file changed for. Files
-outside the compose file (like the analysis weights) are still copied by
-hand. A failed tbot e2e run is usually the flaky one:
-`gh run rerun <run> --failed`, then `tag` again.
+What a switch does to players:
 
-- **Idle** means no game in progress and nobody in the public queue.
-  Private lobbies that are still filling and analysis boards are not
-  counted.
+| Player | After the switch |
+|---|---|
+| In a game | Stays on the old slot until the game ends; a refresh or reconnect goes back there. Their next page after the game is on the new slot. |
+| In the public queue or a private lobby | The page reloads on the new slot, seated again with the bots they added. The lobby keeps its link. |
+| Anywhere else (home, `/analysis`, settings) | The page reloads on the new slot. `/analysis` keeps the board, which is in the URL. |
+| New visitor | New slot. |
+
+A finished private game on the old slot sends its players to a rematch
+lobby on the new slot.
+
+How it works:
+
+- `nginx/slot/live.conf` (written by `slots.sh`) maps each request to an
+  upstream: the live slot by default; the draining slot for a browser whose
+  `ff_slot` cookie names it; any slot for a request with an `X-FF-Slot`
+  header (the deploy's checks use that to try the new slot before the
+  switch). The app sets the cookie on every page it serves, and a draining
+  slot sets it only for players seated in one of its games
+  (`Website45sV3Web.SlotRouting`).
+- At the switch `slots.sh` reloads nginx and calls `Website45sV3.Slot.drain/0`
+  on the old slot, which tells every open page there to reload, except a
+  seated player's. Lobby and queue pages reload with a signed handoff that
+  seats the player again on the new slot.
+- Both slots use the same SQLite database and `.env`. Responses carry
+  `x-ff-slot: blue|green`.
+
+`release.sh deploy` in order: back up the database, start vX in the idle
+slot, check `/healthz`, `/healthz/auth`, `/`, `/play` and `/analysis` on it
+through nginx (`X-FF-Slot`), switch, check again without the header, wait up
+to `--wait` minutes (default 60) for the old slot's games, stop the old slot,
+copy the compose file and slot map back, write the notes.
+
+- **If the new slot fails to start or fails a check before the switch**, it
+  is stopped again and prod is unchanged.
+- **Migrations** run when the new slot starts, while the old one still uses
+  the database. `deploy` lists the migrations vX adds and stops unless
+  `--migrations-ok` says they are safe for the old version: new tables and
+  nullable columns are; renames, drops and new `NOT NULL` columns are not
+  (do those in two releases).
 - **A non-zero exit means "not done"**, and the last lines say what to run
-  next. Every step can be run again after it was cut short: `tag vX` waits
-  again for vX's image, and `deploy vX` finishes a half-done switch, or
-  repeats the checks and writes the record if the switch already happened.
-- **After the switch** `deploy` fails if `/healthz/auth`, `/`, `/play` or
-  `/analysis` is not fine, or if the `web` container is not healthy on the
-  new image. Prod stays on vX; fix and run `deploy vX` again, or
-  `rollback vX --now`. If `docker compose up` itself fails, the previous
-  compose file is put back.
-- **`finish`** commits only the notes and the compose file, and refuses
-  while local `main` and `origin/main` differ: anything pushed along with a
-  `[skip ci]` commit reaches `main` without CI.
+  next. If the old slot still has games after `--wait`, prod is already on
+  vX; `deploy vX` again picks up the wait. Every step can be run again after
+  it was cut short.
+- **`rollback vX`** switches straight back while the old slot still runs
+  (the usual case right after a deploy); otherwise it starts the previous
+  image in the idle slot and switches to it. `--now` stops vX's slot without
+  waiting for its games. Migrations are not undone.
+- **`--push-compose`**: if the repo's `docker-compose.yml` has an edit the
+  host lacks (a new environment variable), `deploy` stops; this uploads the
+  repo's file, keeping the host's image and scale lines. Only the app slots
+  and `db_backup` are restarted by a deploy; restart other services by hand.
+  Files outside the compose file (like the analysis weights) are still
+  copied by hand.
+- **`finish`** commits only the notes, the compose file and the slot map,
+  and refuses while local `main` and `origin/main` differ: anything pushed
+  along with a `[skip ci]` commit reaches `main` without CI.
 - **`tag`** skips `[skip ci]` commits at the top of `main` (a tag on one
-  builds no image) and tags the newest commit below them.
-- **`rollback`** puts the whole previous compose file back when the deploy
-  changed more than the digest, and keeps the replaced one in
-  `backups/release-vX/docker-compose.at-rollback.yml`.
-- The site answers 502 for 10 to 30 seconds at the switch. If the uptime
-  check (minutes 13 and 43 of each hour) lands in that window, GitHub sends
-  one failure email.
+  builds no image) and tags the newest commit below them. A failed tbot e2e
+  run is usually the flaky one: `gh run rerun <run> --failed`, then `tag`
+  again.
 
-By hand:
+### Testing a change to the deploy
 
-1. Tag `vX` on a commit that is not `[skip ci]`; the "Build and Push" workflow
-   prints the image digest (`docker.io/thwar/fortyfives.net:vX@sha256:...`).
-2. Wait for no running games:
-   `docker exec fortyfives-web-1 bin/website_45s_v3 rpc "IO.write(DynamicSupervisor.count_children(Website45sV3.Game.GameSupervisor).active)"`
-   should print `0`.
-3. Record the release in `backups/release-vX/` (see above) and take a backup:
-   `docker exec fortyfives-db_backup-1 sh -c 'sqlite3 "$DATABASE_PATH" ".timeout 30000" ".backup /backups/fortyfives-pre-vX.db" && sqlite3 /backups/fortyfives-pre-vX.db "PRAGMA integrity_check"'`
-   should print `ok`.
-4. Replace the old digest with the new one in `docker-compose.yml` (two
-   places), then `docker compose pull web && docker compose up -d web db_backup`.
-5. Check `curl https://fortyfives.net/healthz` (expect `ok`) and
-   `/healthz/auth`. nginx finds the new `web` container within 10 seconds.
-6. Copy the new `docker-compose.yml` here, and add `docs/releases/vX.md`.
+`deploy/contabo/test/run.sh` rehearses two switches on this machine (docker
+or podman): the repo's compose file, nginx config and `slots.sh` with a
+self-signed certificate, and browsers seated in a game, the queue and a
+private lobby. It checks where each one ends up and that `/` never answers
+anything but 200. The "Deploy rehearsal" workflow runs it on every push
+that touches the deploy or the slot code. Run it before changing
+`slots.sh`, `live.conf`, `site.conf`, the compose file or the slot code.
 
-Rollback: put the previous digest (`backups/release-vX/previous-image`) back
-in `docker-compose.yml` and run `docker compose up -d web db_backup`.
+### By hand
+
+`slots.sh` runs on the host in `/home/fortyfives`
+(`ssh twic-vps 'cd /home/fortyfives && bash -s -- state' < deploy/contabo/slots.sh`):
+
+```sh
+slots.sh state              # live=green draining=-, image and games of each slot
+slots.sh start IMAGE        # IMAGE in the idle slot; waits for /healthz
+slots.sh switch             # nginx to the other running slot; the old one drains
+slots.sh wait 60            # until the draining slot has no games
+slots.sh retire             # stop it (--force: even with games)
+```
+
+Take a backup first:
+`docker exec fortyfives-db_backup-1 sh -c 'sqlite3 "$DATABASE_PATH" ".timeout 30000" ".backup /backups/fortyfives-pre-vX.db" && sqlite3 /backups/fortyfives-pre-vX.db "PRAGMA integrity_check"'`
+should print `ok`. Then copy `docker-compose.yml` and `nginx/slot/live.conf`
+back here and add `docs/releases/vX.md`.
 
 ## Checking that players are fine
 
@@ -155,7 +202,7 @@ sign-ups and sign-ins); the app also logs the last day's as "Daily health"
 once a day:
 
 ```sh
-ssh twic-vps 'docker exec fortyfives-web-1 bin/website_45s_v3 rpc "IO.puts(Website45sV3.Analytics.Health.text(days: 7))"'
+ssh twic-vps 'cd /home/fortyfives && docker compose exec -T web-$(sed -n "s/^# live=\([a-z]*\) .*/\1/p" nginx/slot/live.conf) bin/website_45s_v3 rpc "IO.puts(Website45sV3.Analytics.Health.text(days: 7))"'
 ```
 
 - **crashed** should be 0.
@@ -172,11 +219,12 @@ deploys and container recreation; before that, each deploy wiped them.
 `docker logs` still shows the current container's lines. For older runs:
 
 ```sh
-ssh twic-vps 'journalctl -t fortyfives-web-1 --utc --since "2026-11-10 06:00" --until "2026-11-10 07:00" --no-pager'
-ssh twic-vps 'journalctl -t fortyfives-web-1 --utc --since -2d --no-pager | grep "Private lobby"'
+ssh twic-vps 'journalctl -t fortyfives-web-blue-1 -t fortyfives-web-green-1 --utc --since "2026-11-10 06:00" --until "2026-11-10 07:00" --no-pager'
+ssh twic-vps 'journalctl -t fortyfives-web-blue-1 -t fortyfives-web-green-1 --utc --since -2d --no-pager | grep "Private lobby"'
 ```
 
-Tags: `fortyfives-web-1`, `fortyfives-nginx-1`, `fortyfives-certbot-1`,
+Tags: `fortyfives-web-blue-1` and `fortyfives-web-green-1` (`fortyfives-web-1`
+before blue/green, 2026-11-17), `fortyfives-nginx-1`, `fortyfives-certbot-1`,
 `fortyfives-db_backup-1`. App lines carry only a time of day; use journald's
 timestamp for the date. The journal is capped at 4 GB for the whole host
 (the site writes about 3 MB a day) and is copied to the laptop daily, see
@@ -251,7 +299,7 @@ on the host.
 cd ~/Backups/fortyfives.net/logs
 zgrep -h 'Accepted' journal-*.jsonl.gz | jq -r '[.__REALTIME_TIMESTAMP, .MESSAGE] | @tsv'
 zgrep -h '"audisp-syslog"' journal-*.jsonl.gz | jq -r .MESSAGE | grep EXECVE
-zgrep -h '"fortyfives-web-1"' journal-*.jsonl.gz | jq -r .MESSAGE | grep '\[error\]'
+zgrep -hE '"fortyfives-web(-blue|-green)?-1"' journal-*.jsonl.gz | jq -r .MESSAGE | grep '\[error\]'
 ```
 
 ## If the host is broken into
@@ -295,8 +343,10 @@ compose file does. To pick up security fixes:
 ## Rebuilding the host
 
 1. Install Docker with the Compose plugin. Create `/home/fortyfives` with
-   `docker-compose.yml`, `nginx/conf.d/site.conf`, `scripts/backup-sqlite.sh`
-   from this repo and an empty `certbot/www/`.
+   `docker-compose.yml`, `nginx/conf.d/site.conf`, `nginx/slot/live.conf`,
+   `scripts/backup-sqlite.sh` from this repo and an empty `certbot/www/`.
+   The slot that `live.conf` names live must have scale 1 in the compose
+   file, the other scale 0.
 2. Write `.env` (mode 600) with the keys in `env.keys`. The values are in
    the old host's `.env`, or from the services themselves: a new
    `SECRET_KEY_BASE` (`mix phx.gen.secret`) signs everyone out; AWS SES, the
@@ -310,8 +360,8 @@ compose file does. To pick up security fixes:
    before nginx can start (it needs the files):
    `docker run --rm -p 80:80 -v /etc/letsencrypt:/etc/letsencrypt certbot/certbot certonly --standalone -d fortyfives.net -d www.fortyfives.net`.
    Renewals then use the webroot.
-6. `docker compose up -d`, point Cloudflare's DNS at the new IP, and run the
-   checks in step 5 of the release steps above.
+6. `docker compose up -d`, point Cloudflare's DNS at the new IP, and check
+   `curl https://fortyfives.net/healthz` (expect `ok`) and `/healthz/auth`.
 7. `deploy/contabo/host/apply.sh <ssh-host>` for auditing, alerts, the
    firewall and SSH hardening (see [Auditing and alerts](#auditing-and-alerts)),
    then `deploy/contabo/check-drift.sh`. Update `ORIGIN` in

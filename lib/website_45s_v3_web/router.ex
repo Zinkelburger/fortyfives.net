@@ -18,6 +18,7 @@ defmodule Website45sV3Web.Router do
     # Loads `current_user` and the anonymous player id in one pass.
     plug :fetch_current_user
     plug Website45sV3Web.VisitorId
+    plug Website45sV3Web.SlotRouting
     plug :assign_canonical_path
   end
 
@@ -91,7 +92,8 @@ defmodule Website45sV3Web.Router do
     live_session :redirect_if_user_is_authenticated,
       on_mount: [
         {Website45sV3Web.UserAuth, :redirect_if_user_is_authenticated},
-        {Website45sV3Web.SiteTracking, :default}
+        {Website45sV3Web.SiteTracking, :default},
+        {Website45sV3Web.SlotRouting, :default}
       ] do
       live "/users/register", UserRegistrationLive, :new
       live "/users/log_in", UserLoginLive, :new
@@ -108,7 +110,8 @@ defmodule Website45sV3Web.Router do
     live_session :require_authenticated_user,
       on_mount: [
         {Website45sV3Web.UserAuth, :ensure_authenticated},
-        {Website45sV3Web.SiteTracking, :default}
+        {Website45sV3Web.SiteTracking, :default},
+        {Website45sV3Web.SlotRouting, :default}
       ] do
       live "/users/settings", UserSettingsLive, :edit
       live "/users/settings/confirm_email/:token", UserSettingsLive, :confirm_email
@@ -124,7 +127,8 @@ defmodule Website45sV3Web.Router do
       on_mount: [
         {Website45sV3Web.UserAuth, :mount_current_user},
         {Website45sV3Web.UserAuth, :offer_username},
-        {Website45sV3Web.SiteTracking, :default}
+        {Website45sV3Web.SiteTracking, :default},
+        {Website45sV3Web.SlotRouting, :default}
       ],
       root_layout: {Website45sV3Web.Layouts, :root} do
       live "/", HomeLive, :index
@@ -137,7 +141,8 @@ defmodule Website45sV3Web.Router do
     live_session :game,
       on_mount: [
         {Website45sV3Web.UserAuth, :mount_current_user},
-        {Website45sV3Web.SiteTracking, :default}
+        {Website45sV3Web.SiteTracking, :default},
+        {Website45sV3Web.SlotRouting, :default}
       ],
       root_layout: {Website45sV3Web.Layouts, :game_root} do
       live "/game/:id", GameLive, :new
@@ -167,7 +172,8 @@ defmodule Website45sV3Web.Router do
     live_session :current_user,
       on_mount: [
         {Website45sV3Web.UserAuth, :mount_current_user},
-        {Website45sV3Web.SiteTracking, :default}
+        {Website45sV3Web.SiteTracking, :default},
+        {Website45sV3Web.SlotRouting, :default}
       ] do
       live "/users/confirm/:token", UserConfirmationLive, :edit
       live "/users/confirm", UserConfirmationInstructionsLive, :new

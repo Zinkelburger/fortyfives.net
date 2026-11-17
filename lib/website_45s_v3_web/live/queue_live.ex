@@ -17,9 +17,11 @@ defmodule Website45sV3Web.QueueLive do
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.QueueStarter
   alias Website45sV3.Security.RateLimiter
+  alias Website45sV3.Slot
   alias Website45sV3.Turnstile
   alias Website45sV3Web.Presence
   alias Website45sV3Web.SiteTracking
+  alias Website45sV3Web.SlotRouting
 
   # A player only ever needs 3 bots to fill their game, so that is the cap on
   # bots one session can have waiting in a queue. The global process cap
@@ -45,14 +47,29 @@ defmodule Website45sV3Web.QueueLive do
         in_queue: false,
         queue_joined_at: nil,
         private_id: nil,
-        tab: "public"
+        tab: "public",
+        handoff: nil
       )
 
+    handoff = handoff_from(params, user_id)
+
     case socket.assigns.live_action do
-      :private_game -> mount_private(socket, params["id"])
-      _ -> mount_public(socket)
+      :private_game -> mount_private(socket, params["id"], handoff, params["r"])
+      _ -> mount_public(assign(socket, handoff: if(handoff && handoff.lobby == nil, do: handoff)))
     end
   end
+
+  # A deploy moved this page from the other blue/green slot (see
+  # Website45sV3.Slot): `h` says where the player sat, `r` that a finished
+  # private game offered this lobby for another one.
+  defp handoff_from(%{"h" => token}, user_id) do
+    case Slot.verify_handoff(token, user_id) do
+      {:ok, handoff} -> handoff
+      :error -> nil
+    end
+  end
+
+  defp handoff_from(_params, _user_id), do: nil
 
   defp mount_public(socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Website45sV3.PubSub, "queue")
@@ -66,7 +83,14 @@ defmodule Website45sV3Web.QueueLive do
      )}
   end
 
-  defp mount_private(socket, private_id) do
+  defp mount_private(socket, private_id, handoff, rematch) do
+    handoff = if handoff && handoff.lobby == private_id, do: handoff
+
+    # The lobby lived on the other slot; open it here under the same id.
+    if handoff || Slot.verify_rematch(rematch, private_id) == :ok do
+      PrivateQueueManager.reopen_queue(private_id, socket.assigns.user_id)
+    end
+
     if PrivateQueueManager.queue_exists?(private_id) do
       topic = "private_queue:#{private_id}"
       if connected?(socket), do: Phoenix.PubSub.subscribe(Website45sV3.PubSub, topic)
@@ -76,6 +100,7 @@ defmodule Website45sV3Web.QueueLive do
        |> SiteTracking.put_data(%{lobby: PrivateQueueManager.lobby_tag(private_id)})
        |> assign(
          private_id: private_id,
+         handoff: handoff,
          queue: Presence.list(topic),
          active_game: fetch_active_game(socket.assigns.user_id),
          lobby_path: ~p"/play/private/#{private_id}",
@@ -111,8 +136,28 @@ defmodule Website45sV3Web.QueueLive do
   # The active tab lives in the URL (`/play?tab=private`) so it can be linked
   # to and survives a reload. Unknown values fall back to the public queue.
   def handle_params(params, _uri, socket) do
-    {:noreply, assign(socket, tab: tab_from_params(params))}
+    socket = assign(socket, tab: tab_from_params(params))
+
+    if connected?(socket) and (Map.has_key?(params, "h") or Map.has_key?(params, "r")) do
+      {:noreply, socket |> take_handoff() |> push_patch(to: page_path(socket), replace: true)}
+    else
+      {:noreply, socket}
+    end
   end
+
+  # Seats the player again, with the bots they had added, as they were on
+  # the other slot.
+  defp take_handoff(%{assigns: %{handoff: %{} = handoff}} = socket) do
+    socket = assign(socket, handoff: nil)
+    socket = if handoff.join and not socket.assigns.in_queue, do: join_queue(socket), else: socket
+    spawn_bots(socket, min(handoff.bots, @max_bots_per_requester))
+  end
+
+  defp take_handoff(socket), do: socket
+
+  defp page_path(%{assigns: %{private_id: id}}) when is_binary(id), do: ~p"/play/private/#{id}"
+  defp page_path(%{assigns: %{tab: "private"}}), do: ~p"/play?tab=private"
+  defp page_path(_socket), do: ~p"/play"
 
   defp tab_from_params(%{"tab" => tab}) when tab in @tabs, do: tab
   defp tab_from_params(_params), do: "public"
@@ -135,7 +180,9 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_event("join", _params, socket) do
-    {:noreply, join_queue(socket)}
+    if Slot.draining?(),
+      do: {:noreply, hand_off(socket, true)},
+      else: {:noreply, join_queue(socket)}
   end
 
   def handle_event("leave", _params, socket) do
@@ -150,18 +197,26 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   def handle_event("create_private", _params, socket) do
-    if socket.assigns.active_game do
-      {:noreply,
-       socket
-       |> track_refused("create", :already_in_game)
-       |> put_flash(:error, @active_game_message)}
-    else
-      create_private_queue(socket)
+    cond do
+      Slot.draining?() ->
+        {:noreply, hand_off(socket)}
+
+      socket.assigns.active_game ->
+        {:noreply,
+         socket
+         |> track_refused("create", :already_in_game)
+         |> put_flash(:error, @active_game_message)}
+
+      true ->
+        create_private_queue(socket)
     end
   end
 
   def handle_event("request_bot", _params, socket) do
     cond do
+      Slot.draining?() ->
+        {:noreply, hand_off(socket)}
+
       socket.assigns.active_game ->
         {:noreply,
          socket
@@ -247,6 +302,10 @@ defmodule Website45sV3Web.QueueLive do
     {:noreply, socket}
   end
 
+  # This slot is draining: carry on on the other one, unless the player has
+  # a game here (the game card stays, and so does the page).
+  def handle_info(:slot_draining, socket), do: {:noreply, hand_off(socket)}
+
   def handle_info(:queue_closed, socket) do
     {:noreply,
      socket
@@ -284,6 +343,29 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   ## Queue helpers
+
+  defp hand_off(socket, join \\ nil) do
+    %{user_id: user_id, private_id: private_id, in_queue: in_queue} = socket.assigns
+
+    if Slot.seated_here?(user_id) do
+      socket
+    else
+      token =
+        Slot.handoff_token(%{
+          user: user_id,
+          lobby: private_id,
+          join: if(is_nil(join), do: in_queue, else: join),
+          bots: my_queued_bots(socket)
+        })
+
+      to = page_path(socket)
+
+      SlotRouting.reload(
+        socket,
+        to <> if(String.contains?(to, "?"), do: "&", else: "?") <> URI.encode_query(h: token)
+      )
+    end
+  end
 
   defp queue_topic(%{assigns: %{live_action: :private_game, private_id: id}}),
     do: "private_queue:#{id}"

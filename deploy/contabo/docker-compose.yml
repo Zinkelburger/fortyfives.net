@@ -1,28 +1,44 @@
+# Blue/green: web-blue and web-green run the app; the one with scale 1 that
+# nginx/slot/live.conf names as default is live. deploy/contabo/slots.sh
+# edits the image and scale lines of those two services and of db_backup.
+x-logging: &logging
+  driver: journald
+  options:
+    tag: '{{.Name}}'
+x-web: &web
+  restart: unless-stopped
+  env_file:
+  - .env
+  volumes:
+  - app_data:/data
+  healthcheck:
+    test:
+    - CMD
+    - wget
+    - -qO-
+    - http://127.0.0.1:4000/healthz
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 60s
+  logging: *logging
 services:
-  web:
+  web-blue:
+    <<: *web
     image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
-    restart: unless-stopped
-    env_file:
-    - .env
+    scale: 1
     environment:
       DATABASE_PATH: /data/fortyfives.db
       ANALYSIS_WEIGHTS_DIR: /data/analysis
-    volumes:
-    - app_data:/data
-    healthcheck:
-      test:
-      - CMD
-      - wget
-      - -qO-
-      - http://127.0.0.1:4000/healthz
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
-    logging: &id001
-      driver: journald
-      options:
-        tag: '{{.Name}}'
+      FF_SLOT: blue
+  web-green:
+    <<: *web
+    image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
+    scale: 0
+    environment:
+      DATABASE_PATH: /data/fortyfives.db
+      ANALYSIS_WEIGHTS_DIR: /data/analysis
+      FF_SLOT: green
   db:
     image: docker.io/library/postgres:15.19-trixie@sha256:baa22e6286bf832cb147b8bb5aa9d8bc999846d69c21d11bf63f58fbeed1fa48
     restart: unless-stopped
@@ -40,13 +56,12 @@ services:
     - 443:443
     volumes:
     - ./nginx/conf.d/site.conf:/etc/nginx/conf.d/site.conf:ro
+    - ./nginx/slot:/etc/nginx/slot:ro
     - /etc/letsencrypt:/etc/letsencrypt:ro
     - ./certbot/www:/var/www/certbot:ro
     command: /bin/sh -c 'while :; do sleep 24h & wait $${!}; nginx -s reload; done
       & nginx -g "daemon off;"'
-    depends_on:
-    - web
-    logging: *id001
+    logging: *logging
   certbot:
     image: docker.io/certbot/certbot:v5.9.0@sha256:bc93cb710b413e6b456d622f9b0133b3e109c0a78c2ed9976af43d209b0a1805
     restart: unless-stopped
@@ -55,7 +70,7 @@ services:
     - ./certbot/www:/var/www/certbot
     entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w
       /var/www/certbot; sleep 12h & wait $${!}; done;'
-    logging: *id001
+    logging: *logging
   db_backup:
     image: docker.io/thwar/fortyfives.net@sha256:9f1470584d94786ee0317fe08b9b39ec694d3e6cb36e51997b6f5bcc947a9b23
     restart: unless-stopped
@@ -77,7 +92,7 @@ services:
       timeout: 5s
       retries: 2
       start_period: 60s
-    logging: *id001
+    logging: *logging
 volumes:
   db_data:
     external: true

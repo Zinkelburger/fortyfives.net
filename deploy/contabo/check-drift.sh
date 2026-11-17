@@ -25,6 +25,7 @@ keys() { grep -E '^[A-Z_]+=' | sed 's/=.*//'; }
 
 compare docker-compose.yml "$here/docker-compose.yml"
 compare nginx/conf.d/site.conf "$here/nginx/conf.d/site.conf"
+compare nginx/slot/live.conf "$here/nginx/slot/live.conf"
 compare scripts/backup-sqlite.sh "$repo/scripts/backup-sqlite.sh"
 
 # Auditing, alerting and hardening (host/apply.sh installs these).

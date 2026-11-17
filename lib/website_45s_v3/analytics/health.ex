@@ -21,7 +21,7 @@ defmodule Website45sV3.Analytics.Health do
     active (signing out deletes its token, so this undercounts a little).
 
   Errors that never reach the database (a LiveView crash, a failed email)
-  are only in the logs: `journalctl -t fortyfives-web-1 --since -7d | grep -E
+  are only in the logs: `journalctl -t fortyfives-web-blue-1 -t fortyfives-web-green-1 --since -7d | grep -E
   "\\[error\\]|not connected"` on the host (see deploy/contabo/README.md).
   """
 

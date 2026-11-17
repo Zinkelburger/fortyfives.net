@@ -260,6 +260,10 @@ let liveSocket = new LiveSocket("/live", Socket, {
   hooks: Hooks
 })
 
+// A deploy moved the site to the other copy of the app (Website45sV3.Slot):
+// load the page again, or the handoff URL the server sent.
+window.addEventListener("phx:ff-reload", e => window.location.replace(e.detail.to || window.location.href))
+
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))

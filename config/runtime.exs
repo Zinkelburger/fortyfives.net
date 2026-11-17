@@ -40,6 +40,14 @@ if dir = System.get_env("ANALYSIS_WEIGHTS_DIR") do
   config :website_45s_v3, :analysis_weights_dir, dir
 end
 
+# Which blue/green copy this is (see Website45sV3.Slot); set by the
+# web_blue/web_green services in deploy/contabo/docker-compose.yml.
+case System.get_env("FF_SLOT", "") do
+  "" -> :ok
+  slot when slot in ["blue", "green"] -> config :website_45s_v3, :slot, slot
+  slot -> raise "FF_SLOT must be blue or green, got #{inspect(slot)}"
+end
+
 if System.get_env("REPLAY_RECORDING") in ["false", "0", "off"] do
   config :website_45s_v3, Website45sV3.Analytics, record_replays: false
 end

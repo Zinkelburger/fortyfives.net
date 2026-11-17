@@ -16,6 +16,7 @@ defmodule Website45sV3Web.GameLive do
   alias Website45sV3.Game.Phase
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.Rules
+  alias Website45sV3.Slot
   alias Website45sV3Web.Presence
   alias Website45sV3Web.SiteTracking
 
@@ -125,6 +126,10 @@ defmodule Website45sV3Web.GameLive do
   def handle_info(:game_crash, socket), do: game_crashed(socket)
 
   def handle_info(:game_end, socket) do
+    # On a draining slot the next page must go to the live one, and the
+    # routing (Website45sV3Web.SlotRouting) keeps anyone still seated here.
+    # The game is over; do not wait for it to exit to free the seat.
+    if Slot.draining?(), do: ActiveGames.remove_player(socket.assigns.user_id)
     {:noreply, redirect(socket, to: after_game_path(socket))}
   end
 
@@ -294,13 +299,23 @@ defmodule Website45sV3Web.GameLive do
     (socket.assigns.game_state.phase == :final_scoring && rematch_path(socket)) || ~p"/play"
   end
 
-  # The lobby is opened on demand by whichever player gets there first.
+  # The lobby is opened on demand by whichever player gets there first. A
+  # draining slot leaves that to the live slot, where the players are going.
   defp rematch_path(socket) do
-    with id when is_binary(id) <- socket.assigns.game_state[:rematch_id],
-         :ok <- PrivateQueueManager.reopen_queue(id, socket.assigns.user_id) do
-      ~p"/play/private/#{id}"
-    else
-      _ -> nil
+    id = socket.assigns.game_state[:rematch_id]
+
+    cond do
+      not is_binary(id) ->
+        nil
+
+      Slot.draining?() ->
+        ~p"/play/private/#{id}?#{[r: Slot.rematch_token(id)]}"
+
+      PrivateQueueManager.reopen_queue(id, socket.assigns.user_id) == :ok ->
+        ~p"/play/private/#{id}"
+
+      true ->
+        nil
     end
   end
 

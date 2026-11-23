@@ -1,0 +1,8 @@
+[Unit]
+Description=Reboot for installed updates once no fortyfives.net game is running
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fortyfives-quiet-reboot
+TimeoutStartSec=1h

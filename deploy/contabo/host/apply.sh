@@ -1,7 +1,8 @@
 #!/bin/sh
 # Applies this directory to the host: auditd and its rules, journald
-# retention, SSH hardening, firewall, fail2ban, the alert scripts and the
-# daily host check. See "Auditing and alerts" in ../README.md.
+# retention, SSH hardening, firewall, fail2ban, the alert scripts, the daily
+# host check and the reboot for updates at the quietest hour. See "Auditing
+# and alerts" and "Reboots" in ../README.md.
 #
 #   deploy/contabo/host/apply.sh [ssh-host]   (default: twic-vps)
 #

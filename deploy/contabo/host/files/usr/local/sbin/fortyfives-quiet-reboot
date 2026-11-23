@@ -1,0 +1,73 @@
+#!/bin/sh
+# Reboots the host for installed updates once nobody is playing. Run daily by
+# fortyfives-quiet-reboot.timer at the site's quietest hour (see "Reboots" in
+# deploy/contabo/README.md). Does nothing unless the updates asked for a
+# reboot (/var/run/reboot-required).
+#
+#   fortyfives-quiet-reboot            # reboot if needed, once no game is running
+#   fortyfives-quiet-reboot --dry-run  # say what it would do, never reboot
+#
+# Waits up to 45 minutes for the last game to end; if one is still running,
+# or a deploy is still draining, it tries again the next day. The daily host
+# check alerts when a reboot has been pending for over a week.
+set -u
+dry_run=
+[ "${1:-}" = --dry-run ] && dry_run=1
+slots=/home/fortyfives/nginx/slot/live.conf
+wait_minutes=45
+
+say() {
+  echo "$*"
+  [ -n "$dry_run" ] || logger -t fortyfives-quiet-reboot "$*"
+}
+
+if [ ! -e /var/run/reboot-required ]; then
+  say "no reboot pending"
+  exit 0
+fi
+pkgs=$(tr '\n' ' ' < /var/run/reboot-required.pkgs 2>/dev/null)
+
+# A deploy that is still draining an old slot (deploy/contabo/release.sh).
+draining=$(sed -n 's/^# live=[a-z]* draining=\([a-z]*\)$/\1/p' "$slots" 2>/dev/null)
+if [ -n "$draining" ]; then
+  say "reboot pending (${pkgs:-updates}) but web-$draining is still draining; trying tomorrow"
+  exit 0
+fi
+
+# Games running in every web slot that is up; "?" when a slot can't be asked.
+active_games() {
+  total=0
+  for name in $(docker ps --format '{{.Names}}' | grep -E '^fortyfives-web-(blue|green)-1$'); do
+    n=$(docker exec "$name" bin/website_45s_v3 rpc \
+      "IO.puts DynamicSupervisor.count_children(Website45sV3.Game.GameSupervisor).active" \
+      2>/dev/null | tail -n 1)
+    case $n in
+      ''|*[!0-9]*) echo "?"; return ;;
+    esac
+    total=$((total + n))
+  done
+  echo "$total"
+}
+
+deadline=$(( $(date +%s) + wait_minutes * 60 ))
+while :; do
+  active=$(active_games)
+  [ "$active" = 0 ] && break
+  if [ -n "$dry_run" ]; then
+    say "would wait: $active game(s) running"
+    exit 0
+  fi
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    say "reboot pending (${pkgs:-updates}) but $active game(s) still running after $wait_minutes min; trying tomorrow"
+    exit 0
+  fi
+  say "$active game(s) running; waiting"
+  sleep 60
+done
+
+if [ -n "$dry_run" ]; then
+  say "would reboot now for ${pkgs:-updates}"
+  exit 0
+fi
+say "no games running; rebooting for ${pkgs:-updates}"
+systemctl reboot

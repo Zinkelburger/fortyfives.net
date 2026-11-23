@@ -262,6 +262,7 @@ compares the files and checks that the pieces are running.
 | Alerts | `/usr/local/sbin/fortyfives-alert` | Writes to journald (tag `fortyfives-alert`) and emails `ALERT_TO` from `/etc/fortyfives/alert.env` through SES with the site's send-only credentials. `apply.sh` fills `ALERT_TO` with the admin accounts' addresses (`ADMIN_USER_IDS`) the first time; edit the file to change it. |
 | Login alert | `/usr/local/sbin/fortyfives-login-alert`, last line of `/etc/pam.d/sshd` | One alert the first time anyone logs in from an address not in `/var/lib/fortyfives/ssh-known-sources`. It is sent while the session opens. |
 | Daily check | `fortyfives-host-check.timer` (08:30 UTC) | Containers up and healthy, a database backup under 26 hours old, 14 days left on the certificate, disk under 85%, auditd/fail2ban/ufw on, audit rules loaded, no failed units, no password logins, only root has uid 0, `authorized_keys` unchanged, only 22/80/443 listening, no packaged file modified, no reboot pending for over a week. Alerts when the list of problems changes, weekly while it stays, and once when it clears. |
+| Reboot for updates | `fortyfives-quiet-reboot.timer` (07:15 UTC) | Only when `/var/run/reboot-required` exists. Waits up to 45 minutes for running games to end, skips while a deploy is draining, otherwise tries the next day. See [Reboots](#reboots). |
 | Uptime | `.github/workflows/uptime.yml` | Every 30 minutes from GitHub, straight to the server: `/healthz`, `/healthz/auth`, certificate expiry. GitHub emails a failed run to whoever last edited the schedule. |
 
 ```sh
@@ -278,6 +279,43 @@ Audit keys: `exec`, `identity`, `ssh-keys`, `sshd`, `pam`, `persistence`,
 
 After deliberately changing root's `authorized_keys`, run `apply.sh` again
 so the daily check takes the new file as the one to compare against.
+
+### Reboots
+
+Unattended upgrades install security updates but never reboot. When a kernel
+or libc update needs one, `fortyfives-quiet-reboot` reboots the host at
+07:15 UTC, the quietest time of day, as soon as no game is running in either
+web slot. Everything comes back by itself: Docker starts at boot, every
+container is `restart: unless-stopped`, `live.conf` still names the live slot,
+and the host's other services (`twic-api`, `bld-api`, `cloudflared`) are
+enabled. The site is down for a minute or two. The daily check at 08:30 UTC
+reports the result, and still alerts if a reboot has been pending for a week.
+
+```sh
+ssh twic-vps fortyfives-quiet-reboot --dry-run                  # what it would do now
+ssh twic-vps 'journalctl -t fortyfives-quiet-reboot --since -7d'
+ssh twic-vps systemctl disable --now fortyfives-quiet-reboot.timer  # turn it off
+deploy/contabo/quiet-hours.sh 60                                # redo the study below
+```
+
+The time comes from `quiet-hours.sh`: games per UTC hour over the 60 days to
+2026-11-23 (2,309 games). The host's clock is Europe/Berlin, so the timer
+names UTC explicitly.
+
+| UTC | Games | | UTC | Games | | UTC | Games |
+|---|---|---|---|---|---|---|---|
+| 00 | 152 | | 08 | 13 | | 16 | 119 |
+| 01 | 111 | | 09 | 15 | | 17 | 159 |
+| 02 | 120 | | 10 | 19 | | 18 | 107 |
+| 03 | 97 | | 11 | 55 | | 19 | 110 |
+| 04 | 58 | | 12 | 112 | | 20 | 150 |
+| 05 | 30 | | 13 | 137 | | 21 | 119 |
+| 06 | 15 | | 14 | 145 | | 22 | 153 |
+| **07** | **6** | | 15 | 152 | | 23 | 155 |
+
+07:00–07:30 UTC had 2 games in 60 days, and no game between 07:00 and 10:00
+had more than one human. Unattended upgrades run around 05:40 UTC and the
+Tuesday `twic-weekly` job 06:00–06:10 UTC, so 07:15 avoids both.
 
 ### Logs off the host
 

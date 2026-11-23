@@ -1,0 +1,13 @@
+[Unit]
+Description=Reboot for installed updates at the site's quietest hour
+
+[Timer]
+# 07:00-07:30 UTC is the emptiest half hour of the day (deploy/contabo/quiet-hours.sh).
+# After unattended upgrades (~05:40 UTC) and the Tuesday twic-weekly job
+# (06:00-06:10 UTC), before the daily host check (08:30 UTC).
+OnCalendar=*-*-* 07:15:00 UTC
+# Never catch up after the host was down: that would reboot at a busy hour.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

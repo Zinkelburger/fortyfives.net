@@ -83,6 +83,7 @@ chmod 700 "$state" "$conf"
 put usr/local/sbin/fortyfives-alert 755 || true
 put usr/local/sbin/fortyfives-login-alert 755 || true
 put usr/local/sbin/fortyfives-host-check 755 || true
+put usr/local/sbin/fortyfives-quiet-reboot 755 || true
 
 # Alerts go to the site's admin accounts (ADMIN_USER_IDS in the site's .env)
 # unless /etc/fortyfives/alert.env already names someone.
@@ -121,13 +122,16 @@ if ! grep -q fortyfives-login-alert /etc/pam.d/sshd; then
   say "added the login alert to /etc/pam.d/sshd (previous file: $state/pam.d-sshd.before)"
 fi
 
-# --- Daily check ------------------------------------------------------------
+# --- Daily check, quiet reboot ---------------------------------------------
 units_changed=
 put etc/systemd/system/fortyfives-host-check.service 644 && units_changed=1
 put etc/systemd/system/fortyfives-host-check.timer 644 && units_changed=1
+put etc/systemd/system/fortyfives-quiet-reboot.service 644 && units_changed=1
+put etc/systemd/system/fortyfives-quiet-reboot.timer 644 && units_changed=1
 [ -z "$units_changed" ] || systemctl daemon-reload
-systemctl is-enabled -q fortyfives-host-check.timer 2>/dev/null ||
-  systemctl enable -q --now fortyfives-host-check.timer
+for timer in fortyfives-host-check.timer fortyfives-quiet-reboot.timer; do
+  systemctl is-enabled -q "$timer" 2>/dev/null || systemctl enable -q --now "$timer"
+done
 
 say "done"
 /usr/local/sbin/fortyfives-host-check --print

@@ -53,6 +53,8 @@ host_state "login alert in /etc/pam.d/sshd" \
   'grep -q "pam_exec.so quiet /usr/local/sbin/fortyfives-login-alert" /etc/pam.d/sshd && echo ok'
 host_state "daily host check timer" \
   'systemctl is-active -q fortyfives-host-check.timer && echo ok'
+host_state "quiet reboot timer" \
+  'systemctl is-active -q fortyfives-quiet-reboot.timer && echo ok'
 host_state "alert address set" \
   'grep -q "^ALERT_TO=.\+@" /etc/fortyfives/alert.env && echo ok'
 

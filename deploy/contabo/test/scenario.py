@@ -239,7 +239,9 @@ class Rehearsal:
         for page in (home, queue):
             self.mark(page)
 
+        # blue stopped seconds ago, so nginx may still hold its old address.
         self.slots("start", self.image_a)
+        check(self.slot_by_header("blue"), "X-FF-Slot: blue reaches the restarted slot before the switch")
         self.slots("switch")
         self.lands(home, "blue", "/", label="home")
         self.lands(queue, "blue", "/play", "You are in the queue", label="queue")

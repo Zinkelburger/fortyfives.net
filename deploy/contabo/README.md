@@ -182,7 +182,7 @@ that touches the deploy or the slot code. Run it before changing
 
 ```sh
 slots.sh state              # live=green draining=-, image and games of each slot
-slots.sh start IMAGE        # IMAGE in the idle slot; waits for /healthz
+slots.sh start IMAGE        # IMAGE in the idle slot; waits for /healthz, then for nginx to reach it
 slots.sh switch             # nginx to the other running slot; the old one drains
 slots.sh wait 60            # until the draining slot has no games
 slots.sh retire             # stop it (--force: even with games)

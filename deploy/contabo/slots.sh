@@ -6,6 +6,7 @@
 #   slots.sh state               live and draining slot, image and games of each
 #   slots.sh live                "<live slot> <its image>"
 #   slots.sh start IMAGE         run IMAGE in the idle slot; wait until it answers
+#                                and nginx reaches it
 #   slots.sh switch              nginx sends new visitors to the other running slot;
 #                                the old one drains (its games go on, its other
 #                                pages reload onto the new slot)
@@ -56,6 +57,12 @@ running() { [ -n "$(compose ps -q --status running "web-$1" 2>/dev/null)" ]; }
 rpc() { compose exec -T "web-$1" bin/website_45s_v3 rpc "$2"; }
 
 answers() { [ "$(compose exec -T "web-$1" wget -qO- http://127.0.0.1:4000/healthz 2>/dev/null)" = ok ]; }
+
+through_nginx() { # <slot>: nginx reaches that slot's container (X-FF-Slot picks it)
+  compose exec -T nginx curl -sk -o /dev/null -D - --max-time 5 \
+    --resolve fortyfives.net:443:127.0.0.1 -H "X-FF-Slot: $1" https://fortyfives.net/healthz 2>/dev/null |
+    tr -d '\r' | grep -qix "x-ff-slot: $1"
+}
 
 slot_status() { # "<games> <queued> <live|draining>", empty if the slot does not answer
   local s
@@ -131,10 +138,17 @@ cmd_start() {
     sleep 2
   done
   echo "$idle answers /healthz after $(( $(date +%s) - start )) s"
-  rm -f "$file.before-start"
-  # nginx looks the new container up every 10 s; a reload does it now, so
-  # X-FF-Slot reaches it at once.
+  # nginx looks a slot's address up every 10 s. A reload does it at once for
+  # a slot it had no address for, but keeps the old address of one that
+  # stopped less than 10 s ago, so wait until nginx reaches the new container.
   reload_nginx
+  start=$(date +%s)
+  until through_nginx "$idle"; do
+    [ $(( $(date +%s) - start )) -lt 60 ] || fail_start "$idle" "nginx did not reach $idle within 60 s"
+    sleep 1
+  done
+  echo "nginx reaches $idle after $(( $(date +%s) - start )) s"
+  rm -f "$file.before-start"
 }
 
 fail_start() { # <slot> <reason>: stops the slot and puts the compose file back

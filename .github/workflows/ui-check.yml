@@ -98,7 +98,7 @@ jobs:
             fi
             docker run -d --name "$1-db" -p "$3:4000" \
               -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=website_45s_v3_dev \
-              docker.io/library/postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+              docker.io/library/postgres:15.20-alpine3.24@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d
             # Share the database container's network so the app reaches
             # Postgres on localhost, whatever its entrypoint assumes.
             docker run -d --name "$1-app" --network "container:$1-db" \

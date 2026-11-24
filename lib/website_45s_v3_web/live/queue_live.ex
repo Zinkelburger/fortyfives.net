@@ -28,6 +28,11 @@ defmodule Website45sV3Web.QueueLive do
   # lives in BotSupervisor.
   @max_bots_per_requester 3
 
+  # Most of the time nobody else is on their way to the public queue, and a
+  # player who does not know that waits and then leaves. After this long in
+  # the queue the page points at "Add a bot".
+  @bot_hint_after_ms 10_000
+
   @tabs ~w(public private)
 
   @public_title "Play 45s Online | Join a Forty Fives Card Game Free"
@@ -46,6 +51,8 @@ defmodule Website45sV3Web.QueueLive do
         client_ip: client_ip(socket) || "session:#{user_id}",
         in_queue: false,
         queue_joined_at: nil,
+        bot_hint: false,
+        bot_hint_timer: nil,
         private_id: nil,
         tab: "public",
         handoff: nil
@@ -95,27 +102,71 @@ defmodule Website45sV3Web.QueueLive do
       topic = "private_queue:#{private_id}"
       if connected?(socket), do: Phoenix.PubSub.subscribe(Website45sV3.PubSub, topic)
 
-      {:ok,
-       socket
-       |> SiteTracking.put_data(%{lobby: PrivateQueueManager.lobby_tag(private_id)})
-       |> assign(
-         private_id: private_id,
-         handoff: handoff,
-         queue: Presence.list(topic),
-         active_game: fetch_active_game(socket.assigns.user_id),
-         lobby_path: ~p"/play/private/#{private_id}",
-         page_title: @private_title
-       )}
-    else
-      # The redirect happens on the first (disconnected) render, so the
-      # visitor never gets a tracked socket; the log is the only record.
-      Logger.info("Private lobby #{lobby_label(private_id)}: link opened but the lobby is gone")
+      socket =
+        socket
+        |> SiteTracking.put_data(%{lobby: PrivateQueueManager.lobby_tag(private_id)})
+        |> assign(
+          private_id: private_id,
+          handoff: handoff,
+          queue: Presence.list(topic),
+          active_game: fetch_active_game(socket.assigns.user_id),
+          lobby_path: ~p"/play/private/#{private_id}",
+          page_title: @private_title
+        )
+        |> retake_seat()
 
-      {:ok,
-       socket
-       |> put_flash(:error, @invalid_link_message)
-       |> redirect(to: ~p"/play")}
+      {:ok, assign(socket, queue: Presence.list(topic))}
+    else
+      case game_from_lobby(socket.assigns.user_id, private_id) do
+        # The table filled while this player was away: their seat is in it.
+        game_name when is_binary(game_name) ->
+          {:ok, redirect(socket, to: ~p"/game/#{game_name}")}
+
+        nil ->
+          # The redirect happens on the first (disconnected) render, so the
+          # visitor never gets a tracked socket; the log is the only record.
+          Logger.info(
+            "Private lobby #{lobby_label(private_id)}: link opened but the lobby is gone"
+          )
+
+          {:ok,
+           socket
+           |> put_flash(:error, @invalid_link_message)
+           |> redirect(to: ~p"/play")}
+      end
     end
+  end
+
+  # The lobby kept this player's seat: they made the table a moment ago, or
+  # their page lost its connection (see `PrivateQueueManager`). Only a
+  # connected page can hold a seat.
+  defp retake_seat(socket) do
+    %{private_id: private_id, user_id: user_id} = socket.assigns
+
+    if connected?(socket) and PrivateQueueManager.seated?(private_id, user_id) do
+      join_queue(socket, track: false)
+    else
+      socket
+    end
+  end
+
+  defp game_from_lobby(user_id, private_id) when is_binary(private_id) do
+    with game_name when is_binary(game_name) <- ActiveGames.find_game(user_id),
+         [{game_pid, _}] <- Registry.lookup(Website45sV3.Registry, game_name),
+         tag when is_binary(tag) <- game_lobby(game_pid),
+         true <- String.starts_with?(private_id, tag) do
+      game_name
+    else
+      _ -> nil
+    end
+  end
+
+  defp game_from_lobby(_user_id, _private_id), do: nil
+
+  defp game_lobby(game_pid) do
+    GameController.lobby(game_pid)
+  catch
+    :exit, _ -> nil
   end
 
   # Every browser request passes through `UserAuth.fetch_current_user`,
@@ -167,9 +218,14 @@ defmodule Website45sV3Web.QueueLive do
   # to run at all: a live navigation to another lobby page kills this process
   # without it. The queue monitors this process for that case (see
   # `QueueHolders`), so this is only the polite path.
-  def terminate(_reason, socket) do
-    if socket.assigns[:in_queue] do
-      leave_queue(socket, "disconnect")
+  #
+  # A private seat outlives a lost connection: the lobby sees this process
+  # exit and keeps the seat for a while, so nothing is released here.
+  def terminate(reason, socket) do
+    cond do
+      !socket.assigns[:in_queue] -> :ok
+      socket.assigns[:private_id] && reason == {:shutdown, :closed} -> :ok
+      true -> leave_queue(socket, "disconnect")
     end
 
     :ok
@@ -193,7 +249,8 @@ defmodule Website45sV3Web.QueueLive do
       leave_queue(socket, "explicit")
     end
 
-    {:noreply, assign(socket, in_queue: false, queue: Presence.list(topic))}
+    {:noreply,
+     socket |> cancel_bot_hint() |> assign(in_queue: false, queue: Presence.list(topic))}
   end
 
   def handle_event("create_private", _params, socket) do
@@ -227,13 +284,10 @@ defmodule Website45sV3Web.QueueLive do
         {:noreply,
          socket
          |> track_refused("bot", :bot_cap)
-         |> put_flash(
-           :error,
-           "You already have #{@max_bots_per_requester} bots waiting — join to start the game."
-         )}
+         |> put_flash(:error, "You already have #{@max_bots_per_requester} bots waiting.")}
 
       true ->
-        {:noreply, spawn_bots(socket, 1)}
+        {:noreply, add_bot(socket)}
     end
   end
 
@@ -256,17 +310,39 @@ defmodule Website45sV3Web.QueueLive do
     end
   end
 
+  # A bot is added to the table of whoever asks for it, so asking takes a
+  # seat first. Bots added from outside the table used to fill it and start
+  # the game without the player who added them.
+  defp add_bot(%{assigns: %{in_queue: true}} = socket), do: spawn_bots(socket, 1)
+
+  defp add_bot(socket) do
+    socket = join_queue(socket)
+
+    # Refused, or theirs was the last seat and the game is starting.
+    if socket.assigns.in_queue and ActiveGames.find_game(socket.assigns.user_id) == nil do
+      spawn_bots(socket, 1)
+    else
+      socket
+    end
+  end
+
   defp create_private_queue(socket) do
     private_id = Ecto.UUID.generate()
 
     case PrivateQueueManager.create_queue(
            private_id,
            socket.assigns.user_id,
-           socket.assigns.client_ip
+           socket.assigns.client_ip,
+           seat: socket.assigns.display_name
          ) do
       :ok ->
-        SiteTracking.track(socket, "private_created", %{
-          data: %{lobby: PrivateQueueManager.lobby_tag(private_id)}
+        tag = PrivateQueueManager.lobby_tag(private_id)
+        SiteTracking.track(socket, "private_created", %{data: %{lobby: tag}})
+
+        # The lobby seats its creator, so their page only takes the seat back
+        # (`retake_seat/1`, untracked); this is their join.
+        SiteTracking.track(socket, "queue_join", %{
+          data: %{queue: "private", waiting: 0, lobby: tag}
         })
 
         {:noreply, push_navigate(socket, to: ~p"/play/private/#{private_id}")}
@@ -305,6 +381,11 @@ defmodule Website45sV3Web.QueueLive do
   # This slot is draining: carry on on the other one, unless the player has
   # a game here (the game card stays, and so does the page).
   def handle_info(:slot_draining, socket), do: {:noreply, hand_off(socket)}
+
+  def handle_info(:suggest_bots, socket) do
+    hint = socket.assigns.in_queue and socket.assigns.live_action != :private_game
+    {:noreply, assign(socket, bot_hint: hint, bot_hint_timer: nil)}
+  end
 
   def handle_info(:queue_closed, socket) do
     {:noreply,
@@ -374,7 +455,9 @@ defmodule Website45sV3Web.QueueLive do
 
   # Adds the user to their queue and tracks presence. On refusal (their
   # session is still seated in a running game) refreshes the banner instead.
-  defp join_queue(socket) do
+  #
+  # `track: false` is for a seat being taken back, which is not a new join.
+  defp join_queue(socket, join_opts \\ []) do
     %{display_name: display_name, user_id: user_id} = socket.assigns
 
     opts = [on_drop: departure_recorder(socket)]
@@ -398,14 +481,15 @@ defmodule Website45sV3Web.QueueLive do
         {:ok, _ref} =
           Presence.track(self(), queue_topic(socket), user_id, %{display_name: display_name})
 
-        SiteTracking.track(socket, "queue_join", %{
-          data: %{queue: queue_kind(socket), waiting: map_size(socket.assigns.queue)}
-        })
+        if Keyword.get(join_opts, :track, true) do
+          SiteTracking.track(socket, "queue_join", %{
+            data: %{queue: queue_kind(socket), waiting: map_size(socket.assigns.queue)}
+          })
+        end
 
-        assign(socket,
-          in_queue: true,
-          queue_joined_at: System.monotonic_time(:millisecond)
-        )
+        socket
+        |> assign(in_queue: true, queue_joined_at: System.monotonic_time(:millisecond))
+        |> schedule_bot_hint()
 
       {:error, :already_in_game} ->
         socket
@@ -426,6 +510,21 @@ defmodule Website45sV3Web.QueueLive do
     end
   end
 
+  # A private table is waiting for its own people, so only the public queue
+  # suggests bots.
+  defp schedule_bot_hint(%{assigns: %{live_action: :private_game}} = socket), do: socket
+
+  defp schedule_bot_hint(socket) do
+    socket = cancel_bot_hint(socket)
+    timer = Process.send_after(self(), :suggest_bots, @bot_hint_after_ms)
+    assign(socket, bot_hint_timer: timer)
+  end
+
+  defp cancel_bot_hint(socket) do
+    if timer = socket.assigns.bot_hint_timer, do: Process.cancel_timer(timer)
+    assign(socket, bot_hint: false, bot_hint_timer: nil)
+  end
+
   defp queue_kind(%{assigns: %{live_action: :private_game}}), do: "private"
   defp queue_kind(_socket), do: "public"
 
@@ -440,7 +539,12 @@ defmodule Website45sV3Web.QueueLive do
   defp leave_queue(socket, reason) do
     if release_from_queue(socket) == :ok do
       SiteTracking.track(socket, "queue_leave", %{
-        data: %{queue: queue_kind(socket), waited_ms: queue_waited_ms(socket), reason: reason}
+        data: %{
+          queue: queue_kind(socket),
+          waited_ms: queue_waited_ms(socket),
+          reason: reason,
+          hinted: socket.assigns.bot_hint
+        }
       })
     end
   end
@@ -505,7 +609,11 @@ defmodule Website45sV3Web.QueueLive do
       case charge_and_start_bot(socket, name) do
         {:ok, _pid} ->
           SiteTracking.track(socket, "bot_added", %{
-            data: %{queue: queue_kind(socket), in_queue: socket.assigns.in_queue}
+            data: %{
+              queue: queue_kind(socket),
+              in_queue: socket.assigns.in_queue,
+              hinted: socket.assigns.bot_hint
+            }
           })
 
           {:cont, socket}
@@ -544,8 +652,8 @@ defmodule Website45sV3Web.QueueLive do
   defp bot_error_reason(reason) when is_atom(reason), do: reason
   defp bot_error_reason(_reason), do: :other
 
-  # The per-session cap resets with a fresh cookie; this per-network budget
-  # keeps a single client from taking the whole shared bot pool.
+  # The per-session cap only counts bots still waiting; this per-network
+  # budget keeps one client from taking the whole shared bot pool.
   defp charge_and_start_bot(socket, name) do
     with :ok <- RateLimiter.check_bot_spawn(socket.assigns.client_ip) do
       start_bot(socket, name)
@@ -639,17 +747,28 @@ defmodule Website45sV3Web.QueueLive do
   end
 
   # One card per waiting player. Presence keeps one meta per connected tab,
-  # so the first meta stands in for the user.
+  # so one meta stands in for the user. A private lobby adds an `away` meta
+  # for a seat it is keeping; any connected tab outranks it.
   attr :queue, :map, required: true
 
   defp queue_cards(assigns) do
     ~H"""
     <div class="queue-cards" aria-label="Players waiting">
-      <div :for={{_user_id, %{metas: [meta | _]}} <- @queue} class="player-card">
+      <div
+        :for={meta <- seat_metas(@queue)}
+        class={["player-card", meta[:away] && "player-card-away"]}
+      >
         <p>{meta.display_name}</p>
+        <p :if={meta[:away]} class="player-card-note">away</p>
       </div>
     </div>
     """
+  end
+
+  defp seat_metas(queue) do
+    for {_user_id, %{metas: metas}} <- queue do
+      Enum.find(metas, hd(metas), &(!&1[:away]))
+    end
   end
 
   # Join / leave / bot controls shared by the public queue and private lobbies.
@@ -659,6 +778,7 @@ defmodule Website45sV3Web.QueueLive do
   attr :leave_label, :string, required: true
   attr :waiting_message, :string, required: true
   attr :seats, :integer, required: true
+  attr :bot_hint, :boolean, default: false
 
   defp queue_actions(%{active_game: %{}} = assigns) do
     ~H"""
@@ -694,29 +814,50 @@ defmodule Website45sV3Web.QueueLive do
       >
         {@leave_label}
       </button>
-      <.add_bot_button seats={@seats} />
+      <.add_bot_button seats={@seats} hint={@bot_hint} />
     </div>
     """
   end
 
   # Each click seats one bot; the count shows how full the table is, and the
-  # 4th seat starts the game.
+  # 4th seat starts the game. `hint` points at the button and says how many
+  # bots would start the game.
   attr :seats, :integer, required: true
+  attr :hint, :boolean, default: false
 
   defp add_bot_button(assigns) do
+    assigns = assign(assigns, :needed, max(4 - assigns.seats, 1))
+
     ~H"""
-    <button
-      id="add-bot-button"
-      type="button"
-      phx-click="request_bot"
-      class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 request-bot-button"
-      aria-label={"Add a bot (#{@seats} of 4 seats filled)"}
-      title="Add a bot"
-    >
-      <span aria-hidden="true">🤖</span>
-      <span>Add a bot</span>
-      <span class="bot-seat-count" aria-hidden="true">{@seats}/4</span>
-    </button>
+    <span class={["bot-button-wrap", @hint && "bot-hint-on"]}>
+      <button
+        id="add-bot-button"
+        type="button"
+        phx-click="request_bot"
+        class="text-sm font-semibold leading-6 text-white rounded-lg py-2 px-3 request-bot-button"
+        aria-label={"Add a bot (#{@seats} of 4 seats filled)"}
+        title="Add a bot"
+      >
+        <span aria-hidden="true">🤖</span>
+        <span>Add a bot</span>
+        <span class="bot-seat-count" aria-hidden="true">{@seats}/4</span>
+      </button>
+      <span :if={@hint} id="bot-hint" class="bot-hint" role="status">
+        <svg
+          aria-hidden="true"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 20V5M5.5 11.5 12 5l6.5 6.5" />
+        </svg>
+        Add {@needed} {if @needed == 1, do: "bot", else: "bots"} to start
+      </span>
+    </span>
     """
   end
 
@@ -823,6 +964,7 @@ defmodule Website45sV3Web.QueueLive do
           leave_label="Leave Queue"
           waiting_message="You are in the queue"
           seats={map_size(@queue)}
+          bot_hint={@bot_hint}
         />
       </div>
 

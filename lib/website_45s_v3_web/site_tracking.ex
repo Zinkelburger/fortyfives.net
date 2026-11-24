@@ -80,7 +80,7 @@ defmodule Website45sV3Web.SiteTracking do
          false <- Regex.match?(@crawler, user_agent) do
       params = Phoenix.LiveView.get_connect_params(socket) || %{}
 
-      %{
+      context = %{
         visitor_id: visitor_id,
         player_id: session["user_id"],
         device: if(Regex.match?(@mobile, user_agent), do: "mobile", else: "desktop"),
@@ -89,10 +89,25 @@ defmodule Website45sV3Web.SiteTracking do
         referrer: referrer_host(params["_ref"]),
         last_route: nil
       }
+
+      if link_scanner?(context), do: nil, else: context
     else
       _ -> nil
     end
   end
+
+  # Meta opens every link sent in a Messenger or Instagram message in a
+  # scripted browser of its own, seconds after it is sent. It runs the page,
+  # so it gets a socket, and its user agent is an ordinary Chrome's; what
+  # gives it away is a facebook.com referrer with one of its two fixed
+  # window sizes. Counted as visitors, these made every shared private table
+  # look like an invitation nobody accepted.
+  defp link_scanner?(%{referrer: referrer, viewport_w: w, viewport_h: h})
+       when referrer in ["facebook.com", "m.facebook.com"] and is_integer(w) and is_integer(h) do
+    {w, h} == {412, 915} or (w == 1050 and h >= 1800)
+  end
+
+  defp link_scanner?(_context), do: false
 
   defp page_view(_params, uri, socket) do
     path = URI.parse(uri).path

@@ -10,6 +10,8 @@ import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import {record} from "../vendor/rrweb-record"
 import {CardSelection} from "./card_selection.mjs"
+import {CardPreload} from "./card_preload.mjs"
+import {TurnClock} from "./turn_clock.mjs"
 import {ResumeAnywhere} from "./resume_anywhere.mjs"
 import {Turnstile} from "./turnstile_hook.mjs"
 import {createSessionRecorder} from "./session_recorder.mjs"
@@ -77,6 +79,8 @@ Hooks.CopyShareLink = {
 
 Hooks.CardSelection = CardSelection
 Hooks.ResumeAnywhere = ResumeAnywhere
+Hooks.CardPreload = CardPreload
+Hooks.TurnClock = TurnClock
 
 // Drains the progress bar of a flash message and then clicks it away. Only
 // real, visible flashes get this hook (see CoreComponents.flash/1); the
@@ -121,38 +125,6 @@ Hooks.ScoringCountdown = {
   destroyed() {
     if (this.interval) clearInterval(this.interval)
   }
-}
-
-// Counts down the last seconds before a bot takes over the seat. The server
-// renders how long is left (data-ms-left) whenever the game state changes;
-// only a new reading re-anchors the count. Unrelated patches (the session
-// recorder's, say) re-render the same stale reading and must not reset it.
-Hooks.TurnClock = {
-  mounted() { this.start() },
-  updated() {
-    if (this.el.dataset.msLeft !== this.reading) this.start()
-    else this.tick()
-  },
-  destroyed() { clearInterval(this.interval) },
-  start() {
-    clearInterval(this.interval)
-    this.reading = this.el.dataset.msLeft
-    const left = parseInt(this.reading || '', 10)
-    this.endsAt = Number.isNaN(left) ? null : Date.now() + left
-    this.tick()
-    if (this.endsAt) this.interval = setInterval(() => this.tick(), 250)
-  },
-  tick() {
-    const seconds = this.endsAt ? Math.ceil((this.endsAt - Date.now()) / 1000) : 0
-    this.show(seconds > 0 && seconds <= 10 ? seconds : null)
-    if (this.endsAt && seconds <= 0) clearInterval(this.interval)
-  },
-  show(seconds) {
-    const text = seconds ? `Bot in ${seconds}s` : ''
-    if (this.el.textContent !== text) this.el.textContent = text
-    const label = seconds ? `A bot plays for you in ${seconds} seconds` : ''
-    if (this.el.getAttribute('aria-label') !== label) this.el.setAttribute('aria-label', label)
-  },
 }
 
 Hooks.GameDialog = {

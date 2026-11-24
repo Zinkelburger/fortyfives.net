@@ -52,6 +52,11 @@ defmodule Website45sV3Web.QueueLiveTest do
     end
   end
 
+  defp game_pid(game_name) do
+    [{pid, _}] = Registry.lookup(Website45sV3.Registry, game_name)
+    pid
+  end
+
   defp kill_game(game_name) do
     case Registry.lookup(Website45sV3.Registry, game_name) do
       [{pid, _}] -> Process.exit(pid, :kill)
@@ -78,6 +83,16 @@ defmodule Website45sV3Web.QueueLiveTest do
   defp close_tab(view) do
     GenServer.stop(view.pid, :normal)
     wait_until(fn -> not Process.alive?(view.pid) end)
+  end
+
+  # Closes a LiveView the way a phone does when its browser goes to the
+  # background or the network drops: the socket closes under it.
+  defp drop_connection(view) do
+    # The test is linked to the view through LiveViewTest's proxy.
+    Process.flag(:trap_exit, true)
+    ref = Process.monitor(view.pid)
+    GenServer.stop(view.pid, {:shutdown, :closed})
+    assert_receive {:DOWN, ^ref, :process, _pid, _reason}
   end
 
   defp queue_metas(topic, user_id) do
@@ -466,6 +481,158 @@ defmodule Website45sV3Web.QueueLiveTest do
     end
   end
 
+  describe "a private table's seats" do
+    test "creating the table seats its creator", %{conn: conn} do
+      user = unique("qlt_user_")
+      conn = anon_conn(conn, user)
+
+      {:ok, view, _html} = live(conn, ~p"/play?tab=private")
+
+      {:error, {:live_redirect, %{to: "/play/private/" <> private_id = path}}} =
+        render_click(view, "create_private")
+
+      assert [{"Anonymous1", ^user}] = PrivateQueueManager.queue_players(private_id)
+
+      {:ok, lobby, html} = live(conn, path)
+
+      assert html =~ "You are in the game lobby"
+      assert has_element?(lobby, "#leave-queue-button")
+      assert player_cards(html) == ["Anonymous"]
+      assert [%{display_name: "Anonymous"}] = queue_metas("private_queue:#{private_id}", user)
+    end
+
+    test "a lost connection keeps the seat and coming back takes it", %{conn: conn} do
+      user = unique("qlt_user_")
+      friend = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      path = ~p"/play/private/#{private_id}"
+      topic = "private_queue:#{private_id}"
+
+      {:ok, friend_view, _html} = conn |> anon_conn(friend) |> live(path)
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(path)
+      render_click(view, "join")
+
+      drop_connection(view)
+
+      wait_until(fn -> match?([%{away: true}], queue_metas(topic, user)) end)
+      assert [{_name, ^user}] = PrivateQueueManager.queue_players(private_id)
+
+      wait_until(fn -> render(friend_view) =~ "away" end)
+      assert friend_view |> element("#add-bot-button") |> render() =~ "1/4"
+
+      {:ok, back, html} = conn |> anon_conn(user) |> live(path)
+
+      assert html =~ "You are in the game lobby"
+      assert has_element?(back, "#leave-queue-button")
+      assert [{_name, ^user}] = PrivateQueueManager.queue_players(private_id)
+      wait_until(fn -> match?([%{display_name: "Anonymous"}], queue_metas(topic, user)) end)
+      refute hd(queue_metas(topic, user))[:away]
+      wait_until(fn -> not (render(friend_view) =~ "away") end)
+    end
+
+    test "leaving the lobby still gives the seat up at once", %{conn: conn} do
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+      render_click(view, "join")
+      render_click(view, "leave")
+
+      assert PrivateQueueManager.queue_players(private_id) == []
+      refute PrivateQueueManager.seated?(private_id, user)
+    end
+
+    test "a visitor who never joined is not seated by opening the link", %{conn: conn} do
+      private_id = create_private_lobby(unique("qlt_user_"))
+      visitor = unique("qlt_user_")
+
+      {:ok, view, _html} = conn |> anon_conn(visitor) |> live(~p"/play/private/#{private_id}")
+
+      assert has_element?(view, "#join-queue-button")
+      assert PrivateQueueManager.queue_players(private_id) == []
+    end
+
+    test "the link of a table that started takes a seated player to the game", %{conn: conn} do
+      on_exit(&kill_all_bots/0)
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      path = ~p"/play/private/#{private_id}"
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{user}")
+
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(path)
+      render_click(view, "join")
+      drop_connection(view)
+
+      for n <- 1..3, do: {:ok, _pid} = BotSupervisor.start_private_bot(private_id, "Bot#{n}")
+
+      assert_receive {:redirect, "/game/" <> game_name}, 2_000
+      on_exit(fn -> kill_game(game_name) end)
+      wait_until(fn -> GameController.lobby(game_pid(game_name)) != nil end)
+
+      assert {:error, {:redirect, %{to: to}}} = conn |> anon_conn(user) |> live(path)
+      assert to == "/game/#{game_name}"
+
+      # Anyone else finds the link spent.
+      assert {:error, {:redirect, %{to: "/play"}}} =
+               conn |> anon_conn(unique("qlt_user_")) |> live(path)
+    end
+  end
+
+  describe "suggesting bots" do
+    test "after a wait in the public queue the page says how many bots start the game",
+         %{conn: conn} do
+      on_exit(&kill_all_bots/0)
+      wait_until(fn -> QueueStarter.player_count() == 0 end)
+      wait_until(fn -> Presence.list("queue") == %{} end)
+
+      {:ok, view, _html} = conn |> anon_conn(unique("qlt_user_")) |> live(~p"/play")
+
+      render_click(view, "join")
+      refute has_element?(view, "#bot-hint")
+
+      send(view.pid, :suggest_bots)
+      assert has_element?(view, "#bot-hint", "Add 3 bots to start")
+      assert has_element?(view, ".bot-hint-on #add-bot-button")
+
+      render_click(view, "request_bot")
+      wait_until(fn -> has_element?(view, "#bot-hint", "Add 2 bots to start") end)
+      render_click(view, "request_bot")
+      wait_until(fn -> has_element?(view, "#bot-hint", "Add 1 bot to start") end)
+
+      hinted =
+        Website45sV3.Repo.all(
+          from(e in Website45sV3.Analytics.SiteEvent,
+            where: e.name == "bot_added",
+            select: e.data
+          )
+        )
+
+      assert Enum.map(hinted, & &1["hinted"]) == [true, true]
+    end
+
+    test "a player who left the queue is not told to add bots", %{conn: conn} do
+      {:ok, view, _html} = conn |> anon_conn(unique("qlt_user_")) |> live(~p"/play")
+
+      render_click(view, "join")
+      render_click(view, "leave")
+      send(view.pid, :suggest_bots)
+
+      refute has_element?(view, "#bot-hint")
+    end
+
+    test "a private table does not suggest bots", %{conn: conn} do
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+
+      render_click(view, "join")
+      send(view.pid, :suggest_bots)
+
+      refute has_element?(view, "#bot-hint")
+    end
+  end
+
   describe "adding bots" do
     test "bots can be added back-to-back without a cooldown", %{conn: conn} do
       on_exit(&kill_all_bots/0)
@@ -478,21 +645,101 @@ defmodule Website45sV3Web.QueueLiveTest do
       render_click(view, "request_bot")
 
       players = PrivateQueueManager.queue_players(private_id)
-      assert players |> Enum.map(fn {name, _id} -> name end) |> Enum.sort() == ["Bot1", "Bot2"]
+
+      assert players |> Enum.map(fn {name, _id} -> name end) |> Enum.sort() ==
+               ["Anonymous1", "Bot1", "Bot2"]
     end
 
-    test "one user can have at most 3 bots waiting in a queue", %{conn: conn} do
+    test "adding a bot seats the player who asked for it", %{conn: conn} do
       on_exit(&kill_all_bots/0)
       user = unique("qlt_user_")
       private_id = create_private_lobby(user)
 
       {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
 
-      for _ <- 1..3, do: render_click(view, "request_bot")
-      html = render_click(view, "request_bot")
+      assert render_click(view, "request_bot") =~ "You are in the game lobby"
+      assert [{_name, ^user}, {"Bot1", _bot}] = PrivateQueueManager.queue_players(private_id)
+      assert has_element?(view, "#leave-queue-button")
+    end
 
-      assert html =~ "You already have 3 bots waiting"
-      assert length(PrivateQueueManager.queue_players(private_id)) == 3
+    # The failure this replaced: someone looking at the lobby without a seat
+    # added bots until the table was full, and the game started without them.
+    test "a table cannot be filled with bots without the player who added them",
+         %{conn: conn} do
+      on_exit(&kill_all_bots/0)
+      owner = unique("qlt_user_")
+      friend = unique("qlt_user_")
+      private_id = create_private_lobby(owner)
+      path = ~p"/play/private/#{private_id}"
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{owner}")
+
+      {:ok, friend_view, _html} = conn |> anon_conn(friend) |> live(path)
+      render_click(friend_view, "join")
+
+      {:ok, owner_view, _html} = conn |> anon_conn(owner) |> live(path)
+      for _ <- 1..2, do: render_click(owner_view, "request_bot")
+
+      assert_receive {:redirect, "/game/" <> game_name}, 2_000
+      on_exit(fn -> kill_game(game_name) end)
+
+      [{game_pid, _}] = Registry.lookup(Website45sV3.Registry, game_name)
+      state = GameController.get_game_state(game_pid)
+
+      assert owner in state.player_ids
+      assert friend in state.player_ids
+      assert MapSet.size(state.seat_bots) == 2
+    end
+
+    test "asking for a bot with three players seated takes the last seat instead",
+         %{conn: conn} do
+      on_exit(&kill_all_bots/0)
+      private_id = create_private_lobby(unique("qlt_user_"))
+      path = ~p"/play/private/#{private_id}"
+
+      for _ <- 1..3 do
+        {:ok, view, _html} = conn |> anon_conn(unique("qlt_user_")) |> live(path)
+        render_click(view, "join")
+      end
+
+      fourth = unique("qlt_user_")
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{fourth}")
+      {:ok, view, _html} = conn |> anon_conn(fourth) |> live(path)
+      render_click(view, "request_bot")
+
+      assert_receive {:redirect, "/game/" <> game_name}, 2_000
+      on_exit(fn -> kill_game(game_name) end)
+
+      [{game_pid, _}] = Registry.lookup(Website45sV3.Registry, game_name)
+      assert MapSet.size(GameController.get_game_state(game_pid).seat_bots) == 0
+      assert BotSupervisor.bot_count() == 0
+    end
+
+    test "bots are budgeted per network, not per session", %{conn: conn} do
+      on_exit(&kill_all_bots/0)
+      limits = Application.get_env(:website_45s_v3, :security_rate_limits, [])
+      on_exit(fn -> Application.put_env(:website_45s_v3, :security_rate_limits, limits) end)
+      Website45sV3.Security.RateLimiter.reset()
+
+      Application.put_env(
+        :website_45s_v3,
+        :security_rate_limits,
+        Keyword.put(limits, :bots, max_ip: 2)
+      )
+
+      # Fresh sessions each time: the per-session cap never applies.
+      for _ <- 1..2 do
+        user = unique("qlt_user_")
+        private_id = create_private_lobby(user)
+        {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+        refute render_click(view, "request_bot") =~ "added a lot of bots"
+      end
+
+      user = unique("qlt_user_")
+      private_id = create_private_lobby(user)
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/play/private/#{private_id}")
+
+      assert render_click(view, "request_bot") =~ "added a lot of bots"
+      assert [{_name, ^user}] = PrivateQueueManager.queue_players(private_id)
     end
 
     test "the add-bot button counts filled seats", %{conn: conn} do

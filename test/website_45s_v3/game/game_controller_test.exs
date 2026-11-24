@@ -338,6 +338,23 @@ defmodule Website45sV3.Game.GameControllerTest do
       refute MapSet.member?(GameController.get_game_state(pid).auto_play_players, current)
     end
 
+    test "a bagged dealer who runs out of time gets a bot that bids 15" do
+      pid = start_test_game(@humans)
+      state = GameController.get_game_state(pid)
+      Enum.each(bidders_before_dealer(state), &bid!(pid, &1, "0", :pass))
+
+      dealer = state.dealing_player_id
+      assert %{bagged: true, current_player_id: ^dealer} = GameController.get_game_state(pid)
+
+      send(pid, {:idle_timeout, dealer, :bidding})
+      wait_until(fn -> GameController.get_game_state(pid).phase == :discard end)
+
+      state = GameController.get_game_state(pid)
+      assert MapSet.member?(state.auto_play_players, dealer)
+      assert {15, ^dealer, suit} = state.winning_bid
+      assert suit in [:hearts, :diamonds, :clubs, :spades]
+    end
+
     test "discard clocks run once per player and stop as players discard" do
       pid = start_test_game(@humans)
       drive_bidding!(pid)

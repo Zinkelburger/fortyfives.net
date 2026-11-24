@@ -51,6 +51,35 @@ defmodule Website45sV3Web.SiteTrackingTest do
     assert is_binary(visitor_id)
   end
 
+  test "Meta's scan of a link sent in a message is not a visitor", %{conn: conn} do
+    chrome =
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0 Safari/537.36"
+
+    for {vw, vh, ref} <- [
+          {1050, 1893, "https://www.facebook.com/"},
+          {1050, 1837, "https://www.facebook.com/"},
+          {412, 915, "https://m.facebook.com/"}
+        ] do
+      conn =
+        conn
+        |> put_req_header("user-agent", chrome)
+        |> put_connect_params(%{"_vw" => vw, "_vh" => vh, "_ref" => ref})
+
+      {:ok, _view, _html} = live(conn, ~p"/learn")
+    end
+
+    assert events() == []
+
+    # A person arriving from Facebook is one.
+    conn =
+      conn
+      |> put_req_header("user-agent", chrome)
+      |> put_connect_params(%{"_vw" => 1280, "_vh" => 720, "_ref" => "https://www.facebook.com/"})
+
+    {:ok, _view, _html} = live(conn, ~p"/learn")
+    assert [%SiteEvent{referrer: "facebook.com"}] = events()
+  end
+
   test "crawlers are not recorded", %{conn: conn} do
     conn = put_req_header(conn, "user-agent", "Mozilla/5.0 (compatible; Googlebot/2.1)")
     {:ok, _view, _html} = live(conn, ~p"/learn")

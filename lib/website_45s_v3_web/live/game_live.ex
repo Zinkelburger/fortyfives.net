@@ -108,7 +108,18 @@ defmodule Website45sV3Web.GameLive do
       dealer: game_state.dealing_player_id == user_id,
       turn_ms_left: turn_ms_left(game_state)
     )
+    |> forget_stale_bid()
   end
+
+  # A selection on the bid keys belongs to the turn it was made on.
+  defp forget_stale_bid(socket) do
+    if my_bid?(socket.assigns),
+      do: socket,
+      else: assign(socket, selected_bid: nil, selected_suit: nil, bid_error: nil)
+  end
+
+  defp my_bid?(%{game_state: state, user_id: user_id}),
+    do: state.phase == :bidding and state.current_player_id == user_id
 
   # Time left before a bot takes this seat over, for the countdown. The game
   # process owns the clock; this is only a reading of it at render time.
@@ -116,6 +127,10 @@ defmodule Website45sV3Web.GameLive do
     do: max(deadline - System.system_time(:millisecond), 0)
 
   defp turn_ms_left(_state), do: nil
+
+  # The whole of that clock, so the hand's edge can show how much is gone.
+  defp turn_ms_total(:discard), do: GameController.timing(:discard_timeout)
+  defp turn_ms_total(_phase), do: GameController.timing(:idle_timeout)
 
   @impl true
   def handle_info({:update_state, new_state}, socket) do
@@ -182,10 +197,7 @@ defmodule Website45sV3Web.GameLive do
   def handle_event("confirm_discard", _params, socket), do: {:noreply, socket}
 
   def handle_event("confirm_bid", _params, socket) do
-    bid = if socket.assigns.game_state.bagged, do: "15", else: socket.assigns.selected_bid
-    suit = socket.assigns.selected_suit
-
-    case validate_bid_selection(bid, suit, socket.assigns) do
+    case selected_bid(socket.assigns) do
       {:ok, bid, suit_atom} ->
         socket =
           socket
@@ -381,6 +393,12 @@ defmodule Website45sV3Web.GameLive do
     })
   end
 
+  # A bagged dealer's bid is 15 whatever the keys say.
+  defp selected_bid(assigns) do
+    bid = if assigns.game_state.bagged, do: "15", else: assigns.selected_bid
+    validate_bid_selection(bid, assigns.selected_suit, assigns)
+  end
+
   # Checks a bid selection the way the game will, so the player gets a
   # message instead of a silently ignored bid.
   defp validate_bid_selection(nil, _suit, _assigns), do: {:error, "Bid or Suit not selected."}
@@ -407,12 +425,15 @@ defmodule Website45sV3Web.GameLive do
 
   @impl true
   def render(assigns) do
-    assigns = assign(assigns, :teams, team_summary(assigns))
+    assigns =
+      assigns
+      |> assign(:teams, team_summary(assigns))
+      |> assign(:in_hand, assigns.game_state.phase in [:bidding, :discard, :playing])
 
     ~H"""
     <div
       id="game-container"
-      class="game"
+      class="game game-live"
       phx-hook="SessionRecorder"
       data-record={to_string(@record_replay)}
       data-phase={Phase.label(@game_state.phase)}
@@ -453,8 +474,15 @@ defmodule Website45sV3Web.GameLive do
         phx-hook="ResumeAnywhere"
         data-auto-playing={to_string(@auto_playing)}
       >
-        <div class="phase-heading">
+        <%!-- While a hand is in play the turn line is the headline; the
+             phase is plain from the table itself. --%>
+        <div class={["phase-heading", @in_hand && "sr-only"]}>
           <h1 class="phase-title" aria-live="polite">{phase_title(@game_state.phase)}</h1>
+        </div>
+        <div class="turn-line">
+          <p class="turn-text" aria-live="polite" title={turn_message(assigns)}>
+            {turn_message(assigns)}
+          </p>
           <span
             id="turn-clock"
             class="turn-clock"
@@ -462,11 +490,6 @@ defmodule Website45sV3Web.GameLive do
             data-ms-left={@turn_ms_left}
             role="timer"
           ></span>
-        </div>
-        <div class="turn-line">
-          <p class="turn-text" aria-live="polite" title={turn_message(assigns)}>
-            {turn_message(assigns)}
-          </p>
         </div>
         {render_facts(assigns)}
         <p
@@ -481,21 +504,30 @@ defmodule Website45sV3Web.GameLive do
         </p>
       </div>
 
-      <div class="game-play-area">
-        <section class="phase-area" aria-label={Phase.label(@game_state.phase)}>
-          <%= case @game_state.phase do %>
-            <% :bidding -> %>
-              {render_seat_table(assigns)}
+      <div
+        id="game-play-area"
+        class={[
+          "game-play-area",
+          (@game_state.phase == :discard and length(@game_state.hand) > 5) && "keep-eight"
+        ]}
+        phx-hook="CardPreload"
+      >
+        <section
+          class={["phase-area", @in_hand && "hand-area"]}
+          aria-label={Phase.label(@game_state.phase)}
+        >
+          <%= cond do %>
+            <% @game_state.phase == :bidding -> %>
+              {render_seats(assigns)}
               {render_bidding_buttons(assigns)}
-            <% :discard -> %>
-              {render_seat_table(assigns)}
-            <% :playing -> %>
-              {render_played_cards(assigns)}
-            <% _ -> %>
+            <% @in_hand -> %>
+              {render_seats(assigns)}
+              {render_trick(assigns)}
+            <% true -> %>
               {render_scoring(assigns)}
           <% end %>
         </section>
-        <%= if @game_state.phase in [:bidding, :discard, :playing] do %>
+        <%= if @in_hand do %>
           {render_player_hand(assigns)}
         <% end %>
       </div>
@@ -552,50 +584,30 @@ defmodule Website45sV3Web.GameLive do
     """
   end
 
-  # The facts a player at a real table keeps in their head: the bid to beat
-  # (and who deals) while bidding, then trump, the contract and tricks taken.
-  defp render_facts(assigns) do
-    state = assigns.game_state
-    {bid, bidder, suit} = state.winning_bid
+  # Between hands the line under the headline names the hand and its bid.
+  # During one, each player's bid sits under their own name instead.
+  defp render_facts(%{game_state: %{phase: :scoring}} = assigns) do
+    {bid, bidder, suit} = assigns.game_state.winning_bid
 
     assigns =
       assign(assigns,
         bid: bid,
         bidder: bid > 0 && who(assigns, bidder),
         suit: suit,
-        tricks: team_tricks(assigns),
-        hand_number: length(state.team_1_history)
+        hand_number: length(assigns.game_state.team_1_history)
       )
 
     ~H"""
-    <%= case @game_state.phase do %>
-      <% :bidding -> %>
-        <p class="game-facts" aria-live="polite">
-          <span :if={@bidder} class="facts-main">
-            High bid:<span class="facts-name">{@bidder}</span>{@bid} <.suit suit={@suit} />
-          </span>
-          <span :if={!@bidder}>No bids yet</span>
-          <span>Dealer: {who(assigns, @game_state.dealing_player_id)}</span>
-        </p>
-      <% phase when phase in [:discard, :playing] -> %>
-        <p class="game-facts" aria-live="polite">
-          <span class="facts-main">
-            <span class="trump">Trump <.suit suit={@game_state.trump} /></span>
-            ·<span class="facts-name">{@bidder}</span>bid {@bid}
-          </span>
-          <span :if={phase == :playing}>Tricks: You {@tricks.you} · Them {@tricks.them}</span>
-        </p>
-      <% :scoring -> %>
-        <p class="game-facts" aria-live="polite">
-          <span>Hand {@hand_number}</span>
-          <span :if={@bidder} class="facts-main">
-            <span class="facts-name">{@bidder}</span>bid {@bid} <.suit suit={@suit} />
-          </span>
-        </p>
-      <% _ -> %>
-    <% end %>
+    <p class="game-facts" aria-live="polite">
+      <span>Hand {@hand_number}</span>
+      <span :if={@bidder} class="facts-main">
+        <span class="facts-name">{@bidder}</span>bid {@bid} <.suit suit={@suit} />
+      </span>
+    </p>
     """
   end
+
+  defp render_facts(assigns), do: ~H""
 
   attr :suit, :atom, required: true
 
@@ -609,6 +621,25 @@ defmodule Website45sV3Web.GameLive do
       role="img"
       aria-label={Atom.to_string(@suit)}
     >{@symbol}</span>
+    """
+  end
+
+  attr :suit, :atom, required: true
+
+  # Trump keeps one corner of the table from the keep to the last trick, in
+  # the same light chip the suit was bid with.
+  defp trump_chip(assigns) do
+    assigns = assign(assigns, :symbol, @symbols[assigns.suit])
+
+    ~H"""
+    <div
+      :if={@symbol}
+      id="trump-chip"
+      class={["trump-chip", @suit in [:hearts, :diamonds] && "red-suit"]}
+    >
+      <span class="trump-chip-suit" aria-hidden="true">{@symbol}</span>
+      <span class="trump-chip-label">Trump<span class="sr-only">{@suit}</span></span>
+    </div>
     """
   end
 
@@ -628,7 +659,7 @@ defmodule Website45sV3Web.GameLive do
   defp phase_title(:final_scoring), do: "Game over"
   defp phase_title(phase), do: Phase.label(phase)
 
-  defp turn_message(%{auto_playing: true}), do: "Bot playing · Tap anywhere to resume"
+  defp turn_message(%{auto_playing: true}), do: "Bot playing · Tap to resume"
 
   defp turn_message(%{game_state: %{phase: :discard}, confirm_discard_clicked: true}),
     do: "Cards kept · Waiting for others"
@@ -672,9 +703,9 @@ defmodule Website45sV3Web.GameLive do
     end
   end
 
-  # The other three players, left to right as they sit: the next to play,
-  # your partner across the table, then the player before you.
-  defp other_seats(assigns) do
+  # The four seats by where they sit from here: you (0), the next to play
+  # on your left, your partner across the table, then the player before you.
+  defp seats(assigns) do
     state = assigns.game_state
     me = Enum.find_index(state.player_ids, &(&1 == assigns.user_id))
 
@@ -686,61 +717,99 @@ defmodule Website45sV3Web.GameLive do
         position: relative_position(me, index),
         name: state.player_map[id],
         bot: id in state.bot_ids,
-        on_turn: id == state.current_player_id
+        on_turn: on_turn?(state, id),
+        status: seat_status(state, id)
       }
     end)
+    |> Enum.sort_by(& &1.position)
   end
 
-  defp render_seat_table(assigns) do
-    seats =
-      assigns
-      |> other_seats()
-      |> Enum.sort_by(& &1.position)
-      |> Enum.map(&Map.put(&1, :status, seat_status(assigns.game_state, &1)))
+  # While everyone keeps at once, the table waits on whoever has not yet.
+  defp on_turn?(%{phase: :discard} = state, id), do: id not in state.received_discards_from
+  defp on_turn?(state, id), do: id == state.current_player_id
 
-    assigns = assign(assigns, :seats, seats)
+  # What sits under a player's name. While bidding: their bid or pass, or
+  # that they deal (the dealer bids last and may hold). After it, only the
+  # bid that won stays, with whether the player has kept their cards.
+  defp seat_status(%{phase: :bidding} = state, id) do
+    {_high, bidder, _suit} = state.winning_bid
 
-    ~H"""
-    <div class="seat-table" aria-label="Players">
-      <div
-        :for={seat <- @seats}
-        id={"seat-chip-#{seat.position}"}
-        class={["seat-chip", "seat-#{seat.position}", seat.on_turn && "seat-on-turn"]}
-      >
-        <p class="seat-name">
-          <span class="seat-name-text" title={seat.name}>
-            {if seat.position == 0, do: "You", else: seat.name}
-          </span>
-          <span :if={seat.position == 2} class="seat-tag">· partner</span>
-          <span :if={seat.bot and seat.position != 0} class="seat-tag">· bot</span>
-        </p>
-        <p class="seat-status">
-          <%= case seat.status do %>
-            <% {:bid, bid, suit} -> %>
-              {bid} <.suit suit={suit} />
-            <% :pass -> %>
-              Pass
-            <% :ready -> %>
-              Ready
-            <% :waiting -> %>
-              <span class="seat-waiting" aria-label="Not yet">–</span>
-          <% end %>
-        </p>
-      </div>
-    </div>
-    """
-  end
-
-  defp seat_status(%{phase: :bidding, bids: bids}, seat) do
-    case Map.get(bids, seat.id) do
-      {0, _} -> :pass
-      {bid, suit} -> {:bid, bid, suit}
-      nil -> :waiting
+    case Map.get(state.bids, id) do
+      {0, _} -> [:pass]
+      {bid, suit} -> [{:bid, bid, suit, id == bidder}]
+      nil when id == state.dealing_player_id -> [:dealer]
+      nil -> [:waiting]
     end
   end
 
-  defp seat_status(%{phase: :discard} = state, seat) do
-    if seat.id in state.received_discards_from, do: :ready, else: :waiting
+  defp seat_status(state, id) do
+    bid =
+      case state.winning_bid do
+        {bid, ^id, suit} when bid > 0 -> [{:bid, bid, suit, true}]
+        _ -> []
+      end
+
+    case state.phase do
+      :discard when bid == [] ->
+        if id in state.received_discards_from, do: [:ready], else: [:waiting]
+
+      :discard ->
+        if id in state.received_discards_from, do: bid ++ [:ready], else: bid
+
+      _ ->
+        bid
+    end
+  end
+
+  attr :status, :list, required: true
+
+  defp seat_status_line(assigns) do
+    ~H"""
+    <span class="seat-status">
+      <%= for part <- @status do %>
+        <%= case part do %>
+          <% {:bid, bid, suit, high} -> %>
+            <span class={["seat-bid", !high && "outbid"]}>{bid} <.suit suit={suit} /></span>
+          <% :pass -> %>
+            <span>Pass</span>
+          <% :dealer -> %>
+            <span class="seat-note">Dealer</span>
+          <% :ready -> %>
+            <span class="seat-note">Ready</span>
+          <% :waiting -> %>
+            <span class="seat-waiting" aria-label="Not yet">–</span>
+        <% end %>
+      <% end %>
+    </span>
+    """
+  end
+
+  # The other three players in one row that holds its place for the whole
+  # hand: bidding, keeping and every trick.
+  defp render_seats(assigns) do
+    assigns = assign(assigns, :seats, assigns |> seats() |> Enum.reject(&(&1.position == 0)))
+
+    ~H"""
+    <div class="seat-row" aria-label="Players">
+      <div
+        :for={seat <- @seats}
+        id={"seat-chip-#{seat.position}"}
+        class={[
+          "seat-chip",
+          "seat-#{seat.position}",
+          seat.on_turn && "seat-on-turn",
+          seat.id == @game_state.trick_winner_id && "trick-winner"
+        ]}
+      >
+        <p class="seat-name">
+          <span class="seat-name-text" title={seat.name}>{seat.name}</span>
+          <span :if={seat.position == 2} class="seat-tag">· partner</span>
+          <span :if={seat.bot} class="seat-tag">· bot</span>
+        </p>
+        <p class="seat-line"><.seat_status_line status={seat.status} /></p>
+      </div>
+    </div>
+    """
   end
 
   defp render_bidding_buttons(assigns) do
@@ -759,31 +828,45 @@ defmodule Website45sV3Web.GameLive do
 
     ~H"""
     <div class="bidding-panel">
-      <div class="bid-options">
+      <div class="bid-keys">
+        <button
+          type="button"
+          id="pass-bid-button"
+          class={["bid-key pass-key", @selected_suit == "pass" && "active"]}
+          phx-click="set_bid_pass"
+          aria-pressed={to_string(@selected_suit == "pass")}
+          disabled={not @can_control or @game_state.bagged}
+        >
+          Pass<span class="key-check" aria-hidden="true">✓</span>
+        </button>
         <div class="bid-numbers" role="group" aria-label="Bid amount">
           <%= for bid <- @bid_values do %>
             <% available = Rules.bid_allowed?(bid, @current_bid, @dealer) and @can_control %>
             <button
               type="button"
-              class={["blue-button", @selected_bid == Integer.to_string(bid) && "active"]}
+              class={["bid-key", @selected_bid == Integer.to_string(bid) && "active"]}
               phx-click="set_bid_number"
               phx-value-bid-number={bid}
               aria-pressed={to_string(@selected_bid == Integer.to_string(bid))}
               disabled={(@game_state.bagged and bid != 15) or not available}
-            >{bid}</button>
+            >
+              {bid}<span class="key-check" aria-hidden="true">✓</span>
+            </button>
           <% end %>
         </div>
         <div class="bid-suits" role="group" aria-label="Trump suit">
           <%= for {suit, symbol, color} <- @suit_symbols do %>
             <button
               type="button"
-              class={["suit-button", color == "red" && "red-suit", @selected_suit == suit && "active"]}
+              class={["bid-key", color == "red" && "red-suit", @selected_suit == suit && "active"]}
               phx-click="set_bid_suit"
               phx-value-bid-suit={suit}
               aria-label={capitalize_first(suit)}
               aria-pressed={to_string(@selected_suit == suit)}
               disabled={not @can_control}
-            >{symbol}</button>
+            >
+              {symbol}<span class="key-check" aria-hidden="true">✓</span>
+            </button>
           <% end %>
         </div>
       </div>
@@ -874,6 +957,9 @@ defmodule Website45sV3Web.GameLive do
       |> assign(:cards, hand_cards(state, locked, in_control))
       |> assign(:hand_locked, locked)
       |> assign(:can_bid, in_control)
+      # Your own line has no "not yet" dash: the turn line says it is on you.
+      |> assign(:my_status, seat_status(state, assigns.user_id) -- [:waiting])
+      |> assign(:tricks, team_tricks(assigns))
       |> assign(:selection_version, hand_selection_version(assigns))
       |> bagged_bid(my_turn)
 
@@ -889,7 +975,29 @@ defmodule Website45sV3Web.GameLive do
       data-confirmed={to_string(@confirm_discard_clicked)}
       data-selection-version={@selection_version}
     >
-      <div class={["player-hand", length(@cards) > 5 && "player-hand-eight"]}>
+      <span
+        id="turn-edge"
+        class="turn-edge"
+        phx-hook="TurnClock"
+        data-ms-left={@turn_ms_left}
+        data-ms-total={turn_ms_total(@game_state.phase)}
+        aria-hidden="true"
+      ></span>
+      <p class="hand-seat">
+        <span class="hand-seat-me">
+          <span class="seat-name-text">You</span>
+          <.seat_status_line status={@my_status} />
+        </span>
+        <span :if={@game_state.phase == :playing} class="hand-tricks">
+          Tricks: You {@tricks.you} · Them {@tricks.them}
+        </span>
+      </p>
+      <div
+        class={["player-hand", if(length(@cards) > 5, do: "player-hand-eight", else: "hand-fan")]}
+        data-count={length(@cards)}
+      >
+        <%!-- Holds the hand's height once the last card has been played. --%>
+        <span :if={@cards == []} class="hand-placeholder" aria-hidden="true"></span>
         <%= for card <- @cards do %>
           <button
             type="button"
@@ -907,6 +1015,9 @@ defmodule Website45sV3Web.GameLive do
               alt={card.name}
               class={["card", card.illegal && "grayed-out"]}
               data-card-value={card.value}
+              width="160"
+              height="245"
+              decoding="sync"
               draggable="false"
             />
             <span class="card-check" aria-hidden="true">✓</span>
@@ -918,8 +1029,8 @@ defmodule Website45sV3Web.GameLive do
     """
   end
 
-  # The one action under the hand: Resume while a bot has the seat, Pass and
-  # Confirm while bidding, otherwise keep/discard counts or Play Card.
+  # The one action under the hand: Resume while a bot has the seat, Confirm
+  # while bidding, otherwise keep/discard counts or Play Card.
   defp render_hand_action(assigns) do
     ~H"""
     <%= cond do %>
@@ -931,27 +1042,18 @@ defmodule Website45sV3Web.GameLive do
           class="blue-button hand-action"
           phx-click="resume_control"
           phx-disable-with="Resuming…"
+          phx-mounted={JS.focus()}
         >Resume playing</button>
       <% @game_state.phase == :bidding -> %>
         <p class="selection-summary" aria-live="polite">{bid_summary(assigns)}</p>
-        <div class="confirm-bid">
-          <button
-            type="button"
-            id="pass-bid-button"
-            class={["blue-button pass-button", @selected_suit == "pass" && "active"]}
-            phx-click="set_bid_pass"
-            aria-pressed={to_string(@selected_suit == "pass")}
-            disabled={not @can_bid or @game_state.bagged}
-          >Pass</button>
-          <button
-            type="button"
-            id="confirm-bid-button"
-            class="blue-button"
-            phx-click="confirm_bid"
-            phx-disable-with="Sending…"
-            disabled={not @can_bid or not bid_selection_complete?(@selected_bid, @selected_suit)}
-          >{if @selected_suit == "pass", do: "Confirm Pass", else: "Confirm Bid"}</button>
-        </div>
+        <button
+          type="button"
+          id="confirm-bid-button"
+          class="blue-button hand-action"
+          phx-click="confirm_bid"
+          phx-disable-with="Sending…"
+          disabled={not @can_bid or not bid_selection_complete?(@selected_bid, @selected_suit)}
+        >{if @selected_suit == "pass", do: "Confirm Pass", else: "Confirm Bid"}</button>
       <% true -> %>
         <p id="selection-summary" class="selection-summary" aria-live="polite"></p>
         <button
@@ -974,58 +1076,46 @@ defmodule Website45sV3Web.GameLive do
     """
   end
 
-  defp render_played_cards(assigns) do
-    state = assigns.game_state
+  # Where the trick is played: the three others' cards under their names,
+  # yours below. The places are set out from the keep on, so the first card
+  # lands on a table that is already there.
+  defp render_trick(assigns) do
+    played = Map.new(assigns.game_state.played_cards, &{&1.player_id, &1.card})
 
-    seats =
-      assigns
-      |> other_seats()
-      |> Enum.map(fn seat ->
-        Map.put(
-          seat,
-          :card,
-          Enum.find_value(state.played_cards, fn p -> if p.player_id == seat.id, do: p.card end)
-        )
-      end)
-
-    assigns = assign(assigns, :seats, seats)
+    assigns =
+      assign(assigns, :seats, Enum.map(seats(assigns), &Map.put(&1, :card, played[&1.id])))
 
     ~H"""
-    <div class="played-cards">
+    <div
+      id="table"
+      class={["trick", @game_state.trick_winner_id && "trick-done"]}
+      aria-label="Current trick"
+    >
       <div
-        id="table"
-        class={["table", @game_state.trick_winner_id && "trick-done"]}
-        aria-label="Current trick"
+        :for={seat <- @seats}
+        id={"seat-#{seat.position}"}
+        class={[
+          "trick-slot",
+          "slot-#{seat.position}",
+          @game_state.phase == :playing && seat.on_turn && "seat-on-turn",
+          seat.id == @game_state.trick_winner_id && "trick-winner"
+        ]}
       >
-        <div
-          :for={seat <- @seats}
-          id={"seat-#{seat.position}"}
-          class={[
-            "player-slot",
-            "player-#{seat.position}",
-            seat.on_turn && "seat-on-turn",
-            seat.id == @game_state.trick_winner_id && "trick-winner"
-          ]}
-        >
-          <p class="player-name">
-            <span class="seat-name-text" title={seat.name}>
-              {if seat.position == 0, do: "You", else: seat.name}
-            </span>
-            <span :if={seat.position == 2} class="seat-tag">· partner</span>
-            <span :if={seat.bot and seat.position != 0} class="seat-tag">· bot</span>
-          </p>
-          <%= if seat.card do %>
-            <img
-              class="card"
-              src={get_image_location({seat.card.value, seat.card.suit})}
-              alt={"#{seat.name} played the #{Card.to_string(seat.card)}"}
-              phx-value-card={card_dom_value(seat.card)}
-            />
-          <% else %>
-            <div class="empty-card" aria-label={"#{seat.name} has not played"}></div>
-          <% end %>
-        </div>
+        <%= if seat.card do %>
+          <img
+            class="card"
+            src={get_image_location({seat.card.value, seat.card.suit})}
+            alt={"#{seat.name} played the #{Card.to_string(seat.card)}"}
+            phx-value-card={card_dom_value(seat.card)}
+            width="160"
+            height="245"
+            decoding="sync"
+          />
+        <% else %>
+          <div class="empty-card" aria-label={"#{seat.name} has not played"}></div>
+        <% end %>
       </div>
+      <.trump_chip suit={@game_state.trump} />
     </div>
     """
   end

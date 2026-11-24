@@ -23,10 +23,10 @@ defmodule Website45sV3.Security.RateLimiter do
   @table __MODULE__
 
   @default_login [window_ms: 15 * 60 * 1000, max_ip: 30, max_account: 8]
-  @default_queue [window_ms: 60 * 60 * 1000, max_ip: 40, max_create_ip: 10]
+  @default_queue [window_ms: 60 * 60 * 1000, max_ip: 120, max_create_ip: 10]
   @default_registration [window_ms: 60 * 60 * 1000, max_ip: 5]
   @default_email [window_ms: 60 * 60 * 1000, max_ip: 20, max_address: 5, max_account: 5]
-  @default_bots [window_ms: 10 * 60 * 1000, max_ip: 6]
+  @default_bots [window_ms: 10 * 60 * 1000, max_ip: 30]
   @default_username [window_ms: 24 * 60 * 60 * 1000, max_account: 5]
 
   @defaults [
@@ -176,8 +176,9 @@ defmodule Website45sV3.Security.RateLimiter do
 
   @doc """
   Records one bot added to a lobby from `remote_ip`. Bots are a shared pool
-  (see `Website45sV3.Game.BotSupervisor`), and the per-session cap alone is
-  reset by dropping the cookie, so this caps what one network can take.
+  (see `Website45sV3.Game.BotSupervisor`). The per-session cap only counts
+  bots still waiting, and all-bot games run for up to `:all_bot_timeout`, so
+  without this one client clicking "Add bot" could hold the whole pool.
   """
   def check_bot_spawn(remote_ip) do
     config = limits(:bots)

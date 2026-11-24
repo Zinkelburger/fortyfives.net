@@ -187,6 +187,125 @@ defmodule Website45sV3.Game.QueueTest do
       assert PrivateQueueManager.queue_exists?(private_id)
     end
 
+    test "a player whose page loses its connection keeps the seat and takes it back" do
+      private_id = create_lobby()
+      user_id = unique("user_")
+      test = self()
+      topic = "private_queue:#{private_id}"
+
+      {pid, :ok} =
+        tab(fn ->
+          PrivateQueueManager.add_player(private_id, {"Alice", user_id}, nil,
+            on_drop: fn -> send(test, {:dropped, user_id}) end
+          )
+        end)
+
+      # What a LiveView exits with when its socket closes: the phone went to
+      # another app to send the link.
+      Process.exit(pid, {:shutdown, :closed})
+
+      wait_until(fn -> match?(%{metas: [%{away: true}]}, Presence.get_by_key(topic, user_id)) end)
+      assert [{"Alice", ^user_id}] = PrivateQueueManager.queue_players(private_id)
+      assert PrivateQueueManager.seated?(private_id, user_id)
+      refute_received {:dropped, ^user_id}
+
+      # Back on the page: same seat, same name, no longer away.
+      {_pid, :ok} = tab(fn -> PrivateQueueManager.add_player(private_id, {"Alice", user_id}) end)
+      assert [{"Alice", ^user_id}] = PrivateQueueManager.queue_players(private_id)
+      wait_until(fn -> Presence.get_by_key(topic, user_id) == [] end)
+    end
+
+    test "a kept seat is freed once the player has been away too long" do
+      Application.put_env(:website_45s_v3, :private_seat_grace_ms, 50)
+      on_exit(fn -> Application.delete_env(:website_45s_v3, :private_seat_grace_ms) end)
+
+      private_id = create_lobby()
+      user_id = unique("user_")
+      test = self()
+
+      {pid, :ok} =
+        tab(fn ->
+          PrivateQueueManager.add_player(private_id, {"Alice", user_id}, nil,
+            on_drop: fn -> send(test, {:dropped, user_id}) end
+          )
+        end)
+
+      Process.exit(pid, {:shutdown, :closed})
+
+      wait_until(fn -> PrivateQueueManager.queue_players(private_id) == [] end)
+      assert_receive {:dropped, ^user_id}
+      refute PrivateQueueManager.seated?(private_id, user_id)
+      wait_until(fn -> Presence.get_by_key("private_queue:#{private_id}", user_id) == [] end)
+    end
+
+    test "leaving frees a kept seat at once" do
+      private_id = create_lobby()
+      user_id = unique("user_")
+
+      {pid, :ok} = tab(fn -> PrivateQueueManager.add_player(private_id, {"Alice", user_id}) end)
+      Process.exit(pid, {:shutdown, :closed})
+      wait_until(fn -> not Process.alive?(pid) end)
+
+      assert :ok = PrivateQueueManager.remove_player(private_id, user_id)
+      assert PrivateQueueManager.queue_players(private_id) == []
+      wait_until(fn -> Presence.get_by_key("private_queue:#{private_id}", user_id) == [] end)
+    end
+
+    test "a table that fills while a player is away starts with their seat in it" do
+      private_id = create_lobby()
+      away = unique("user_")
+      Phoenix.PubSub.subscribe(Website45sV3.PubSub, "user:#{away}")
+
+      {pid, :ok} = tab(fn -> PrivateQueueManager.add_player(private_id, {"Alice", away}) end)
+      Process.exit(pid, {:shutdown, :closed})
+      wait_until(fn -> not Process.alive?(pid) end)
+
+      for n <- 1..3 do
+        {_pid, :ok} =
+          tab(fn -> PrivateQueueManager.add_player(private_id, {"P#{n}", unique("user_")}) end)
+      end
+
+      assert_receive {:redirect, "/game/" <> game_name}, 2_000
+      [{game_pid, _}] = Registry.lookup(Website45sV3.Registry, game_name)
+      on_exit(fn -> Process.exit(game_pid, :kill) end)
+
+      assert ActiveGames.find_game(away) == game_name
+      refute PrivateQueueManager.queue_exists?(private_id)
+      wait_until(fn -> Presence.get_by_key("private_queue:#{private_id}", away) == [] end)
+    end
+
+    test "a kept seat is given up once its player sits down in another game" do
+      private_id = create_lobby()
+      away = unique("user_")
+
+      {pid, :ok} = tab(fn -> PrivateQueueManager.add_player(private_id, {"Alice", away}) end)
+      Process.exit(pid, {:shutdown, :closed})
+      wait_until(fn -> not Process.alive?(pid) end)
+
+      other_game = seat_in_game(away)
+
+      others = for n <- 1..3, do: {"P#{n}", unique("user_")}
+
+      for player <- others do
+        {_pid, :ok} = tab(fn -> PrivateQueueManager.add_player(private_id, player) end)
+      end
+
+      assert PrivateQueueManager.queue_exists?(private_id)
+      assert PrivateQueueManager.queue_players(private_id) == others
+      refute PrivateQueueManager.seated?(private_id, away)
+      assert ActiveGames.find_game(away) == other_game
+      wait_until(fn -> Presence.get_by_key("private_queue:#{private_id}", away) == [] end)
+    end
+
+    test "the owner can be seated as the lobby is created" do
+      private_id = Ecto.UUID.generate()
+      owner = unique("owner_")
+
+      assert :ok = PrivateQueueManager.create_queue(private_id, owner, nil, seat: "Alice")
+      assert [{"Alice", ^owner}] = PrivateQueueManager.queue_players(private_id)
+      assert PrivateQueueManager.seated?(private_id, owner)
+    end
+
     test "a seat is kept while another tab of the player holds it" do
       private_id = create_lobby()
       user_id = unique("user_")
@@ -281,7 +400,8 @@ defmodule Website45sV3.Game.QueueTest do
           }
         },
         last_created: %{},
-        holders: %{}
+        holders: %{},
+        away: %{}
       }
 
       {:noreply, state} = PrivateQueueManager.handle_info(:sweep, state)
@@ -380,7 +500,8 @@ defmodule Website45sV3.Game.QueueTest do
           }
         },
         last_created: %{"someone" => 0},
-        holders: %{}
+        holders: %{},
+        away: %{}
       }
 
       {:noreply, state} = PrivateQueueManager.handle_info(:sweep, state)

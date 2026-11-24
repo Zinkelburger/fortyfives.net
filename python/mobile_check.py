@@ -58,7 +58,7 @@ class MobileCheck:
         time.sleep(.08)
         result = d.execute_script('''
           const controls = [...document.querySelectorAll(
-            '#game-container button, #game-container a, #player-hand img, .table img')];
+            '#game-container button, #game-container a, #player-hand img, #table img')];
           return controls.filter(e => e.getClientRects().length).map(e => {
             const r=e.getBoundingClientRect();
             const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
@@ -118,7 +118,9 @@ class MobileCheck:
                 lobby = d.current_url
             # Navigation can resolve before the new view has mounted.
             time.sleep(.4)
-            self.click(d, '#join-queue-button')
+            # Creating the table seats its creator; everyone else joins.
+            if i > 0:
+                self.click(d, '#join-queue-button')
             self.wait(lambda: '/game/' in d.current_url or bool(d.find_elements(By.ID, 'leave-queue-button')))
         for d in self.drivers:
             self.wait(lambda: '/game/' in d.current_url and self.state(d).get('phase'))
@@ -245,7 +247,7 @@ class MobileCheck:
             elif state.get('phase') == 'Playing':
                 if 'playing' not in self.checked:
                     self.matrix(current, 'playing')
-                if 'playing-trick' not in self.checked and len(current.find_elements(By.CSS_SELECTOR, '.table img')) == 3:
+                if 'playing-trick' not in self.checked and len(current.find_elements(By.CSS_SELECTOR, '#table img')) == 3:
                     # The fourth player has not moved yet, so this trick stays
                     # put while we check actual played cards at every size.
                     self.matrix(current, 'playing-trick')

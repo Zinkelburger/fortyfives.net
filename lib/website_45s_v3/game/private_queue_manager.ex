@@ -5,8 +5,18 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   expires or sits empty for too long.
 
   As in the public queue, the process that adds a player holds their seat
-  (see `QueueHolders`): once every tab holding it has released it or exited,
-  the player leaves the lobby.
+  (see `QueueHolders`): once every tab holding it has released it, the player
+  leaves the lobby.
+
+  Unlike the public queue, a seat outlives a lost connection. Sending the
+  link means leaving the browser for another app, and a phone drops the
+  page's socket within seconds of that; so does every switch back to the
+  chat while friends arrive. A player whose last page lost its connection is
+  kept seated as *away* for `@away_grace_ms` and takes the seat back by
+  opening the lobby again (`seated?/2`, then `add_player/4`). Leaving, or a
+  live navigation to another lobby page, still frees the seat at once. A tab
+  closed, or sent to a page outside the lobby's live session, closes its
+  socket the same way a lost connection does, so that seat is kept too.
   """
   use GenServer
   require Logger
@@ -15,6 +25,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   alias Website45sV3.Game.Matchmaking
   alias Website45sV3.Game.QueueHolders
   alias Website45sV3.Security.RateLimiter
+  alias Website45sV3Web.Presence
 
   # How long an unfilled private lobby lives before it is cleaned up.
   @queue_ttl_ms 2 * 60 * 60 * 1000
@@ -23,8 +34,12 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   # reconnect, or a player leaving and rejoining.
   @empty_queue_ttl_ms 15 * 60 * 1000
   @sweep_interval_ms 5 * 60 * 1000
-  # Minimum seconds between two lobby creations by the same user.
-  @create_cooldown_s 120
+  # How long a seat is kept for a player whose page lost its connection.
+  @away_grace_ms 3 * 60 * 1000
+  # Minimum seconds between two lobby creations by the same user. Only there
+  # to absorb a double tap: a group whose game fell apart makes a new table
+  # straight away, and the network limit bounds everything else.
+  @create_cooldown_s 15
   @default_max_queues 100
   @uuid_regex ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
 
@@ -32,13 +47,17 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   def start_link(_args) do
     GenServer.start_link(
       __MODULE__,
-      %{queues: %{}, last_created: %{}, holders: QueueHolders.new()},
+      %{queues: %{}, last_created: %{}, holders: QueueHolders.new(), away: %{}},
       name: __MODULE__
     )
   end
 
-  def create_queue(id, owner_id, remote_ip \\ nil) do
-    GenServer.call(__MODULE__, {:create_queue, id, owner_id, remote_ip})
+  @doc """
+  Creates a lobby. `seat: name` seats the owner in it under that name, as
+  away until their lobby page arrives and takes the seat.
+  """
+  def create_queue(id, owner_id, remote_ip \\ nil, opts \\ []) do
+    GenServer.call(__MODULE__, {:create_queue, id, owner_id, remote_ip, opts})
   end
 
   @doc """
@@ -83,6 +102,14 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   end
 
   @doc """
+  Whether the player has a seat in the lobby, held by a page or kept for
+  them while they are away.
+  """
+  def seated?(id, user_id) do
+    GenServer.call(__MODULE__, {:seated, id, user_id})
+  end
+
+  @doc """
   The short tag a lobby is recorded under in logs, site events and game
   logs: the first 8 characters of its id. Enough to tell lobbies apart, not
   enough to join one.
@@ -97,8 +124,8 @@ defmodule Website45sV3.Game.PrivateQueueManager do
   end
 
   @impl true
-  def handle_call({:create_queue, id, owner_id, remote_ip}, _from, state) do
-    handle_create_queue(id, owner_id, remote_ip, state)
+  def handle_call({:create_queue, id, owner_id, remote_ip, opts}, _from, state) do
+    handle_create_queue(id, owner_id, remote_ip, opts, state)
   end
 
   def handle_call({:reopen_queue, id, owner_id}, _from, state) do
@@ -157,7 +184,11 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     {:reply, valid_queue_id?(id) and Map.has_key?(state.queues, id), state}
   end
 
-  defp handle_create_queue(id, owner_id, remote_ip, state) do
+  def handle_call({:seated, id, user_id}, _from, state) do
+    {:reply, seated?(state, id, user_id), state}
+  end
+
+  defp handle_create_queue(id, owner_id, remote_ip, opts, state) do
     now = System.system_time(:second)
     last = Map.get(state.last_created, owner_id, 0)
 
@@ -184,9 +215,24 @@ defmodule Website45sV3.Game.PrivateQueueManager do
 
         queues = Map.put(state.queues, id, new_queue(owner_id))
         last_created = Map.put(state.last_created, owner_id, now)
-        {:reply, :ok, %{state | queues: queues, last_created: last_created}}
+        state = %{state | queues: queues, last_created: last_created}
+        {:reply, :ok, seat_owner(state, id, owner_id, opts[:seat])}
     end
   end
+
+  # The owner's seat waits for the lobby page they are being sent to.
+  defp seat_owner(state, id, owner_id, name) when is_binary(name) do
+    if ActiveGames.find_game(owner_id) do
+      state
+    else
+      queue = shown_as(state.queues[id], owner_id, name)
+      seated = [{Matchmaking.assign_display_name(name, []), owner_id}]
+      state = put_in(state.queues[id], mark_empty(queue, seated))
+      mark_away(state, {id, owner_id}, nil)
+    end
+  end
+
+  defp seat_owner(state, _id, _owner_id, _name), do: state
 
   defp handle_add_player(id, incoming_name, user_id, remote_ip, holder, state) do
     case Map.fetch(state.queues, id) do
@@ -202,7 +248,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     cond do
       Enum.any?(players, fn {_n, id2} -> id2 == user_id end) ->
         holders = QueueHolders.hold(state.holders, caller, {id, user_id}, opts[:on_drop])
-        {:reply, :ok, %{state | holders: holders}}
+        {:reply, :ok, clear_away(%{state | holders: holders}, {id, user_id})}
 
       ActiveGames.find_game(user_id) != nil ->
         # One game per session: rejoin (or abandon) the running game first.
@@ -222,6 +268,7 @@ defmodule Website45sV3.Game.PrivateQueueManager do
 
         holders = QueueHolders.hold(state.holders, caller, {id, user_id}, opts[:on_drop])
 
+        queue = shown_as(queue, user_id, incoming_name)
         state = seat_players(id, queue, updated_players, %{state | holders: holders})
         {:reply, :ok, prune_holders(state)}
     end
@@ -229,7 +276,32 @@ defmodule Website45sV3.Game.PrivateQueueManager do
 
   # Stores the updated seating, starting (and removing) the lobby once it is
   # full. If the game could not start everyone stays seated for a retry.
+  #
+  # A kept seat can belong to a player who sat down at another table since
+  # (the public queue, another lobby); they lose this seat rather than be
+  # dealt into two games at once.
   defp seat_players(id, queue, players, state) when length(players) >= 4 do
+    case Enum.filter(players, fn {_name, user_id} -> ActiveGames.find_game(user_id) end) do
+      [] ->
+        start_lobby_game(id, queue, players, state)
+
+      busy ->
+        for {_name, user_id} <- busy do
+          Logger.info(
+            "Private lobby #{lobby_tag(id)}: #{QueueHolders.short_id(user_id)} dropped: " <>
+              "seated in another game"
+          )
+        end
+
+        put_in(state.queues[id], mark_empty(queue, players -- busy))
+    end
+  end
+
+  defp seat_players(id, queue, players, state) do
+    put_in(state.queues[id], mark_empty(queue, players))
+  end
+
+  defp start_lobby_game(id, queue, players, state) do
     case Matchmaking.start_game(players,
            rematch_id: Ecto.UUID.generate(),
            queue: "private",
@@ -240,25 +312,44 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     end
   end
 
-  defp seat_players(id, queue, players, state) do
-    put_in(state.queues[id], mark_empty(queue, players))
-  end
-
   # A process holding a seat exited. If it was the last one holding that
-  # player, they are gone: free the seat before a game starts with it.
+  # player: a page that lost its connection leaves them seated as away; any
+  # other exit means they are gone, so free the seat before a game starts
+  # with it.
   @impl true
-  def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
+  def handle_info({:DOWN, ref, :process, pid, reason}, state) do
     {entry, holders} = QueueHolders.down(state.holders, pid, ref)
     state = %{state | holders: holders}
 
     with %{key: {id, user_id} = key} <- entry,
          true <- seated?(state, id, user_id),
          false <- QueueHolders.held?(holders, key) do
-      {_result, state} = remove(state, id, user_id, "dropped: its page closed without leaving")
-      QueueHolders.notify_drop(entry)
-      {:noreply, state}
+      if connection_lost?(reason) do
+        Logger.info(
+          "Private lobby #{lobby_tag(id)}: #{QueueHolders.short_id(user_id)} away " <>
+            "(connection lost, seat kept)"
+        )
+
+        {:noreply, mark_away(state, key, entry.on_drop)}
+      else
+        {_result, state} = remove(state, id, user_id, "dropped: its page closed without leaving")
+        QueueHolders.notify_drop(entry)
+        {:noreply, state}
+      end
     else
       _ -> {:noreply, state}
+    end
+  end
+
+  def handle_info({:away_expired, {id, user_id} = key, ref}, state) do
+    case state.away do
+      %{^key => %{ref: ^ref} = entry} ->
+        {_result, state} = remove(state, id, user_id, "dropped: away too long")
+        QueueHolders.notify_drop(entry)
+        {:noreply, state}
+
+      _ ->
+        {:noreply, state}
     end
   end
 
@@ -328,12 +419,61 @@ defmodule Website45sV3.Game.PrivateQueueManager do
     end
   end
 
-  # Forgets the holders of players no longer seated in a live lobby.
+  # Forgets the holders, and the kept seats, of players no longer seated in a
+  # live lobby.
   defp prune_holders(state) do
     holders =
       QueueHolders.prune(state.holders, fn {id, user_id} -> seated?(state, id, user_id) end)
 
-    %{state | holders: holders}
+    state.away
+    |> Map.keys()
+    |> Enum.reject(fn {id, user_id} -> seated?(state, id, user_id) end)
+    |> Enum.reduce(%{state | holders: holders}, &clear_away(&2, &1))
+  end
+
+  # What a LiveView exits with when its socket closes under it: the phone
+  # went to another app, the network dropped, or the page was reloaded.
+  defp connection_lost?(reason), do: reason == {:shutdown, :closed}
+
+  # Keeps the seat of a player nobody is holding, for `@away_grace_ms`. The
+  # lobby shows who is seated from presence, so this process stands in for
+  # the missing page there.
+  defp mark_away(state, {id, user_id} = key, on_drop) do
+    state = clear_away(state, key)
+    ref = make_ref()
+    timer = Process.send_after(self(), {:away_expired, key, ref}, away_grace_ms())
+
+    with %{players: players} = queue <- state.queues[id],
+         {seated_as, _id} <- List.keyfind(players, user_id, 1) do
+      name = Map.get(queue[:shown] || %{}, user_id, seated_as)
+      Presence.track(self(), topic(id), user_id, %{display_name: name, away: true})
+    end
+
+    put_in(state.away[key], %{ref: ref, timer: timer, on_drop: on_drop})
+  end
+
+  # The name a player's own page shows on their card, which an away card
+  # keeps showing (the seated name may carry a number to tell players apart).
+  defp shown_as(queue, user_id, name) do
+    Map.put(queue, :shown, Map.put(queue[:shown] || %{}, user_id, name))
+  end
+
+  defp clear_away(state, {id, user_id} = key) do
+    case Map.pop(state.away, key) do
+      {nil, _away} ->
+        state
+
+      {%{timer: timer}, away} ->
+        Process.cancel_timer(timer)
+        Presence.untrack(self(), topic(id), user_id)
+        %{state | away: away}
+    end
+  end
+
+  defp topic(id), do: "private_queue:#{id}"
+
+  defp away_grace_ms do
+    Application.get_env(:website_45s_v3, :private_seat_grace_ms, @away_grace_ms)
   end
 
   defp new_queue(owner_id) do

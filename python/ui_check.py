@@ -147,7 +147,7 @@ class UiCheck:
         buttons = self.js(
             driver,
             """
-            return [...document.querySelectorAll('.queue-actions > button')]
+            return [...document.querySelectorAll('.queue-actions button')]
               .filter(b => b.offsetParent !== null)
               .map(b => {
                 const cs = getComputedStyle(b);

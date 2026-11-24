@@ -42,5 +42,7 @@ defmodule Website45sV3Web.Layouts do
 
   defp noindex_path?("/play"), do: true
   defp noindex_path?("/play/private/" <> _id), do: true
+  # Sign-in, registration and password pages: nothing there to find by search.
+  defp noindex_path?("/users/" <> _rest), do: true
   defp noindex_path?(_path), do: false
 end

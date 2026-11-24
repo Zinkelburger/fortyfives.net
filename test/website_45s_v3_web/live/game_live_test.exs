@@ -82,6 +82,7 @@ defmodule Website45sV3Web.GameLiveTest do
         | dealing_player_id: user_id,
           current_player_id: user_id,
           winning_bid: {20, bidder, :hearts},
+          bids: %{bidder => {20, :hearts}},
           bids_placed: 3,
           actions: ["Cat passed"],
           bagged: false
@@ -332,7 +333,7 @@ defmodule Website45sV3Web.GameLiveTest do
 
       {:ok, _view, html} = live(anon_conn(conn, on_turn), ~p"/game/#{game_name}")
       assert html =~ "Your turn"
-      assert html =~ "played-cards"
+      assert html =~ ~s(id="table")
 
       {:ok, _view, html} = live(anon_conn(conn, waiting), ~p"/game/#{game_name}")
       assert html =~ "#{state.player_map[on_turn]}&#39;s turn"
@@ -367,8 +368,9 @@ defmodule Website45sV3Web.GameLiveTest do
       {:ok, view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
 
       refute html =~ "You can hold at"
-      assert html =~ ~r/High bid:\s*<span class="facts-name">Ann<\/span>20/
-      assert html =~ "Dealer: You"
+      # The bid to hold is under its bidder; dealing is on your own line.
+      assert html =~ ~r/id="seat-chip-1".*Ann.*20.*♥/s
+      assert html =~ ~r/class="hand-seat".*You.*Dealer/s
       assert html =~ ~s(data-dealer="true")
       assert html =~ ~s(data-current-bid="20")
       # 15 is below the bid, 20 is the hold, 25 raises
@@ -386,6 +388,26 @@ defmodule Website45sV3Web.GameLiveTest do
       assert state.trump == :clubs
 
       assert render(view) =~ ~s(data-phase="Discard")
+    end
+
+    test "a bid selected but not confirmed does not go in when the clock runs out",
+         %{conn: conn} do
+      user = unique("glt_user_")
+      {game_name, pid} = start_game(user)
+      :sys.replace_state(pid, fn state -> %{state | current_player_id: user} end)
+
+      {:ok, view, _html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      view |> element(~s(button[phx-value-bid-number="20"])) |> render_click()
+      view |> element(~s(button[phx-value-bid-suit="clubs"])) |> render_click()
+
+      send(pid, {:idle_timeout, user, :bidding})
+
+      wait_until(fn ->
+        MapSet.member?(GameController.get_game_state(pid).auto_play_players, user)
+      end)
+
+      events = GameController.get_game_state(pid).events
+      refute Enum.any?(events, &(&1["e"] == "bid" and &1["b"] == false))
     end
 
     test "a non-dealer must outbid", %{conn: conn} do
@@ -522,6 +544,61 @@ defmodule Website45sV3Web.GameLiveTest do
       assert html =~ ~r/id="seat-chip-2".*Ben.*partner.*Pass/s
     end
 
+    test "the winning bid stays under its bidder for the rest of the hand", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      [_me, ann, ben, _cat] = GameController.get_game_state(pid).player_ids
+
+      :sys.replace_state(pid, fn state -> %{state | current_player_id: ann} end)
+      send(pid, {:player_bid, ann, "20", :spades})
+      drive_to_discard(pid)
+
+      {:ok, view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      assert html =~ ~s(data-phase="Discard")
+      assert html =~ ~r/id="seat-chip-1".*Ann.*20.*♠.*id="seat-chip-2"/s
+      # Passes are not kept once the bidding is over.
+      refute html =~ "Pass"
+      # The trick's places and trump are set out before the first card.
+      assert html =~ ~s(id="table")
+      assert html =~ ~s(id="trump-chip")
+
+      keep =
+        GameController.get_game_state(pid).hands[ben] |> Enum.take(5) |> Enum.map(&Card.encode/1)
+
+      send(pid, {:confirm_discard, ben, keep})
+      wait_until(fn -> ben in GameController.get_game_state(pid).received_discards_from end)
+      assert render(view) =~ ~r/id="seat-chip-2".*Ben.*Ready.*id="seat-chip-3"/s
+
+      drive_to_playing(pid)
+      html = render(view)
+      assert html =~ ~s(data-phase="Playing")
+      assert html =~ ~r/id="seat-chip-1".*Ann.*20.*♠.*id="seat-chip-2"/s
+      refute html =~ "Ready"
+    end
+
+    test "your own bid shows above your hand", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+
+      :sys.replace_state(pid, fn state -> %{state | current_player_id: user} end)
+      send(pid, {:player_bid, user, "25", :diamonds})
+      drive_to_playing(pid)
+
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      assert html =~ ~r/class="hand-seat".*You.*25.*♦.*Tricks: You 0 · Them 0/s
+    end
+
+    test "the hand keeps its height after the last card is played", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      drive_to_playing(pid)
+
+      :sys.replace_state(pid, fn state -> %{state | hands: Map.put(state.hands, user, [])} end)
+
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      assert html =~ "hand-placeholder"
+    end
+
     test "the hand is sorted: trump first, best to worst", %{conn: conn} do
       user = unique("info_user_")
       {game_name, pid} = start_game(user)
@@ -549,6 +626,35 @@ defmodule Website45sV3Web.GameLiveTest do
       # 5 and J of trump, then the ace of hearts (always trump), then the
       # other suits alternating colour.
       assert order == ["5_spades", "11_spades", "1_hearts", "2_clubs", "13_diamonds"]
+
+      # Trump is a chip on the table; the hand's order is the only thing
+      # that sets its trump cards apart.
+      assert html =~ ~r/id="trump-chip"[^>]*>\s*<span class="trump-chip-suit"[^>]*>♠/
+      refute html =~ ~s(class="trump-chip red-suit")
+      refute html =~ "trump-card"
+    end
+
+    test "no trump is shown before it is named", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, _pid} = start_game(user)
+
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      assert html =~ ~s(data-phase="Bidding")
+      refute html =~ "trump-chip"
+    end
+
+    test "a seat taken by a bot says so and offers to resume", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      drive_to_playing(pid)
+      :sys.replace_state(pid, &%{&1 | auto_play_players: MapSet.new([user])})
+
+      # The first render: joining the table again hands the seat back.
+      html = conn |> anon_conn(user) |> get(~p"/game/#{game_name}") |> html_response(200)
+      assert html =~ "Bot playing · Tap to resume"
+      assert html =~ ~s(data-auto-playing="true")
+      assert html =~ ~r/id="resume-control-overlay"[^>]*>Resume playing</
+      refute html =~ ~s(id="play-card-button")
     end
 
     test "on your turn the countdown knows when a bot takes over", %{conn: conn} do
@@ -559,6 +665,26 @@ defmodule Website45sV3Web.GameLiveTest do
       {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
       [ms] = Regex.run(~r/data-ms-left="(\d+)"/, html, capture: :all_but_first)
       assert String.to_integer(ms) in 1..GameController.timing(:idle_timeout)
+    end
+
+    test "the hand's edge drains over the whole turn, and only on your turn", %{conn: conn} do
+      user = unique("info_user_")
+      {game_name, pid} = start_game(user)
+      edge = ~r/<span[^>]*id="turn-edge"[^>]*>/
+      total = GameController.timing(:idle_timeout)
+
+      :sys.replace_state(pid, &%{&1 | current_player_id: user})
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      [mine] = Regex.run(edge, html)
+      assert mine =~ ~s(data-ms-total="#{total}")
+      [ms] = Regex.run(~r/data-ms-left="(\d+)"/, mine, capture: :all_but_first)
+      assert String.to_integer(ms) in 1..total
+
+      [_me, ann | _] = GameController.get_game_state(pid).player_ids
+      :sys.replace_state(pid, &%{&1 | current_player_id: ann})
+      {:ok, _view, html} = conn |> anon_conn(user) |> live(~p"/game/#{game_name}")
+      [theirs] = Regex.run(edge, html)
+      refute theirs =~ "data-ms-left"
     end
 
     test "a finished trick names and marks its winner", %{conn: conn} do

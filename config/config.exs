@@ -15,9 +15,10 @@ config :website_45s_v3,
   ecto_repos: [Website45sV3.Repo],
   security_rate_limits: [
     login: [window_ms: 15 * 60 * 1000, max_ip: 30, max_account: 8],
-    queue: [window_ms: 60 * 60 * 1000, max_ip: 40, max_create_ip: 10],
+    queue: [window_ms: 60 * 60 * 1000, max_ip: 120, max_create_ip: 10],
     registration: [window_ms: 60 * 60 * 1000, max_ip: 5],
-    email: [window_ms: 60 * 60 * 1000, max_ip: 20, max_address: 5]
+    email: [window_ms: 60 * 60 * 1000, max_ip: 20, max_address: 5],
+    bots: [window_ms: 10 * 60 * 1000, max_ip: 30]
   ]
 
 # Gameplay analytics retention (see Website45sV3.Analytics). Recording can

@@ -98,6 +98,12 @@ defmodule Website45sV3.Game.GameController do
   def get_player_view(pid, player_id), do: GenServer.call(pid, {:get_player_view, player_id})
 
   @doc """
+  The tag of the private lobby the game started from, or `nil` for a game
+  from the public queue.
+  """
+  def lobby(pid), do: GenServer.call(pid, :lobby)
+
+  @doc """
   Builds the per-seat view broadcast to players: only their own hand and
   legal moves, card counts for everyone, and the shared table state.
   """
@@ -553,6 +559,8 @@ defmodule Website45sV3.Game.GameController do
 
   @impl true
   def handle_call(:get_game_state, _from, state), do: {:reply, state, state}
+
+  def handle_call(:lobby, _from, state), do: {:reply, state.lobby, state}
 
   def handle_call({:get_player_view, player_id}, _from, state) do
     if player_id in state.player_ids and not abandoned?(state, player_id) do

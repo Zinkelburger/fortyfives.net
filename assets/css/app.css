@@ -278,21 +278,64 @@ input[type='checkbox'], input[type='radio'] {
         margin: 0;
 }
 
+.site-header nav {
+        min-width: 0;
+}
+
 .navbar-list {
         margin: 0;
+        padding: 0;
         display: flex;
-        flex-direction: column;
-        justify-content: center;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
         list-style-type: none;
 }
 
 .navbar-list-element {
-        margin-bottom: 8px;
+        margin: 0;
         line-height: 1;
 }
 
 .navbar-link {
-        font-size: 1.25rem;
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 0 14px;
+        border-radius: 8px;
+        color: #d2e8f9;
+        font-size: 1.05rem;
+        font-weight: 400;
+        white-space: nowrap;
+        transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.navbar-link:hover, .navbar-link:focus {
+        color: #ffffff;
+        background-color: rgba(210, 232, 249, 0.1);
+}
+
+.navbar-link:active {
+        background-color: rgba(210, 232, 249, 0.18);
+}
+
+/* Play is the one action in the header; the account links stay quiet. */
+.navbar-play, .navbar-play:focus {
+        margin-right: 6px;
+        padding: 0 20px;
+        color: #040b12;
+        background-color: #81cbf8;
+        font-weight: 500;
+}
+
+.navbar-play:hover {
+        color: #040b12;
+        background-color: #a9d6f5;
+}
+
+.navbar-play:active {
+        background-color: #6cbcec;
 }
 
 /* Buttons */
@@ -536,10 +579,27 @@ input[type='checkbox'], input[type='radio'] {
         color: #d2e8f9;
 }
 
-.list-container {
-        max-width: 315px;
-        margin: 0 auto;
-        text-align: left;
+.learn-start {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem 2rem;
+}
+
+.learn-toc {
+        display: flex;
+        gap: 1.5rem;
+        font-size: 1.125rem;
+        font-weight: 400;
+}
+
+.learn-toc a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        text-decoration: underline;
+        text-underline-offset: 0.2em;
 }
 
 /* Lobby / queue page */
@@ -616,6 +676,24 @@ input[type='checkbox'], input[type='radio'] {
         color: #d2e8f9;
 }
 
+/* A seat the lobby is keeping for a player whose page lost its connection. */
+.player-card-away {
+        background-color: transparent;
+        box-shadow: none;
+        outline: 1px dashed #4d7491;
+        outline-offset: -1px;
+}
+
+.player-card-away p:first-child {
+        opacity: 0.7;
+}
+
+.player-card-note {
+        margin: 2px 0 0;
+        font-size: 0.85rem;
+        color: #9fc3dc;
+}
+
 .queue-actions {
         display: inline-flex;
         flex-wrap: wrap;
@@ -624,8 +702,63 @@ input[type='checkbox'], input[type='radio'] {
         gap: 0.5rem;
 }
 
-.queue-actions > button {
+.queue-actions button {
         margin-bottom: 0;
+}
+
+/* After a wait in the public queue: a ring on "Add a bot" and, under it,
+   how many bots would start the game. The ring and the arrow move three
+   times and then rest. */
+.bot-button-wrap {
+        position: relative;
+        display: inline-flex;
+}
+
+/* Room for the hint, which hangs below the row without moving the buttons. */
+.queue-actions:has(.bot-hint-on) {
+        margin-bottom: 3.5rem;
+}
+
+.bot-hint-on .request-bot-button {
+        animation: bot-hint-ring 1.6s cubic-bezier(0.16, 1, 0.3, 1) 3;
+}
+
+.bot-hint {
+        position: absolute;
+        top: calc(100% + 0.4rem);
+        left: 50%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        white-space: nowrap;
+        font-size: 1.05rem;
+        font-weight: 500;
+        line-height: 1.4;
+        color: #d2e8f9;
+        pointer-events: none;
+        transform: translateX(-50%);
+        animation: bot-hint-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.bot-hint svg {
+        width: 1.25rem;
+        height: 1.25rem;
+        color: #81cbf8;
+        animation: bot-hint-nudge 1.6s cubic-bezier(0.16, 1, 0.3, 1) 3;
+}
+
+@keyframes bot-hint-in {
+        from { opacity: 0; transform: translate(-50%, 0.4rem); }
+}
+
+@keyframes bot-hint-ring {
+        from { box-shadow: 0 0 0 0 rgba(129, 203, 248, 0.7); }
+        to { box-shadow: 0 0 0 0.5rem rgba(129, 203, 248, 0); }
+}
+
+@keyframes bot-hint-nudge {
+        0%, 100% { transform: translateY(0); }
+        30% { transform: translateY(-0.25rem); }
 }
 
 .request-bot-button {
@@ -808,14 +941,19 @@ input[type='checkbox'], input[type='radio'] {
 .score-button { min-height: 44px; min-width: 44px; border: 1px solid #49677b; border-radius: 9px; padding: 6px 10px; color: #d2e8f9; background: #102c40; font-size: .875rem; cursor: pointer; }
 .score-button:hover { background: #1b3d54; }
 
-/* Phase first, then the next action and the facts of the hand. */
+/* The next action first, then the facts of the hand. The phase title is
+   shown only between hands; during one the table says which phase it is. */
 .game-status { display: grid; gap: 2px; min-width: 0; }
 .phase-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .game .phase-title { font-size: 2rem; font-weight: 700; line-height: 1.15; letter-spacing: -.025em; color: #f0f7fc; }
-.turn-line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 24px; }
-.turn-text { flex: 1; min-width: 0; font-size: 1rem; font-weight: 400; line-height: 1.3; overflow-wrap: anywhere; }
-.turn-clock { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--won); color: #071f31; font-size: .8125rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.turn-line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 28px; }
+.turn-text { flex: 1; min-width: 0; font-size: 1.25rem; font-weight: 700; line-height: 1.25; color: #f0f7fc; overflow-wrap: anywhere; }
+.turn-clock { flex: none; min-width: 6em; padding: 1px 8px; border-radius: 999px; background: var(--won); color: #071f31; font-size: .8125rem; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; }
 .turn-clock:empty { display: none; }
+/* The pill holds its place from the start of your turn wherever the line
+   beside it has the room (TurnClock decides), so nothing rewraps when the
+   last ten seconds begin. */
+.turn-clock-held[data-ms-left]:empty { display: block; visibility: hidden; }
 /* On a narrow phone the second fact wraps rather than cutting off the bid;
    only a long player name is shortened. */
 .game-facts { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 12px; min-width: 0; min-height: 18px; font-size: .8125rem; line-height: 1.4; color: var(--muted); }
@@ -824,23 +962,42 @@ input[type='checkbox'], input[type='radio'] {
 .facts-main { display: flex; align-items: baseline; gap: .3em; min-width: 0; max-width: 100%; }
 .facts-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .game-facts .trump { color: #d2e8f9; font-weight: 700; }
+.game-live .game-facts { font-size: .875rem; }
 .suit { color: #fff; }
 .suit-red { color: var(--red-suit); }
 .connection-notice { font-size: .8125rem; font-weight: 700; color: var(--won); }
 
 .game-play-area { display: grid; gap: 12px; flex: 1; align-content: space-between; grid-template-rows: minmax(min-content, 1fr) auto; min-width: 0; }
-.phase-area { min-width: 0; display: grid; align-content: center; gap: 12px; }
+.phase-area { position: relative; min-width: 0; display: grid; align-content: center; gap: 12px; }
+
+/* Trump sits on the table beside your own card, in the chip the suit was
+   bid with, from the keep to the last trick. */
+.trump-chip { grid-area: 2 / 1; align-self: end; justify-self: start; display: grid; justify-items: center; min-width: 58px; padding: 6px 10px 5px; border-radius: 9px; background: #e5eff5; color: #071f31; line-height: 1; pointer-events: none; }
+.trump-chip-suit { font-size: 2.75rem; line-height: .95; }
+.trump-chip.red-suit .trump-chip-suit { color: #b51b32; }
+.trump-chip-label { font-size: .75rem; font-weight: 700; line-height: 1.3; }
 .game-hint { font-size: .875rem; color: var(--muted); line-height: 1.45; }
 
-/* While bidding and keeping, the four seats sit where the trick will be played. */
+/* One table for the whole hand. The other three players sit in a row that
+   never moves, each with their bid beneath their name; under it come the
+   bid keys, then the trick. */
+.hand-area { --seat-cols: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr); gap: 8px; }
+.game.game-live[data-phase] .hand-area { grid-template-rows: auto minmax(0, 1fr); align-content: stretch; container-type: normal; min-height: 0; }
+.seat-row { display: grid; grid-template-columns: var(--seat-cols); gap: 4px; justify-items: center; }
+.seat-row .seat-chip { max-width: 210px; }
+.seat-line { display: flex; justify-content: center; min-width: 0; }
+span.seat-status { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; color: #f0f7fc; }
+.seat-note { font-size: .8125rem; font-weight: 400; color: var(--muted); }
+/* A bid that has been beaten steps back; the one to beat stays bright. */
+.outbid { font-weight: 400; color: #86a4b8; }
+.outbid .suit { opacity: .7; }
+.seat-chip.trick-winner { border-color: var(--won); }
+.seat-chip.trick-winner .seat-name { color: var(--won); font-weight: 700; }
+.hand-area .bidding-panel { align-self: end; }
+
+/* The seats of the analysis board. */
 .game[data-phase="Bidding"] .phase-area, .game[data-phase="Discard"] .phase-area { grid-template-rows: minmax(min-content, 1fr) auto; align-content: stretch; }
 .seat-table { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, auto); align-content: space-evenly; align-items: center; justify-items: center; gap: 6px 4px; width: 100%; max-width: 460px; height: 100%; max-height: 360px; margin: 0 auto; align-self: center; border-radius: 40%; background: radial-gradient(ellipse, #123b50 0%, #0b293d 60%, transparent 72%); }
-.seat-table .seat-1 { grid-area: 2 / 1; }
-.seat-table .seat-3 { grid-area: 2 / 3; }
-/* Partner and you have the whole row, so a long name can use more of it. */
-.seat-table .seat-2 { grid-area: 1 / 1 / 2 / -1; }
-.seat-table .seat-0 { grid-area: 3 / 1 / 4 / -1; }
-.seat-table .seat-2, .seat-table .seat-0 { width: max-content; min-width: min(130px, 100%); max-width: min(100%, 240px); }
 .seat-chip { width: 100%; max-width: 130px; min-width: 0; padding: 5px 6px; border: 1px solid var(--line); border-radius: 10px; background: #0b263a; text-align: center; }
 .seat-chip.seat-on-turn { border-color: var(--accent); }
 .seat-name, .player-name { display: flex; justify-content: center; gap: 4px; min-width: 0; max-width: 100%; font-size: .8125rem; line-height: 1.4; color: var(--muted); }
@@ -856,7 +1013,7 @@ input[type='checkbox'], input[type='radio'] {
 .game .blue-button, .score-overlay .blue-button { min-height: 48px; padding: 8px 16px; border: 2px solid transparent; border-radius: 9px; font-size: 1rem; line-height: 1.25; font-weight: 700; background: #0069d9; color: #fff; }
 .game .blue-button.active { border-color: #d2e8f9; background: #0854a4; }
 .game button:disabled { cursor: default; }
-.game .blue-button:disabled { background: #173449; color: #8eabbf; }
+.game .blue-button:disabled { background: #173449; color: #8eabbf; opacity: 1; }
 .suit-button { min-height: 48px; border: 2px solid transparent; border-radius: 9px; font-size: 1.8rem; line-height: 1; background: #e5eff5; color: #071f31; cursor: pointer; }
 .suit-button.red-suit { color: #b51b32; }
 .suit-button.active { border-color: var(--accent); box-shadow: 0 0 0 2px #0069d9; }
@@ -865,15 +1022,77 @@ input[type='checkbox'], input[type='radio'] {
 .game .pass-button { background: #16374e; border-color: #49677b; }
 .game .pass-button.active { background: #0854a4; border-color: #d2e8f9; }
 
+/* The live table's call: Pass, or a number and a suit. Pass is one tall key
+   beside the two rows. Every key is the light chip trump is later shown in;
+   the one picked gets the ring and tick a selected card gets, and the ones
+   it rules out step back. */
+.bid-keys { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 4fr); gap: 8px; }
+.bid-keys .pass-key { grid-row: 1 / 3; }
+.bid-keys .bid-numbers, .bid-keys .bid-suits { grid-column: 2; }
+.bid-key { position: relative; min-height: 48px; padding: 0 2px; border: 0; border-radius: 9px; background: #e5eff5; color: #071f31; font-size: 1.125rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; box-shadow: inset 0 -3px 0 #b3c5d2, 0 2px 4px #0006; }
+.bid-keys .bid-suits .bid-key { font-size: 1.8rem; }
+.bid-key.red-suit { color: #b51b32; }
+.bid-key:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 -1px 0 #b3c5d2; }
+@media (hover: hover) { .bid-key:hover:not(:disabled) { background: #fff; } }
+.bid-key.active { background: #fff; outline: 3px solid var(--accent); outline-offset: 0; }
+.key-check { display: none; position: absolute; right: -4px; top: -4px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #041624; font-size: 14px; font-weight: 700; line-height: 20px; }
+.bid-key.active .key-check { display: block; }
+.bid-keys:has(.pass-key.active) .bid-key:not(.active),
+.bid-keys:has(.bid-numbers .active, .bid-suits .active) .pass-key,
+.bid-numbers:has(.active) .bid-key:not(.active),
+.bid-suits:has(.active) .bid-key:not(.active) { background: #a9bccb; box-shadow: inset 0 -3px 0 #8ea4b4, 0 2px 4px #0006; }
+.bid-key:disabled, .bid-keys .bid-key:disabled { background: #132f43; color: #7f9db1; box-shadow: none; }
+.bid-key.red-suit:disabled { color: #bd6f7c; }
+@media (forced-colors: active) { .bid-key.active { outline-color: Highlight; } }
+
 .hand-panel { width: 100%; max-width: 600px; margin: 0 auto; padding: 10px; display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 14px; background: #0b263a; }
 .player-hand { display: grid; grid-template-columns: repeat(5, minmax(0, var(--hand-card))); gap: 6px; justify-content: center; padding: 3px; }
 .player-hand-eight { grid-template-columns: repeat(4, minmax(0, var(--hand-card))); }
 .card-button { position: relative; width: 100%; min-width: 0; border: 0; border-radius: 6px; background: transparent; padding: 0; cursor: pointer; align-self: start; }
-.player-hand img { display: block; width: 100%; aspect-ratio: 5 / 8; height: auto; border-radius: 5px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.player-hand img { display: block; width: 100%; aspect-ratio: 160 / 245; height: auto; border-radius: 5px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .card-button[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+/* Five cards or fewer overlap like a held hand, so each can be wider than a
+   fifth of the panel. The strip left showing is always more than half a
+   card, which keeps the corner index readable and the card's centre tappable. */
+.hand-fan {
+  --fan-card: min(var(--fan-max, 100px), 30cqw, 12.3svh);
+  --fan-gap: min(6px, calc((100cqw - var(--n, 5) * var(--fan-card)) / (var(--n, 5) - 1)));
+  display: flex; justify-content: center; gap: 0; padding: 8px 3px 3px; container-type: inline-size;
+}
+.hand-fan[data-count="1"] { --n: 1; --fan-gap: 0px; }
+.hand-fan[data-count="2"] { --n: 2; }
+.hand-fan[data-count="3"] { --n: 3; }
+.hand-fan[data-count="4"] { --n: 4; }
+.hand-fan .card-button { flex: none; width: var(--fan-card); transition: transform .12s cubic-bezier(.16, 1, .3, 1); }
+.hand-fan .card-button + .card-button { margin-left: var(--fan-gap); }
+.hand-fan .card-button[aria-pressed="true"] { transform: translateY(-8px); }
+.hand-fan .card-button:not(:last-child) .card-check { right: auto; left: min(calc(var(--fan-card) - 19px), calc(var(--fan-card) + var(--fan-gap) - 25px)); }
+
+.game-live .card-button[aria-pressed="true"] { outline-offset: 0; }
+
+/* A face still on its way is a blank card, never a hole in the hand or trick. */
+.game-live .card { background: #e9eef1; }
 .card-check { display: none; position: absolute; right: -3px; top: -3px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #041624; font-size: 15px; font-weight: 700; text-align: center; line-height: 22px; }
 .card-button[aria-pressed="true"] .card-check { display: block; }
 .grayed-out { opacity: .4; }
+/* Overlapping cards are dimmed without becoming see-through. */
+.game-live .grayed-out { opacity: 1; filter: brightness(.45) saturate(.6); }
+
+/* A bot has the seat: gold status line, dimmed hand, ringed panel. */
+.game-live[data-auto-playing="true"] .turn-text { color: var(--won); }
+.game-live .hand-panel[data-auto-playing="true"] { outline: 2px solid var(--won); outline-offset: -2px; }
+.game-live .hand-panel[data-auto-playing="true"] .card { filter: brightness(.45) saturate(.6); }
+/* The hand's top edge drains over the turn. */
+.game-live .hand-panel { position: relative; }
+.turn-edge { position: absolute; top: -2px; left: 14px; right: 14px; height: 3px; border-radius: 2px; background: var(--accent); transform-origin: left; transition: transform .25s linear; pointer-events: none; }
+.turn-edge:not([data-ms-left]) { display: none; }
+@media (forced-colors: active) { .turn-edge { background: CanvasText; } }
+/* Your own seat: what the others see under your name, and the tricks so far. */
+.hand-seat { display: flex; justify-content: space-between; align-items: center; gap: 8px; height: 22px; padding: 0 3px; font-size: .8125rem; line-height: 1.4; color: var(--muted); }
+.hand-seat-me { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.hand-tricks { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hand-placeholder { flex: none; width: var(--fan-card); aspect-ratio: 160 / 245; visibility: hidden; }
 .selection-summary { min-height: 20px; text-align: center; font-size: .875rem; color: var(--muted); overflow-wrap: anywhere; }
 .hand-action { width: 100%; }
 
@@ -883,20 +1102,39 @@ input[type='checkbox'], input[type='radio'] {
 .played-cards { width: 100%; }
 .table { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; align-items: center; justify-items: center; width: 100%; max-width: 650px; margin: auto; gap: 8px 4px; padding: 8px 0; border-radius: 40%; background: radial-gradient(ellipse, #123b50 0%, #0b293d 60%, transparent 72%); }
 .player-slot { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; width: 100%; }
-.player-0 { grid-column: 2; grid-row: 2; }
-.player-2 { grid-column: 2; grid-row: 1; }
-.player-1 { grid-column: 1; grid-row: 1 / 3; }
-.player-3 { grid-column: 3; grid-row: 1 / 3; }
 .table img, .empty-card {
   width: 64px;
-  width: clamp(28px, min(28cqw, calc((100cqh - 76px) / 3.2)), 90px);
-  aspect-ratio: 5 / 8; height: auto; border-radius: 5px;
+  width: clamp(28px, min(28cqw, calc((100cqh - 76px) / 3.0625)), 90px);
+  aspect-ratio: 160 / 245; height: auto; border-radius: 5px;
+}
+/* The live table's trick: the others' cards under their names in the seat
+   row's columns, yours below, each as large as the height allows. The
+   places are there from the keep on, wherever there is room for them. */
+.trick { display: grid; grid-template-columns: var(--seat-cols); grid-template-rows: 1fr 1fr; align-items: center; justify-items: center; gap: 6px 4px; min-height: 0; container-type: size; }
+/* In play the floor stays above the 105px query below, so the played cards
+   never drop out; short screens scroll instead. */
+.game-live[data-phase="Playing"] .trick { min-height: max(112px, min(140px, 25svh)); }
+.slot-1 { grid-area: 1 / 1; }
+.slot-2 { grid-area: 1 / 2; }
+.slot-3 { grid-area: 1 / 3; }
+.slot-0 { grid-area: 2 / 2; }
+.trick img, .trick .empty-card { display: block; width: clamp(28px, min(27cqw, calc((100cqh - 6px) / 3.0625)), 90px); }
+/* Too short for cards before play: drop the empty places, keep trump. */
+@container (max-height: 105px) {
+  .game:not([data-phase="Playing"]) .trick-slot { display: none; }
+  .trick .trump-chip { min-width: 40px; padding: 3px 6px 2px; }
+  .trick .trump-chip-suit { font-size: 1.25rem; }
+  .trick .trump-chip-label { font-size: .625rem; }
+}
+@keyframes card-played { from { opacity: 0; transform: translateY(8px) scale(.95); } }
+.game-live .trick img { animation: card-played .18s cubic-bezier(.16, 1, .3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .game-live .trick img { animation: none; }
+  .hand-fan .card-button { transition: none; }
 }
 .empty-card { border: 1px dashed #446074; background: #04162433; }
 .seat-on-turn .empty-card { border-color: var(--accent); }
-/* Nothing sits beside the partner's name, so it may use the table's width. */
-.player-2 .player-name { width: max-content; max-width: min(92cqw, 360px); }
-.trick-done .player-slot:not(.trick-winner) img { opacity: .45; }
+.trick-done .player-slot:not(.trick-winner) img, .trick-done .trick-slot:not(.trick-winner) img { opacity: .45; }
 .trick-winner img { outline: 3px solid var(--won); outline-offset: 2px; }
 .trick-winner .player-name { color: var(--won); font-weight: 700; }
 
@@ -935,15 +1173,16 @@ dialog.score-overlay::backdrop { background: transparent; }
 .game[data-phase="Scoring"] .scoring-panel, .game[data-phase="Final Scoring"] .scoring-panel { margin: 4px auto 0; }
 
 @media (min-width: 700px) and (min-height: 601px) {
-  .game { --hand-card: 100px; gap: 16px; padding: 20px 32px; }
+  .game { --hand-card: 100px; --fan-max: 112px; gap: 16px; padding: 20px 32px; }
   .game-play-area { max-width: 800px; width: 100%; margin: auto; }
   .game-header { gap: 16px; }
   .game-score { flex-direction: row; gap: 20px; }
   .game-score span { flex-direction: row; gap: 8px; font-size: 1rem; }
   .game-score strong { font-size: 1.5rem; }
   .game .phase-title { font-size: 2.5rem; }
-  .turn-text { font-size: 1.125rem; }
+  .turn-text { font-size: 1.5rem; }
   .game-facts, .seat-name, .player-name { font-size: .9375rem; }
+  .game-live .game-facts { font-size: 1rem; }
   .hand-panel { padding: 16px; }
   .player-hand-eight { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 }
@@ -952,10 +1191,9 @@ dialog.score-overlay::backdrop { background: transparent; }
   .game .phase-title { font-size: 1.625rem; }
   /* Not enough height for the table: one row of left, partner, right. */
   .seat-table { grid-template-columns: 1fr 1.4fr 1fr; grid-template-rows: auto; height: auto; background: none; }
-  .seat-table .seat-0 { display: none; }
-  .seat-table .seat-1 { grid-area: 1 / 1; }
-  .seat-table .seat-2 { grid-area: 1 / 2; width: 100%; min-width: 0; }
-  .seat-table .seat-3 { grid-area: 1 / 3; }
+  .trump-chip { min-width: 48px; padding: 4px 8px 3px; }
+  .trump-chip-suit { font-size: 1.875rem; }
+  .seat-row .seat-chip { padding: 3px 4px; }
   .game-header { padding-bottom: 4px; }
   .hand-panel { padding: 8px; gap: 5px; }
   .table { padding: 2px 0; gap: 4px; }
@@ -964,11 +1202,14 @@ dialog.score-overlay::backdrop { background: transparent; }
 @media (max-height: 550px) and (orientation: portrait) {
   .game { --hand-card: 52px; gap: 4px; padding-top: max(4px, env(safe-area-inset-top)); padding-bottom: max(6px, env(safe-area-inset-bottom)); }
   .hand-panel { padding: 6px; gap: 4px; }
+  .hand-fan { --fan-card: min(30cqw, 10.8svh); }
+  .turn-line { min-height: 22px; }
+  .turn-text { font-size: 1.0625rem; }
   .game[data-phase="Playing"] .phase-area { min-height: 30svh; }
 }
 @media (orientation: landscape) and (max-height: 600px) and (min-width: 500px) {
   .game { --hand-card: 56px; padding-top: 6px; padding-bottom: 6px; }
-  .game-status { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 4px 16px; }
+  .game-status { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: center; gap: 4px 16px; }
   .phase-heading { grid-column: 1; grid-row: 1; }
   .turn-line { grid-column: 1; grid-row: 2; }
   .game-facts { grid-column: 2; grid-row: 1 / 3; }
@@ -976,13 +1217,27 @@ dialog.score-overlay::backdrop { background: transparent; }
   .connection-notice { grid-column: 1 / -1; }
   .game-play-area { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; align-items: center; gap: 16px; }
   .game[data-phase="Playing"] .phase-area { align-self: stretch; }
+  /* The seats keep the top of their column in every phase. */
+  .game-live .hand-area { align-self: stretch; }
   .hand-panel { padding: 6px; gap: 4px; }
+  .hand-fan { --fan-card: min(76px, 30cqw, 19svh); }
+  .game-live .turn-line { min-height: 24px; }
+  .hand-seat { height: 18px; }
   .player-hand-eight { grid-template-columns: repeat(4, minmax(0, 36px)); }
   .game[data-phase="Scoring"] .game-play-area, .game[data-phase="Final Scoring"] .game-play-area { grid-template-columns: 1fr; }
-  .game[data-phase="Discard"] .game-play-area { grid-template-columns: 1fr; grid-template-rows: auto auto; gap: 4px; align-content: center; }
+  .game:not(.game-live)[data-phase="Discard"] .game-play-area { grid-template-columns: 1fr; grid-template-rows: auto auto; gap: 4px; align-content: center; }
   .game[data-phase="Discard"] .seat-table { display: none; }
-  .game[data-phase="Discard"] .hand-panel { max-width: 750px; }
-  .game[data-phase="Discard"] .player-hand-eight { grid-template-columns: repeat(8, minmax(0, 60px)); }
+  .game:not(.game-live)[data-phase="Discard"] .hand-panel { max-width: 750px; }
+  .game:not(.game-live)[data-phase="Discard"] .player-hand-eight { grid-template-columns: repeat(8, minmax(0, 60px)); }
+  /* Eight cards to keep from need the full width in one row; that player's
+     own line above the hand carries the bid and trump. Everyone else keeps
+     the table beside their five cards, as in play. */
+  /* Beside the table the hand is half as wide; its one line of help stays one line. */
+  .game-live .selection-summary { font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .game-live .keep-eight { grid-template-columns: 1fr; grid-template-rows: auto; align-content: center; }
+  .game-live .keep-eight .hand-area { display: none; }
+  .game-live .keep-eight .hand-panel { max-width: 750px; }
+  .game-live .keep-eight .player-hand-eight { grid-template-columns: repeat(8, minmax(0, 60px)); }
   .game .scoring-panel { max-width: 850px; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
   .game .score-totals { grid-column: 1; }
   .game .score-totals > div { padding: 6px; }
@@ -995,13 +1250,19 @@ dialog.score-overlay::backdrop { background: transparent; }
 @media (max-width: 600px) {
   html { font-size: 16px; }
   .site-header { gap: .5rem; }
-  .navbar-list { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 0 .4rem; }
-  .navbar-list-element { margin-bottom: 0; }
-  .navbar-link { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; font-size: 1rem; }
+  .navbar-list { gap: 0 2px; }
+  .navbar-link { padding: 0 8px; font-size: 1rem; }
+  .navbar-play, .navbar-play:focus { margin-right: 2px; padding: 0 14px; }
   .home-actions { flex-direction: column; }
   .tab { padding: .4rem .6rem; font-size: .95rem; min-height: 44px; display: inline-flex; align-items: center; }
   .player-card { padding: 12px 16px; margin: 6px; max-width: 100%; overflow-wrap: anywhere; }
   .share-link-url { max-width: 60vw; }
+}
+@media (max-width: 360px) {
+  .site-header { padding-right: 8px; }
+  .navbar-list { gap: 0; }
+  .navbar-link { padding: 0 6px; font-size: .95rem; }
+  .navbar-play, .navbar-play:focus { padding: 0 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }

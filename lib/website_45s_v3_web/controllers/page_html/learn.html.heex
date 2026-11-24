@@ -1,12 +1,13 @@
 <div class="learn-container mx-auto px-3">
-  <section class="learn-hero pt-9 pb-5">
-    <h1 class="text-5xl font-bold mb-2">How to Play 45s</h1>
-    <nav class="list-container" aria-label="On this page">
-      <ul class="text-lg">
-        <li class="mb-0"><a href="#rules">Rules</a></li>
-        <li><a href="#ui">Playing Online</a></li>
-      </ul>
-    </nav>
+  <section class="learn-hero pt-9 pb-8">
+    <h1 class="text-5xl font-bold mb-5">How to Play 45s</h1>
+    <div class="learn-start">
+      <.link navigate={~p"/play"} class="btn">Play Online</.link>
+      <nav class="learn-toc" aria-label="On this page">
+        <a href="#rules">Rules</a>
+        <a href="#ui">Playing Online</a>
+      </nav>
+    </div>
   </section>
 
   <section id="rules" class="rules">
@@ -102,7 +103,9 @@
     <div class="learn-steps">
       <article class="learn-step">
         <h3>1. Find a table</h3><p>
-          Join the queue, or use Play a Friend for a private game. Add a bot for any empty seat.
+          <.link navigate={~p"/play"} class="underline">Join the queue</.link>, or use
+          <.link navigate={~p"/play?tab=private"} class="underline">Play a Friend</.link>
+          for a private game. Add a bot for any empty seat.
         </p>
       </article>
       <article class="learn-step">
@@ -131,6 +134,6 @@
         </p>
       </article>
     </div>
-    <div class="my-6"><.link navigate={~p"/play"} class="btn">Play a game</.link></div>
+    <div class="my-6"><.link navigate={~p"/play"} class="btn">Play Online</.link></div>
   </section>
 </div>

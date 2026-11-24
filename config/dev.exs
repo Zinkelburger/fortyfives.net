@@ -81,3 +81,9 @@ config :phoenix, :plug_init_mode, :runtime
 config :website_45s_v3,
   turnstile_site_key: "1x00000000000000000000AA",
   turnstile_secret: "1x0000000000000000000000000000000AA"
+
+# Every local tab and chromedriver session shares 127.0.0.1, so the
+# per-network queue and bot budgets would trip during ordinary testing.
+config :website_45s_v3, :security_rate_limits,
+  queue: [max_ip: 100_000, max_create_ip: 100_000],
+  bots: [max_ip: 100_000]

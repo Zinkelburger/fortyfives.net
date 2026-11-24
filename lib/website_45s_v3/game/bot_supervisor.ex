@@ -1,13 +1,14 @@
 defmodule Website45sV3.Game.BotSupervisor do
   @moduledoc """
-  Supervises `BotPlayerServer` processes. A global cap keeps the "add a bot"
-  buttons from spawning unbounded processes; the cap is enforced by the
-  supervisor itself (`max_children`) so that concurrent requests cannot
-  race past it.
+  Supervises `BotPlayerServer` processes, one per bot seat, started on demand
+  and stopped when the bot's game ends. `RateLimiter.check_bot_spawn/1`
+  bounds bots per network; `@max_bots` is only a backstop against runaway
+  growth, enforced by the supervisor itself (`max_children`) so concurrent
+  requests cannot race past it.
   """
   use DynamicSupervisor
 
-  @max_bots 12
+  @max_bots 300
 
   def start_link(_args) do
     DynamicSupervisor.start_link(__MODULE__, :ok, name: __MODULE__)
@@ -30,10 +31,6 @@ defmodule Website45sV3.Game.BotSupervisor do
 
   def bot_count do
     DynamicSupervisor.count_children(__MODULE__).active
-  end
-
-  def at_capacity? do
-    bot_count() >= @max_bots
   end
 
   defp start_child(arg) do

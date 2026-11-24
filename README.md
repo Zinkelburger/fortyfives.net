@@ -52,8 +52,8 @@ python/run_e2e.sh                    # all scenarios, ~4 minutes
 `APP_BASE_URL` (default `http://localhost:4000/play`) points the bots at
 another server. Each bot logs to `tbot_<name>.log`, and failing bots write
 a screenshot and page source to `artifacts/` (`TBOT_ARTIFACT_DIR`). The app
-rate-limits bot spawns per IP (6 per 10 minutes) and a run uses 5, so
-restart the server between back-to-back local runs.
+rate-limits bot spawns per network (30 per 10 minutes in prod; dev and test
+lift the limit), so a run against a deployed server counts toward it.
 
 ### UI check
 

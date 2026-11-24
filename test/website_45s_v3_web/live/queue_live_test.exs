@@ -12,6 +12,7 @@ defmodule Website45sV3Web.QueueLiveTest do
   alias Website45sV3.Game.GameSupervisor
   alias Website45sV3.Game.PrivateQueueManager
   alias Website45sV3.Game.QueueStarter
+  alias Website45sV3.Security.RateLimiter
   alias Website45sV3Web.Presence
 
   defp unique(prefix), do: prefix <> Integer.to_string(System.unique_integer([:positive]))
@@ -718,7 +719,7 @@ defmodule Website45sV3Web.QueueLiveTest do
       on_exit(&kill_all_bots/0)
       limits = Application.get_env(:website_45s_v3, :security_rate_limits, [])
       on_exit(fn -> Application.put_env(:website_45s_v3, :security_rate_limits, limits) end)
-      Website45sV3.Security.RateLimiter.reset()
+      RateLimiter.reset()
 
       Application.put_env(
         :website_45s_v3,

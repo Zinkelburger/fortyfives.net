@@ -164,7 +164,7 @@ class Rehearsal:
         game.click("#create-private-button")
         game.wait_for_url("**/play/private/**")
         self.connected(game)
-        game.click("#join-queue-button")
+        eventually(lambda: "You are in the game lobby" in game.content(), "creator seated on creating the table")
         for n in (2, 3):
             self.add_bot(game, n)
         game.click("#add-bot-button")
@@ -183,8 +183,7 @@ class Rehearsal:
         lobby.wait_for_url("**/play/private/**")
         self.connected(lobby)
         lobby_path = lobby.url[len(SITE):]
-        lobby.click("#join-queue-button")
-        eventually(lambda: "You are in the game lobby" in lobby.content(), "private lobby joined")
+        eventually(lambda: "You are in the game lobby" in lobby.content(), "creator seated on creating the table")
         self.add_bot(lobby, 2)
 
         home = self.open(browser, "/")
